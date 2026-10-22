@@ -529,6 +529,9 @@ impl<'ctx> Lowerer<'ctx> {
                 module.add_function("__builtin_panic", signature, None)
             }
         };
+        // The body of the panic is generated with the module (see
+        // `runtime.rs`); there is no C stub to link against any more.
+        self.define_panic()?;
 
         // The message is a constant string in a private global. It is
         // NUL-terminated for the same reason a source-level literal is: a

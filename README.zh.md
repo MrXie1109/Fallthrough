@@ -54,7 +54,7 @@ Fallthrough 是一门静态类型、编译型的系统级语言。名字本身�
 | ---- | ---- |
 | Rust 工具链（edition 2024） | 编译器是一个 Rust workspace |
 | LLVM 18 开发文件 | 代码生成通过 `inkwell` 链接 LLVM |
-| C 编译器 | 链接过程与运行时 stub 使用平台的 C 工具链 |
+| C 编译器 | 作为链接器驱动，以及程序链接的 C 库 |
 | `make` | 构建驱动提供了短命令：`make release`、`make install` |
 
 如果 `llvm-sys` 找不到 LLVM，用
@@ -72,6 +72,29 @@ fallc --version
 
 `make install PREFIX=$HOME/.local` 不需要 root（前提是 `~/.local/bin` 在 `PATH` 中）。
 卸载：`sudo make uninstall`。
+
+`make install` 还会把标准库放到 `/usr/local/share/fallthrough/standard`，并写出一个环境
+文件 `/usr/local/etc/fallthrough/env`，内容就是标准库的位置：
+
+```sh
+export FALLTHROUGH_STANDARD="/usr/local/share/fallthrough/standard"
+```
+
+编译器正是通过 `FALLTHROUGH_STANDARD` 找标准库，所以要把这一行加到自己的 shell 配置里，
+让每个会话都生效。`bash` 与 `zsh`（当前用户）：
+
+```sh
+echo '. /usr/local/etc/fallthrough/env' >> ~/.bashrc   # 或 ~/.zshrc
+```
+
+`fish`：
+
+```fish
+echo 'source /usr/local/etc/fallthrough/env' >> ~/.config/fish/config.fish
+```
+
+要让整台机器的所有用户都生效：把同样一行放进 `/etc/profile`。这两条命令都不要加
+`sudo`——它们改的是你自己的配置，不是 root 的。
 
 ### Hello, world
 
@@ -156,7 +179,6 @@ fallc hello.ft --emit=llvm   -o hello.ll    # LLVM IR
 ```
 crates/            编译器：span、诊断、词法、AST、语法、语义、IR、驱动
 standard/          用 Fallthrough 编写的标准库与 C 绑定
-runtime/           debug 模式守卫调用的 C shim
 examples/          小程序
 docs/              规范、库参考与设计记录
 ```

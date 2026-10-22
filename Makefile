@@ -23,6 +23,13 @@ BIN     := target/$(PROFILE)/fallc
 PREFIX  ?= /usr/local
 DESTDIR ?=
 
+# The system decides where the library and its environment file belong. The
+# layout is the Unix one on Linux and macOS; a Windows build under MSYS uses
+# the same relative layout inside PREFIX.
+SYSTEM  ?= $(shell uname -s 2>/dev/null || echo Windows)
+STDLIB_DEST ?= $(PREFIX)/share/fallthrough/standard
+ENV_FILE    ?= $(PREFIX)/etc/fallthrough/env
+
 # A scratch directory for the compiler's own smoke test.
 SCRATCH ?= scratch
 
@@ -47,8 +54,9 @@ help:
 	@echo "make std-check    compile a program that imports the standard library"
 	@echo "make smoke        compile and run tests/smoke.ft if it exists"
 	@echo "make clean        remove build artifacts"
-	@echo "make install      install fallc (PREFIX=$(PREFIX), default /usr/local)"
-	@echo "make uninstall    remove the installed fallc"
+	@echo "make install      install fallc, the library and their env file"
+	@echo "                  (PREFIX=$(PREFIX), $(SYSTEM))"
+	@echo "make uninstall    remove them again"
 
 build:
 	$(CARGO) build -j $(JOBS)
@@ -115,8 +123,27 @@ install:
 		echo "target/release/fallc is missing; run 'make release' first"; exit 1; }
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 target/release/fallc $(DESTDIR)$(PREFIX)/bin/fallc
+	# The standard library travels with the compiler, but the compiler cannot
+	# guess where an installed copy lives: it records the location in the
+	# environment file its own documentation tells users to source.
+	install -d $(DESTDIR)$(STDLIB_DEST)
+	cp -R standard/. $(DESTDIR)$(STDLIB_DEST)/
+	@install -d "$$(dirname '$(DESTDIR)$(ENV_FILE)')"
+	@{ \
+		echo "# Fallthrough environment, written by 'make install'."; \
+		echo "# Source this file from your shell profile so the compiler finds"; \
+		echo "# the standard library without a flag."; \
+		echo "export FALLTHROUGH_STANDARD=\"$(STDLIB_DEST)\""; \
+	} > $(DESTDIR)$(ENV_FILE)
 	@echo "installed $(DESTDIR)$(PREFIX)/bin/fallc"
+	@echo "installed $(DESTDIR)$(STDLIB_DEST)"
+	@echo "wrote     $(DESTDIR)$(ENV_FILE)"
+	@echo "source it, or add this to your shell profile:"
+	@echo "  . $(ENV_FILE)"
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/fallc
+	rm -rf $(DESTDIR)$(STDLIB_DEST)
+	rm -f $(DESTDIR)$(ENV_FILE)
 	@echo "removed $(DESTDIR)$(PREFIX)/bin/fallc"
+	@echo "removed $(DESTDIR)$(STDLIB_DEST) and $(DESTDIR)$(ENV_FILE)"
