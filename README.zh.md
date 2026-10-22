@@ -58,9 +58,13 @@ Fallthrough 是一门静态类型、编译型的系统级语言。名字本身�
 | `make` | 构建驱动提供了短命令：`make release`、`make install` |
 
 如果 `llvm-sys` 找不到 LLVM，用
-`LLVM_SYS_181_PREFIX=/path/to/llvm-18 make release` 指定安装位置。
+`LLVM_SYS_181_PREFIX=/path/to/llvm-18 make release` 指定安装位置。Windows 上在
+`make` 之前用 `set LLVM_SYS_181_PREFIX=C:\Program Files\LLVM` 设置同名变量。
 
 ### 克隆、编译并安装
+
+下面这组命令是 Unix 的写法；[Windows](#windows) 另有自己的写法——安装位置、`sudo` 与
+shell 配置在那边都不一样。
 
 ```sh
 git clone https://github.com/MrXie1109/Fallthrough.git
@@ -95,6 +99,45 @@ echo 'source /usr/local/etc/fallthrough/env' >> ~/.config/fish/config.fish
 
 要让整台机器的所有用户都生效：把同样一行放进 `/etc/profile`。这两条命令都不要加
 `sudo`——它们改的是你自己的配置，不是 root 的。
+
+### Windows
+
+Windows 上没有 `/usr/local`、没有 `sudo`，也没有所有 shell 都会读的配置文件，所以安装就是
+复制文件，变量写进用户注册表。
+
+在带有 `make`、作为链接器驱动的 C 编译器和 LLVM 18 的环境里构建——MSYS2/MINGW64 的 shell，
+或装了 `mingw32-make` 的 Developer PowerShell：
+
+```sh
+make release
+```
+
+然后把编译器和标准库复制到一个固定位置，并设置变量。PowerShell（当前用户）：
+
+```powershell
+$root = "$env:LOCALAPPDATA\Fallthrough"
+New-Item -ItemType Directory -Force "$root\bin" | Out-Null
+Copy-Item target\release\fallc.exe "$root\bin\fallc.exe"
+Copy-Item standard "$root\standard" -Recurse
+[Environment]::SetEnvironmentVariable(
+    "FALLTHROUGH_STANDARD", "$root\standard", "User")
+$env:FALLTHROUGH_STANDARD = "$root\standard"   # 当前会话
+$env:PATH = "$root\bin;$env:PATH"
+fallc --version
+```
+
+`cmd.exe` 里用 `setx` 永久设置：
+
+```bat
+setx FALLTHROUGH_STANDARD "%LOCALAPPDATA%\Fallthrough\standard"
+```
+
+`setx` 只对新开的终端生效，所以运行 `fallc` 前先开一个新终端（或在当前终端里也设一次
+`FALLTHROUGH_STANDARD`）。把 `%LOCALAPPDATA%\Fallthrough\bin` 加到 `PATH`（系统属性 →
+环境变量），`fallc` 就能直接按名字调用。
+
+用 `--emit=static` 或 `--emit=shared` 产出的库在 Windows 上是 `.a` 与 `.dll`，链接它们需要
+和编译编译器时相同的工具链。命令行选项在所有平台上都一样。
 
 ### Hello, world
 
