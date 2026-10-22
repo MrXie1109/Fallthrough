@@ -1,0 +1,68 @@
+// The synchronisation primitives, as Darwin provides them.
+//
+// The calls are the POSIX ones, with one difference that matters: a zeroed
+// `pthread_mutex_t` is *not* `PTHREAD_MUTEX_INITIALIZER` on Darwin -- the
+// initializer has a signature word -- so the storage has to be built by
+// `pthread_mutex_init` rather than left as zeros. Everything else is the same
+// as `sync_sys.ftm`, which is why this file is short.
+
+@extern_C fn pthread_mutex_init(mutex *byte, attr *byte) int;
+@extern_C fn pthread_mutex_lock(mutex *byte) int;
+@extern_C fn pthread_mutex_unlock(mutex *byte) int;
+@extern_C fn pthread_cond_init(condition *byte, attr *byte) int;
+@extern_C fn pthread_cond_wait(condition *byte, mutex *byte) int;
+@extern_C fn pthread_cond_signal(condition *byte) int;
+@extern_C fn pthread_cond_broadcast(condition *byte) int;
+@extern_C fn pthread_create(thread *byte, attr *byte, start *fn(*byte) u32, argument *byte) int;
+@extern_C fn pthread_join(thread *byte, result *byte) int;
+@extern_C fn usleep(microseconds u32) int;
+
+// Prepares newly zeroed storage as a mutex, the Darwin way.
+export fn mutex_init(storage *byte) void {
+    pthread_mutex_init(storage, nullptr);
+}
+
+// Prepares newly zeroed storage as a condition variable, the Darwin way.
+export fn cond_init(storage *byte) void {
+    pthread_cond_init(storage, nullptr);
+}
+
+// Locks the mutex in `storage`, waiting while another thread holds it.
+export fn mutex_lock(storage *byte) bool {
+    return pthread_mutex_lock(storage) == 0;
+}
+
+// Unlocks the mutex in `storage`.
+export fn mutex_unlock(storage *byte) bool {
+    return pthread_mutex_unlock(storage) == 0;
+}
+
+// Waits on `condition`, releasing `mutex` while it waits.
+export fn cond_wait(condition *byte, mutex *byte) bool {
+    return pthread_cond_wait(condition, mutex) == 0;
+}
+
+// Wakes one waiter on `condition`.
+export fn cond_signal(condition *byte) bool {
+    return pthread_cond_signal(condition) == 0;
+}
+
+// Wakes every waiter on `condition`.
+export fn cond_broadcast(condition *byte) bool {
+    return pthread_cond_broadcast(condition) == 0;
+}
+
+// Starts `start(argument)` on a new thread, writing its handle through `thread`.
+export fn thread_start(thread *byte, start *fn(*byte) u32, argument *byte) bool {
+    return pthread_create(thread, nullptr, start, argument) == 0;
+}
+
+// Waits for `thread` to finish.
+export fn thread_join(thread *byte) bool {
+    return pthread_join(thread, nullptr) == 0;
+}
+
+// Suspends the calling thread for `milliseconds`.
+export fn sleep_ms(milliseconds usize) void {
+    usleep((milliseconds * 1000) as u32);
+}

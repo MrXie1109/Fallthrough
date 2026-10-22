@@ -1,0 +1,12 @@
+[package]
+name = "fallc-span"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Source positions, spans, and the source map for the Fallthrough compiler."
+
+[dependencies]
+
+[lints]
+workspace = true

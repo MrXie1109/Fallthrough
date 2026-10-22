@@ -1,0 +1,90 @@
+// The operating system, as Windows provides it.
+//
+// `std.os` owns the interface; this file is the part that names the system
+// calls. It is the Windows half: `os_sys.ftm` is the POSIX one, and the loader
+// reads the file for the target platform, so a program calls `std.os.pid()`
+// without knowing which is underneath.
+//
+// The C library's `getenv` is not used: the environment of a Windows process is
+// reached through the Win32 calls, and `getenv` in a statically linked runtime
+// may see a copy.
+
+@extern_C fn GetCurrentProcessId() u32;
+@extern_C fn ExitProcess(code u32) void;
+@extern_C fn GetEnvironmentVariableA(name *const char, buffer *char, size u32) u32;
+@extern_C fn SetEnvironmentVariableA(name *const char, value *const char) i32;
+@extern_C fn GetCurrentDirectoryA(size u32, buffer *char) u32;
+@extern_C fn SetCurrentDirectoryA(path *const char) i32;
+@extern_C fn QueryPerformanceCounter(counter *u64) i32;
+@extern_C fn QueryPerformanceFrequency(frequency *u64) i32;
+@extern_C fn GetTickCount64() u64;
+@extern_C fn Sleep(milliseconds u32) void;
+
+// The process's identifier.
+export fn pid() int {
+    return GetCurrentProcessId() as int;
+}
+
+// Ends the process with `code` as its exit status.
+export fn exit_process(code int) void {
+    ExitProcess(code as u32);
+}
+
+// Returns the value of `name`, or `nullptr` when it is not set.
+//
+// The caller gives the buffer this file fills; the answer is not a pointer into
+// the environment block, so it stays valid whatever the environment does next.
+static_buffer [4096]char;
+
+export fn env_raw(name *const char) *const char {
+    written u32 = GetEnvironmentVariableA(name, &static_buffer[0], 4096);
+    if (written == 0 || written >= 4096) {
+        return nullptr;
+    }
+    return &static_buffer[0];
+}
+
+// Sets `name` in the environment of this process.
+export fn set_env(name *const char, value *const char) bool {
+    return SetEnvironmentVariableA(name, value) != 0;
+}
+
+// Writes the current working directory into `buffer`, returning whether it fit.
+export fn cwd_into(buffer *char, size usize) bool {
+    written u32 = GetCurrentDirectoryA(size as u32, buffer);
+    return written != 0 && written < size as u32;
+}
+
+// Changes the current working directory, returning whether it worked.
+export fn chdir_to(path *const char) bool {
+    return SetCurrentDirectoryA(path) != 0;
+}
+
+// The number of nanoseconds on the monotonic clock.
+//
+// `GetTickCount64` counts milliseconds since boot and never goes backwards; the
+// performance counter is finer, and its frequency is what turns its counts into
+// nanoseconds.
+export fn monotonic_ns() u64 {
+    counter u64 = 0;
+    frequency u64 = 0;
+    if (QueryPerformanceCounter(&counter) == 0 || QueryPerformanceFrequency(&frequency) == 0 || frequency == 0) {
+        return GetTickCount64() * 1000000u64;
+    }
+    return counter / frequency * 1000000000u64 + counter % frequency * 1000000000u64 / frequency;
+}
+
+// Suspends the calling thread for `milliseconds`.
+export fn sleep_ms(milliseconds usize) void {
+    Sleep(milliseconds as u32);
+}
+
+// Where a temporary file may go when no environment variable says.
+export fn fallback_temp_dir() *const char {
+    return ".";
+}
+
+// The environment variable that names the user's home directory.
+export fn home_variable() *const char {
+    return "USERPROFILE";
+}

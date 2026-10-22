@@ -1,0 +1,67 @@
+// Exceptions: raising one, catching it, and passing it on.
+//
+// A function that may raise says so after its return type with `except`. What it
+// returns is then either its value or an exception -- not a global flag -- so a
+// caller that ignores the annotation does not compile: the checker requires a
+// call to a may-raise function to be inside a `try` with an `except`, or to be
+// followed by `?!` to pass the exception further out.
+
+import std;
+import C;
+
+// Three outcomes: a value, a raised exception, or a raised exception with a
+// message.
+fn parse(n int) int except {
+    if (n == 0) {
+        raise "ZeroError";
+    }
+    if (n < 0) {
+        raise "ValueError": "cannot be negative";
+    }
+    return n * 10;
+}
+
+// Passes on whatever `parse` raises, adding a line of its own on the way.
+//
+// `call()?!` is an expression, so the value survives: `v` keeps it. The `try`
+// here deliberately does *not* catch the propagated exception -- `?!` means
+// "leave this function", not "handle it here".
+fn measured(n int) int except {
+    v int = parse(n)?!;
+    C.printf("  parse(%d) gave %d\n", n, v);
+    return v + 1;
+}
+
+fn main() int {
+    // The clean path, with the `else` clause running.
+    try {
+        C.printf("ok: %d\n", measured(4));
+    } except {
+        C.printf("never\n");
+    } else {
+        C.printf("no exception\n");
+    }
+
+    // A raise with no message.
+    try {
+        C.printf("zero: %d\n", measured(0));
+    } except {
+        e &const std.Exception = std.exception();
+        C.printf("caught %s, message is %lu bytes\n", e.name().data(), e.what().length());
+    } finally {
+        C.printf("finally after zero\n");
+    }
+
+    // A raise with one, caught by the handler that inspects the name.
+    try {
+        C.printf("negative: %d\n", measured(-3));
+    } except {
+        e &const std.Exception = std.exception();
+        if (e.name() == "ValueError") {
+            C.printf("expected: %s\n", e.what().data());
+        } else {
+            C.printf("unexpected: %s\n", e.name().data());
+        }
+    }
+    return 0;
+}

@@ -1,0 +1,28 @@
+[package]
+name = "fallc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The Fallthrough compiler driver (the fallc binary)."
+
+[[bin]]
+name = "fallc"
+path = "src/main.rs"
+
+[dependencies]
+fallc-ast.workspace = true
+fallc-diag.workspace = true
+fallc-ir.workspace = true
+fallc-lexer.workspace = true
+fallc-parser.workspace = true
+fallc-sema.workspace = true
+fallc-span.workspace = true
+
+[dev-dependencies]
+fallc-ir.workspace = true
+fallc-lexer.workspace = true
+fallc-span.workspace = true
+
+[lints]
+workspace = true

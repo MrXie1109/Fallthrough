@@ -1,0 +1,342 @@
+// A binary heap, and the priority queue built on it.
+//
+// # The order is a type
+//
+// `Heap<T, Less<T>>` keeps the smallest value on top, and `Heap<T, Greater<T>>`
+// the largest: the comparator is the same one a tree takes, so a program that
+// has an order for its own type has a heap for it too.
+//
+// # The shape
+//
+// The elements live in one buffer in level order, so the children of the element
+// at `i` are at `2i + 1` and `2i + 2` and no links are stored. A push appends and
+// walks the new value up while it belongs above its parent; a pop takes the top,
+// moves the last element into its place, and walks that one down. Both are
+// logarithmic, and neither reorders anything else.
+
+import std.memory;
+from std.memory import DefaultAllocator, alloc, free;
+from std.tree import Greater, Less;
+// The comparators are called through `__call__`, which is a definition of the
+// module that declares them: importing the *types* by name is not enough for a
+// body here to reach their method.
+import std.tree;
+import std.util;
+import std.type_traits;
+
+// How much room an empty heap asks for, in elements.
+INITIAL_CAPACITY const usize = 8;
+
+// A heap: the value that comes first is on top.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+type Heap {
+    // The element storage: `_cap` slots, of which `_len` are alive.
+    _data *T;
+    // How many slots there are.
+    _cap usize;
+    // How many elements there are.
+    _len usize;
+    // The allocator the buffer comes from.
+    mem A;
+    // The order.
+    cmp Cmp;
+}
+
+// Creates an empty heap.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn __init__(this &Heap<T, Cmp, A>) void {
+    this._data = nullptr;
+    this._cap = 0;
+    this._len = 0;
+    this.mem = .{};
+    this.cmp = .{};
+}
+
+// Creates a heap with the caller's order and allocator.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn __init__(this &Heap<T, Cmp, A>, order Cmp, memory A) void {
+    this._data = nullptr;
+    this._cap = 0;
+    this._len = 0;
+    this.cmp = order;
+    this.mem = memory;
+}
+
+// Creates a heap with a copy of every element of `other`.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn __init__(this &Heap<T, Cmp, A>, other &const Heap<T, Cmp, A>) void {
+    this._data = nullptr;
+    this._cap = 0;
+    this._len = 0;
+    this.mem = .{};
+    this.cmp = other.cmp;
+    this.reserve(other._len);
+    index usize = 0;
+    while (index < other._len) {
+        target *T = &this._data[index];
+        target->__init__(other._data[index]);
+        index += 1;
+    }
+    this._len = other._len;
+}
+
+// Destroys the elements and the buffer.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn __drop__(this &Heap<T, Cmp, A>) void {
+    this.clear();
+    this.mem.free(this._data as *byte);
+    this._data = nullptr;
+    this._cap = 0;
+}
+
+// Returns how many elements the heap holds.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn length(this &const Heap<T, Cmp, A>) usize {
+    return this._len;
+}
+
+// Returns how many elements the buffer has room for.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn capacity(this &const Heap<T, Cmp, A>) usize {
+    return this._cap;
+}
+
+// Returns `true` when the heap holds nothing.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn empty(this &const Heap<T, Cmp, A>) bool {
+    return this._len == 0;
+}
+
+// Whether `a` belongs above `b` under the heap's order.
+fn before(this &Heap<T, Cmp, A>, a &const T, b &const T) bool {
+    order Cmp = this.cmp;
+    return order(a, b);
+}
+
+// Makes room for `wanted` elements.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn reserve(this &Heap<T, Cmp, A>, wanted usize) void {
+    if (this._cap >= wanted) {
+        return;
+    }
+    grown usize = INITIAL_CAPACITY;
+    while (grown < wanted) {
+        grown *= 2;
+    }
+    fresh *T = this.mem.alloc(grown * sizeof(T)) as *T;
+    index usize = 0;
+    while (index < this._len) {
+        target *T = &fresh[index];
+        if ($MOVES(T)) @constexpr {
+            target->__init__(this._data[index]);
+        } else {
+            target->__init__(util.move(this._data[index]));
+        }
+        source *T = &this._data[index];
+        source->__drop__();
+        index += 1;
+    }
+    this.mem.free(this._data as *byte);
+    this._data = fresh;
+    this._cap = grown;
+}
+
+// Exchanges two elements, carrying the first through a value of its own.
+//
+// The elements are *copied* rather than assigned: an element read out of a
+// buffer is a named place, so the copying constructor is the one that applies,
+// and assigning over a value that is already alive would drop a buffer the other
+// side still points at. Each slot is destroyed first and constructed again, so
+// every buffer has exactly one owner.
+fn swap(this &Heap<T, Cmp, A>, a usize, b usize) void {
+    keep T = this._data[a];
+    gone_a *T = &this._data[a];
+    gone_a->__drop__();
+    (&this._data[a])->__init__(this._data[b]);
+    gone_b *T = &this._data[b];
+    gone_b->__drop__();
+    (&this._data[b])->__init__(keep);
+}
+
+// Walks the element at `index` up until its parent belongs above it.
+fn sift_up(this &Heap<T, Cmp, A>, index usize) void {
+    position usize = index;
+    while (position > 0) {
+        parent usize = (position - 1) / 2;
+        // The walk stops as soon as the value has no priority over its parent:
+        // `before(a, b)` answers "a belongs above b".
+        if (!this.before(&this._data[position], &this._data[parent])) {
+            break;
+        }
+        this.swap(parent, position);
+        position = parent;
+    }
+}
+
+// Walks the element at `index` down until it belongs above both children.
+fn sift_down(this &Heap<T, Cmp, A>, index usize) void {
+    position usize = index;
+    while (true) {
+        left usize = position * 2 + 1;
+        right usize = left + 1;
+        best usize = position;
+        if (left < this._len && this.before(&this._data[left], &this._data[best])) {
+            best = left;
+        }
+        if (right < this._len && this.before(&this._data[right], &this._data[best])) {
+            best = right;
+        }
+        if (best == position) {
+            break;
+        }
+        this.swap(position, best);
+        position = best;
+    }
+}
+
+// Adds `value`, which then finds its place in the order.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn push(this &Heap<T, Cmp, A>, value T) void {
+    this.reserve(this._len + 1);
+    target *T = &this._data[this._len];
+    target->__init__(util.move(value));
+    this._len += 1;
+    this.sift_up(this._len - 1);
+}
+
+// Returns the value that comes first.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn top(this &const Heap<T, Cmp, A>) &const T {
+    if (this._len == 0) {
+        util.panic("Heap top of an empty heap");
+    }
+    return this._data[0];
+}
+
+// Returns the value that comes first as a place that can be written.
+//
+// Writing through it is the caller's promise that the order still holds; the
+// heap cannot check one field of a value it was handed.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn top(this &Heap<T, Cmp, A>) &T {
+    if (this._len == 0) {
+        util.panic("Heap top of an empty heap");
+    }
+    return this._data[0];
+}
+
+// Removes the value that comes first and returns it.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn pop(this &Heap<T, Cmp, A>) T {
+    if (this._len == 0) {
+        util.panic("Heap pop of an empty heap");
+    }
+    this._len -= 1;
+    removed T = util.move(this._data[0]);
+    gone *T = &this._data[0];
+    gone->__drop__();
+    if (this._len > 0) {
+        root *T = &this._data[0];
+        root->__init__(util.move(this._data[this._len]));
+        last *T = &this._data[this._len];
+        last->__drop__();
+        this.sift_down(0);
+    }
+    return removed;
+}
+
+// Removes every element.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn clear(this &Heap<T, Cmp, A>) void {
+    index usize = 0;
+    while (index < this._len) {
+        slot *T = &this._data[index];
+        slot->__drop__();
+        index += 1;
+    }
+    this._len = 0;
+}
+
+// A priority queue: a heap whose surface is `push`, `pop` and `top`.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+type PriorityQueue {
+    heap Heap<T, Cmp, A>;
+}
+
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn __init__(this &PriorityQueue<T, Cmp, A>) void {
+    (&this.heap)->__init__();
+}
+
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn __init__(this &PriorityQueue<T, Cmp, A>, order Cmp, memory A) void {
+    (&this.heap)->__init__(order, memory);
+}
+
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn __drop__(this &PriorityQueue<T, Cmp, A>) void {
+    (&this.heap)->__drop__();
+}
+
+// Adds `value` with its priority.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn push(this &PriorityQueue<T, Cmp, A>, value T) void {
+    this.heap.push(util.move(value));
+}
+
+// Removes the value whose priority comes first.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn pop(this &PriorityQueue<T, Cmp, A>) T {
+    return this.heap.pop();
+}
+
+// Returns the value whose priority comes first.
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn top(this &const PriorityQueue<T, Cmp, A>) &const T {
+    return this.heap.top();
+}
+
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn top(this &PriorityQueue<T, Cmp, A>) &T {
+    return this.heap.top();
+}
+
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn length(this &const PriorityQueue<T, Cmp, A>) usize {
+    return this.heap.length();
+}
+
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn empty(this &const PriorityQueue<T, Cmp, A>) bool {
+    return this.heap.empty();
+}
+
+export
+template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
+fn clear(this &PriorityQueue<T, Cmp, A>) void {
+    this.heap.clear();
+}

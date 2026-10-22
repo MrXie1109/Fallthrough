@@ -1,0 +1,26 @@
+// The system's entropy source, on Windows.
+//
+// `BCryptGenRandom` with `BCRYPT_USE_SYSTEM_PREFERRED_RNG` is the operating
+// system's cryptographic generator, which is the closest thing Windows offers to
+// the `/dev/urandom` the POSIX file reads. It is called once, at setup, and its
+// only job is to seed the generator.
+//
+// The loader prefers this file to `random_entropy.ftm` when building for
+// Windows; the two agree on `fill`.
+
+import C;
+
+link bcrypt dynamic from default;
+
+// `BCRYPT_USE_SYSTEM_PREFERRED_RNG`: use the system's default generator.
+U32_SYSTEM_PREFERRED_RNG const u32 = 2;
+
+@extern_C fn BCryptGenRandom(algorithm *void, buffer *byte, count u32, flags u32) i32;
+
+// Fills `buffer` with `count` bytes from the system's entropy source.
+//
+// Returns `false` when the call fails; the caller then seeds from the clock
+// rather than leaving the generator at its default seed.
+export fn fill(buffer *byte, count usize) bool except {
+    return BCryptGenRandom(nullptr, buffer, count as u32, U32_SYSTEM_PREFERRED_RNG) == 0;
+}

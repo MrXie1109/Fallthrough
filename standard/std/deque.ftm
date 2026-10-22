@@ -1,0 +1,793 @@
+// A double-ended queue, and the two adapters that are views of it: a queue and a
+// stack.
+//
+// # A ring, not a line
+//
+// The elements live in one buffer, and the first one is not necessarily at its
+// start: a `push_front` walks the front index backwards, wrapping around, and a
+// `push_back` writes past the end's index. Nothing moves, which is what makes
+// both ends O(1) -- an `Array` can only afford one of them.
+//
+// # Growth copies
+//
+// A full deque allocates a buffer twice the size and copies the elements into it
+// in order, front first. As in `Array`, an element type whose move may raise is
+// copied rather than moved, so a raise leaves the old buffer whole.
+
+import std.memory;
+from std.memory import DefaultAllocator, alloc, free;
+import std.util;
+import std.type_traits;
+
+// How much room an empty deque asks for, in elements.
+INITIAL_CAPACITY const usize = 8;
+
+// A sequence with a cheap push and pop at both ends.
+export
+template <T type, A type = DefaultAllocator>
+type Deque {
+    // The element storage: `_cap` slots, of which `_len` are alive.
+    _data *T;
+    // How many slots there are.
+    _cap usize;
+    // Which slot holds the first element.
+    _front usize;
+    // How many elements there are.
+    _len usize;
+    // The allocator the buffer comes from.
+    mem A;
+}
+
+// Creates an empty deque.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Deque<T, A>) void {
+    this._data = nullptr;
+    this._cap = 0;
+    this._front = 0;
+    this._len = 0;
+    this.mem = .{};
+}
+
+// Creates a deque of `count` copies of `value`.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Deque<T, A>, count usize, value T) void {
+    this._data = nullptr;
+    this._cap = 0;
+    this._front = 0;
+    this._len = 0;
+    this.mem = .{};
+    this.reserve(count);
+    while (this._len < count) {
+        slot *T = this.slot(this._len);
+        slot->__init__(value);
+        this._len += 1;
+    }
+}
+
+// Creates a deque with a copy of every element of `other`.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Deque<T, A>, other &const Deque<T, A>) void {
+    this._data = nullptr;
+    this._cap = 0;
+    this._front = 0;
+    this._len = 0;
+    this.mem = .{};
+    this.reserve(other._len);
+    while (this._len < other._len) {
+        target *T = this.slot(this._len);
+        source usize = (other._front + this._len) % other._cap;
+        target->__init__(other._data[source]);
+        this._len += 1;
+    }
+}
+
+// Creates a deque that takes the buffer of `other`.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Deque<T, A>, other &&Deque<T, A>) void {
+    this._data = other._data;
+    this._cap = other._cap;
+    this._front = other._front;
+    this._len = other._len;
+    this.mem = util.move(other.mem);
+    other._data = nullptr;
+    other._cap = 0;
+    other._front = 0;
+    other._len = 0;
+}
+
+// Copies the elements of `other` over this one.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Deque<T, A>, other &const Deque<T, A>) void {
+    if (this._data == other._data) {
+        return;
+    }
+    this.clear();
+    this.reserve(other._len);
+    while (this._len < other._len) {
+        target *T = this.slot(this._len);
+        source usize = (other._front + this._len) % other._cap;
+        target->__init__(other._data[source]);
+        this._len += 1;
+    }
+}
+
+// Takes the buffer of `other`, releasing what this deque held.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Deque<T, A>, other &&Deque<T, A>) void {
+    if (this._data == other._data) {
+        return;
+    }
+    this.clear();
+    this.mem.free(this._data as *byte);
+    this._data = other._data;
+    this._cap = other._cap;
+    this._front = other._front;
+    this._len = other._len;
+    other._data = nullptr;
+    other._cap = 0;
+    other._front = 0;
+    other._len = 0;
+}
+
+// Destroys the elements and the buffer.
+export
+template <T type, A type = DefaultAllocator>
+fn __drop__(this &Deque<T, A>) void {
+    this.clear();
+    this.mem.free(this._data as *byte);
+    this._data = nullptr;
+    this._cap = 0;
+}
+
+// The slot holding the element at `index`.
+fn slot(this &Deque<T, A>, index usize) *T {
+    return &this._data[(this._front + index) % this._cap];
+}
+
+// The slot holding the element at `index`, read through a constant deque.
+fn slot_of(this &const Deque<T, A>, index usize) *const T {
+    return &this._data[(this._front + index) % this._cap];
+}
+
+// Returns how many elements the deque holds.
+export
+template <T type, A type = DefaultAllocator>
+fn length(this &const Deque<T, A>) usize {
+    return this._len;
+}
+
+// Returns how many elements the buffer has room for.
+export
+template <T type, A type = DefaultAllocator>
+fn capacity(this &const Deque<T, A>) usize {
+    return this._cap;
+}
+
+// Returns `true` when the deque holds nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn empty(this &const Deque<T, A>) bool {
+    return this._len == 0;
+}
+
+// Makes room for `wanted` elements, front first.
+//
+// The elements are moved into the new buffer in order, so the front becomes
+// index zero again; a type whose move may raise is copied instead.
+export
+template <T type, A type = DefaultAllocator>
+fn reserve(this &Deque<T, A>, wanted usize) void {
+    if (this._cap >= wanted) {
+        return;
+    }
+    grown usize = INITIAL_CAPACITY;
+    while (grown < wanted) {
+        grown *= 2;
+    }
+    fresh *T = this.mem.alloc(grown * sizeof(T)) as *T;
+    index usize = 0;
+    while (index < this._len) {
+        target *T = &fresh[index];
+        slot usize = (this._front + index) % this._cap;
+        if ($MOVES(T)) @constexpr {
+            target->__init__(this._data[slot]);
+        } else {
+            target->__init__(util.move(this._data[slot]));
+        }
+        source *T = &this._data[slot];
+        source->__drop__();
+        index += 1;
+    }
+    this.mem.free(this._data as *byte);
+    this._data = fresh;
+    this._cap = grown;
+    this._front = 0;
+}
+
+// Adds `value` at the back.
+export
+template <T type, A type = DefaultAllocator>
+fn push_back(this &Deque<T, A>, value T) void {
+    if (this._len == this._cap) {
+        this.reserve(this._len + 1);
+    }
+    slot *T = this.slot(this._len);
+    slot->__init__(util.move(value));
+    this._len += 1;
+}
+
+// Adds `value` at the front.
+export
+template <T type, A type = DefaultAllocator>
+fn push_front(this &Deque<T, A>, value T) void {
+    if (this._len == this._cap) {
+        this.reserve(this._len + 1);
+    }
+    this._front = (this._front + this._cap - 1) % this._cap;
+    slot *T = &this._data[this._front];
+    slot->__init__(util.move(value));
+    this._len += 1;
+}
+
+// Removes the last element and returns it.
+export
+template <T type, A type = DefaultAllocator>
+fn pop_back(this &Deque<T, A>) T {
+    if (this._len == 0) {
+        util.panic("Deque pop from an empty deque");
+    }
+    this._len -= 1;
+    position usize = (this._front + this._len) % this._cap;
+    removed T = util.move(this._data[position]);
+    gone *T = &this._data[position];
+    gone->__drop__();
+    return removed;
+}
+
+// Removes the first element and returns it.
+export
+template <T type, A type = DefaultAllocator>
+fn pop_front(this &Deque<T, A>) T {
+    if (this._len == 0) {
+        util.panic("Deque pop from an empty deque");
+    }
+    removed T = util.move(this._data[this._front]);
+    gone *T = &this._data[this._front];
+    gone->__drop__();
+    this._front = (this._front + 1) % this._cap;
+    this._len -= 1;
+    return removed;
+}
+
+// Returns the first element.
+export
+template <T type, A type = DefaultAllocator>
+fn front(this &const Deque<T, A>) &const T {
+    if (this._len == 0) {
+        util.panic("Deque front of an empty deque");
+    }
+    return this._data[this._front];
+}
+
+// Returns the first element as a place that can be written.
+export
+template <T type, A type = DefaultAllocator>
+fn front(this &Deque<T, A>) &T {
+    if (this._len == 0) {
+        util.panic("Deque front of an empty deque");
+    }
+    return this._data[this._front];
+}
+
+// Returns the last element.
+export
+template <T type, A type = DefaultAllocator>
+fn back(this &const Deque<T, A>) &const T {
+    if (this._len == 0) {
+        util.panic("Deque back of an empty deque");
+    }
+    return this.slot_of(this._len - 1);
+}
+
+// Returns the last element as a place that can be written.
+export
+template <T type, A type = DefaultAllocator>
+fn back(this &Deque<T, A>) &T {
+    if (this._len == 0) {
+        util.panic("Deque back of an empty deque");
+    }
+    return this.slot(this._len - 1);
+}
+
+// Returns the element at `index`.
+export
+template <T type, A type = DefaultAllocator>
+fn __getitem__(this &const Deque<T, A>, index usize) &const T {
+    return this.slot_of(index);
+}
+
+// Returns the element at `index` as a place that can be written.
+export
+template <T type, A type = DefaultAllocator>
+fn __getitem__(this &Deque<T, A>, index usize) &T {
+    return this.slot(index);
+}
+
+// Removes every element.
+export
+template <T type, A type = DefaultAllocator>
+fn clear(this &Deque<T, A>) void {
+    index usize = 0;
+    while (index < this._len) {
+        slot *T = this.slot(index);
+        slot->__drop__();
+        index += 1;
+    }
+    this._len = 0;
+    this._front = 0;
+}
+
+// ----------------------------------------------------------------- iterators
+
+// A position in a deque, walking from the front to the back.
+//
+// The buffer, the front and the capacity are taken when the iterator is made, so
+// a step is arithmetic rather than a walk back to the deque -- and a deque that
+// grows while it is being walked leaves the iterator on the old buffer, which is
+// the same promise `Array` gives its pointers.
+export
+template <T type, A type = DefaultAllocator>
+type DequeIterator {
+    // The buffer being walked.
+    data *T;
+    // How many slots it has.
+    cap usize;
+    // Which slot the first element is in.
+    front usize;
+    // How many elements in the walk has come.
+    index usize;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &DequeIterator<T, A>) void {
+    this.data = nullptr;
+    this.cap = 0;
+    this.front = 0;
+    this.index = 0;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(
+    this &DequeIterator<T, A>,
+    data *T,
+    cap usize,
+    front usize,
+    index usize
+) void {
+    this.data = data;
+    this.cap = cap;
+    this.front = front;
+    this.index = index;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __inc__(this &DequeIterator<T, A>) void {
+    this.index += 1;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __deref__(this &DequeIterator<T, A>) &T {
+    return &this.data[(this.front + this.index) % this.cap];
+}
+
+// A position `offset` slots further on, which is what makes a deque a random
+// access range: the algorithms move by an index rather than stepping one at a
+// time.
+export
+template <T type, A type = DefaultAllocator>
+fn __add__(this &const DequeIterator<T, A>, offset usize) DequeIterator<T, A> {
+    return DequeIterator<T, A>(this.data, this.cap, this.front, this.index + offset);
+}
+
+// A position `offset` slots before this one.
+export
+template <T type, A type = DefaultAllocator>
+fn __sub__(this &const DequeIterator<T, A>, offset usize) DequeIterator<T, A> {
+    return DequeIterator<T, A>(this.data, this.cap, this.front, this.index - offset);
+}
+
+// Steps back one slot.
+export
+template <T type, A type = DefaultAllocator>
+fn __dec__(this &DequeIterator<T, A>) void {
+    this.index -= 1;
+}
+
+// Moves forward by `offset` slots in one step.
+export
+template <T type, A type = DefaultAllocator>
+fn __iadd__(this &DequeIterator<T, A>, offset usize) void {
+    this.index += offset;
+}
+
+// Moves back by `offset` slots in one step.
+export
+template <T type, A type = DefaultAllocator>
+fn __isub__(this &DequeIterator<T, A>, offset usize) void {
+    this.index -= offset;
+}
+
+// The element `at` slots on, which is what makes `it[n]` read a random access
+// position the way a pointer does.
+export
+template <T type, A type = DefaultAllocator>
+fn __getitem__(this &DequeIterator<T, A>, at usize) &T {
+    return &this.data[(this.front + this.index + at) % this.cap];
+}
+
+// Whether this position comes before `other` in the walk.
+export
+template <T type, A type = DefaultAllocator>
+fn __lt__(this &const DequeIterator<T, A>, other &const DequeIterator<T, A>) bool {
+    return this.index < other.index;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __eq__(this &const DequeIterator<T, A>, other &const DequeIterator<T, A>) bool {
+    return this.data == other.data && this.index == other.index;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __ne__(this &const DequeIterator<T, A>, other &const DequeIterator<T, A>) bool {
+    return this.data != other.data || this.index != other.index;
+}
+
+// A position in a deque, read only.
+export
+template <T type, A type = DefaultAllocator>
+type ConstDequeIterator {
+    data *const T;
+    cap usize;
+    front usize;
+    index usize;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &ConstDequeIterator<T, A>) void {
+    this.data = nullptr;
+    this.cap = 0;
+    this.front = 0;
+    this.index = 0;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(
+    this &ConstDequeIterator<T, A>,
+    data *const T,
+    cap usize,
+    front usize,
+    index usize
+) void {
+    this.data = data;
+    this.cap = cap;
+    this.front = front;
+    this.index = index;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __inc__(this &ConstDequeIterator<T, A>) void {
+    this.index += 1;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __deref__(this &const ConstDequeIterator<T, A>) &const T {
+    return &this.data[(this.front + this.index) % this.cap];
+}
+
+// A position `offset` slots further on.
+export
+template <T type, A type = DefaultAllocator>
+fn __add__(
+    this &const ConstDequeIterator<T, A>,
+    offset usize
+) ConstDequeIterator<T, A> {
+    return ConstDequeIterator<T, A>(this.data, this.cap, this.front, this.index + offset);
+}
+
+// A position `offset` slots before this one.
+export
+template <T type, A type = DefaultAllocator>
+fn __sub__(
+    this &const ConstDequeIterator<T, A>,
+    offset usize
+) ConstDequeIterator<T, A> {
+    return ConstDequeIterator<T, A>(this.data, this.cap, this.front, this.index - offset);
+}
+
+// Steps back one slot.
+export
+template <T type, A type = DefaultAllocator>
+fn __dec__(this &ConstDequeIterator<T, A>) void {
+    this.index -= 1;
+}
+
+// Moves forward by `offset` slots in one step.
+export
+template <T type, A type = DefaultAllocator>
+fn __iadd__(this &ConstDequeIterator<T, A>, offset usize) void {
+    this.index += offset;
+}
+
+// Moves back by `offset` slots in one step.
+export
+template <T type, A type = DefaultAllocator>
+fn __isub__(this &ConstDequeIterator<T, A>, offset usize) void {
+    this.index -= offset;
+}
+
+// The element `at` slots on.
+export
+template <T type, A type = DefaultAllocator>
+fn __getitem__(this &const ConstDequeIterator<T, A>, at usize) &const T {
+    return &this.data[(this.front + this.index + at) % this.cap];
+}
+
+// Whether this position comes before `other` in the walk.
+export
+template <T type, A type = DefaultAllocator>
+fn __lt__(
+    this &const ConstDequeIterator<T, A>,
+    other &const ConstDequeIterator<T, A>
+) bool {
+    return this.index < other.index;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __eq__(
+    this &const ConstDequeIterator<T, A>,
+    other &const ConstDequeIterator<T, A>
+) bool {
+    return this.data == other.data && this.index == other.index;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __ne__(
+    this &const ConstDequeIterator<T, A>,
+    other &const ConstDequeIterator<T, A>
+) bool {
+    return this.data != other.data || this.index != other.index;
+}
+
+// The first position.
+export
+template <T type, A type = DefaultAllocator>
+fn begin(this &Deque<T, A>) DequeIterator<T, A> {
+    return DequeIterator<T, A>(this._data, this._cap, this._front, 0);
+}
+
+// One past the last position.
+export
+template <T type, A type = DefaultAllocator>
+fn end(this &Deque<T, A>) DequeIterator<T, A> {
+    return DequeIterator<T, A>(this._data, this._cap, this._front, this._len);
+}
+
+// The first position, read only.
+export
+template <T type, A type = DefaultAllocator>
+fn begin(this &const Deque<T, A>) ConstDequeIterator<T, A> {
+    return ConstDequeIterator<T, A>(this._data, this._cap, this._front, 0);
+}
+
+// One past the last position, read only.
+export
+template <T type, A type = DefaultAllocator>
+fn end(this &const Deque<T, A>) ConstDequeIterator<T, A> {
+    return ConstDequeIterator<T, A>(this._data, this._cap, this._front, this._len);
+}
+
+// ------------------------------------------------------------------ adapters
+
+// A first-in, first-out sequence: a deque used from the front and the back.
+export
+template <T type, A type = DefaultAllocator>
+type Queue {
+    items Deque<T, A>;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Queue<T, A>) void {
+    (&this.items)->__init__();
+}
+
+
+// Copies another queue, values included.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Queue<T, A>, other &const Queue<T, A>) void {
+    (&this.items)->__init__(other.items);
+}
+
+// Takes another queue's storage.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Queue<T, A>, other &&Queue<T, A>) void {
+    (&this.items)->__init__(util.move(other.items));
+}
+
+// Copies another queue over this one.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Queue<T, A>, other &const Queue<T, A>) void {
+    this.items = other.items;
+}
+
+// Takes another queue's storage over this one.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Queue<T, A>, other &&Queue<T, A>) void {
+    this.items = util.move(other.items);
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __drop__(this &Queue<T, A>) void {
+    (&this.items)->__drop__();
+}
+
+// Adds `value` at the back of the queue.
+export
+template <T type, A type = DefaultAllocator>
+fn push(this &Queue<T, A>, value T) void {
+    this.items.push_back(util.move(value));
+}
+
+// Removes the element that has waited longest.
+export
+template <T type, A type = DefaultAllocator>
+fn pop(this &Queue<T, A>) T {
+    return this.items.pop_front();
+}
+
+// Returns the element that has waited longest.
+export
+template <T type, A type = DefaultAllocator>
+fn front(this &const Queue<T, A>) &const T {
+    return this.items.front();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn front(this &Queue<T, A>) &T {
+    return this.items.front();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn length(this &const Queue<T, A>) usize {
+    return this.items.length();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn empty(this &const Queue<T, A>) bool {
+    return this.items.empty();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn clear(this &Queue<T, A>) void {
+    this.items.clear();
+}
+
+// A last-in, first-out sequence: a deque used only from the back.
+export
+template <T type, A type = DefaultAllocator>
+type Stack {
+    items Deque<T, A>;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Stack<T, A>) void {
+    (&this.items)->__init__();
+}
+
+
+// Copies another stack, values included.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Stack<T, A>, other &const Stack<T, A>) void {
+    (&this.items)->__init__(other.items);
+}
+
+// Takes another stack's storage.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Stack<T, A>, other &&Stack<T, A>) void {
+    (&this.items)->__init__(util.move(other.items));
+}
+
+// Copies another stack over this one.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Stack<T, A>, other &const Stack<T, A>) void {
+    this.items = other.items;
+}
+
+// Takes another stack's storage over this one.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Stack<T, A>, other &&Stack<T, A>) void {
+    this.items = util.move(other.items);
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __drop__(this &Stack<T, A>) void {
+    (&this.items)->__drop__();
+}
+
+// Puts `value` on top of the stack.
+export
+template <T type, A type = DefaultAllocator>
+fn push(this &Stack<T, A>, value T) void {
+    this.items.push_back(util.move(value));
+}
+
+// Takes the value that was put on last.
+export
+template <T type, A type = DefaultAllocator>
+fn pop(this &Stack<T, A>) T {
+    return this.items.pop_back();
+}
+
+// Returns the value on top.
+export
+template <T type, A type = DefaultAllocator>
+fn top(this &const Stack<T, A>) &const T {
+    return this.items.back();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn top(this &Stack<T, A>) &T {
+    return this.items.back();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn length(this &const Stack<T, A>) usize {
+    return this.items.length();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn empty(this &const Stack<T, A>) bool {
+    return this.items.empty();
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn clear(this &Stack<T, A>) void {
+    this.items.clear();
+}

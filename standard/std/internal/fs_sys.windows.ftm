@@ -1,0 +1,68 @@
+// The filesystem calls, as Win32 provides them.
+
+import C;
+import std.array;
+import std.string;
+
+link kernel32 dynamic from default;
+
+@extern_C fn CreateDirectoryA(path *const char, security *byte) int;
+@extern_C fn FindFirstFileA(pattern *const char, data *byte) *byte;
+@extern_C fn FindNextFileA(search *byte, data *byte) int;
+@extern_C fn FindClose(search *byte) int;
+@extern_C fn GetFileAttributesExA(path *const char, level u32, data *byte) int;
+
+FIND_DATA_SIZE const usize = 320;
+FILE_ATTRIBUTE_DIRECTORY const u32 = 16u32;
+
+// Makes one directory, returning whether it worked.
+export fn mkdir_one(path *const char) bool {
+    return CreateDirectoryA(path, nullptr) != 0;
+}
+
+// Reads the names in `path`, without `.` and `..`.
+export fn read_dir_names(path *const char, names *Array<String>) bool {
+    // `path\*` is the search the Win32 find calls take.
+    pattern String = String(path);
+    pattern.push('\\');
+    pattern.push('*');
+    data [FIND_DATA_SIZE]byte;
+    search *byte = FindFirstFileA(pattern.data(), &data[0]);
+    if (search == nullptr) {
+        return false;
+    }
+    while (true) {
+        name *const char = entry_name(&data[0]);
+        if (!(name[0] == '.' as c8
+            && (name[1] == 0 as c8 || (name[1] == '.' as c8 && name[2] == 0 as c8))))
+        {
+            names.push(String(name));
+        }
+        if (FindNextFileA(search, &data[0]) == 0) {
+            break;
+        }
+    }
+    FindClose(search);
+    return true;
+}
+
+// The file name inside `WIN32_FIND_DATAA`.
+fn entry_name(data *byte) *const char {
+    // WIN32_FIND_DATAA: four 8-byte times, attributes and sizes before the
+    // name, which starts at offset 44.
+    return (data + 44) as *const char;
+}
+
+// Whether the entry at `path` is a directory, and its size in bytes.
+export fn stat_entry(path *const char, is_dir *bool, size *i64) bool {
+    data [36]byte;
+    if (GetFileAttributesExA(path, 0u32, &data[0]) == 0) {
+        return false;
+    }
+    attributes u32 = *(&data[0] as *u32);
+    high u32 = *(&data[28] as *u32);
+    low u32 = *(&data[32] as *u32);
+    *is_dir = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    *size = ((high as u64) << 32 | (low as u64)) as i64;
+    return true;
+}

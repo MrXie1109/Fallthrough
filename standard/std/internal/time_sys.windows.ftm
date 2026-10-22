@@ -1,0 +1,27 @@
+// The wall clock on Windows.
+//
+// `GetSystemTimeAsFileTime` counts 100-nanosecond intervals since 1601-01-01,
+// so reaching the Unix epoch means subtracting the interval between the two
+// dates -- a constant, which is what `EPOCH_OFFSET` is.
+
+@extern_C fn GetSystemTimeAsFileTime(file_time *FileTime) void;
+
+// A `FILETIME`: two 32-bit halves of one 64-bit count, low part first.
+type FileTime {
+    low u32;
+    high u32;
+}
+
+// The 100-nanosecond intervals between 1601-01-01 and 1970-01-01.
+EPOCH_OFFSET const i64 = 116444736000000000i64;
+
+// Nanoseconds since the Unix epoch, or zero when the call fails.
+export fn realtime_ns() i64 {
+    stamp FileTime;
+    GetSystemTimeAsFileTime(&stamp);
+    count i64 = (stamp.high as i64) * 4294967296i64 + (stamp.low as i64);
+    if (count < EPOCH_OFFSET) {
+        return 0i64;
+    }
+    return (count - EPOCH_OFFSET) * 100i64;
+}

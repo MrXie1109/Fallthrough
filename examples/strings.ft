@@ -1,0 +1,47 @@
+// Text as a value: building, joining, comparing, and printing.
+//
+// `std.String` owns its bytes, so `+` produces a new string rather than
+// writing into either operand, and every one of these strings is destroyed when
+// its scope ends.
+
+import std;
+
+fn main() int {
+    greeting String = "Hello, ";
+    who String = "world";
+
+    // `+` concatenates. Neither operand changes.
+    line String = greeting + who;
+    C.printf("%s!\n", line.data());
+
+    // `+=` appends in place. The result is the same, and no new buffer is
+    // allocated for the parts already there.
+    line += "!";
+    C.printf("%s\n", line.data());
+
+    // `*` repeats.
+    C.printf("%s\n", ("ab" * 3).data());
+
+    // Comparisons are bytewise and therefore lexicographic. A shorter string
+    // that is a prefix of a longer one is the smaller.
+    if (greeting < who) {
+        C.printf("%s comes first\n", greeting.data());
+    }
+    if (who != greeting) {
+        C.printf("not equal\n");
+    }
+    C.printf("length: %lu\n", line.length());
+
+    // `str` asks for a value's text. A string's own text is a copy of itself,
+    // and `repr` is the quoted form that reads back as the same value.
+    C.printf("str: %s\n", str(line).data());
+    C.printf("repr: %s\n", repr(line).data());
+
+    // Bytes, in place. `length()` counts bytes rather than characters, so this
+    // is the operation the two of them describe.
+    reversed String = "abc";
+    std.reverse(reversed.begin(), reversed.end());
+    C.printf("reversed: %s\n", reversed.data());
+
+    return 0;
+}

@@ -1,0 +1,27 @@
+// Loading shared libraries, Windows.
+//
+// `LoadLibraryA` loads by name, `GetProcAddress` finds a symbol, and
+// `FreeLibrary` releases the module.
+
+@extern_C fn LoadLibraryA(path *const char) *byte;
+@extern_C fn GetProcAddress(handle *byte, name *const char) *byte;
+@extern_C fn FreeLibrary(handle *byte) i32;
+
+// Loads the library at `path`.
+export fn open(path *const char) *byte except {
+    handle *byte = LoadLibraryA(path);
+    if (handle == nullptr) {
+        raise "LibraryError": "LoadLibraryA failed";
+    }
+    return handle;
+}
+
+// The address of `name`, or null when the library has no such symbol.
+export fn symbol(handle *byte, name *const char) *byte {
+    return GetProcAddress(handle, name);
+}
+
+// Releases the library.
+export fn close(handle *byte) bool {
+    return FreeLibrary(handle) != 0;
+}

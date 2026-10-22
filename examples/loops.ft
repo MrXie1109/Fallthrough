@@ -1,0 +1,13 @@
+fn sum() int {
+    total int = 0;
+    i int = 1;
+    while (i <= 5) {
+        total = total + i;
+        i = i + 1;
+    }
+    return total;
+}
+
+fn main() int {
+    return sum();
+}

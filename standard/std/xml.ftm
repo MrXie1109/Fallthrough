@@ -1,0 +1,614 @@
+// XML: elements, attributes and text, as a document of nodes.
+//
+//     document XmlDocument = xml.parse(&text)?!;
+//     root XmlValue = document.root();
+//     name String = root.name();
+//     child XmlValue = root.child(0)?!;
+//     written String = xml.serialize(&root)?!;
+//
+// # Shapes
+//
+// The *document* owns the nodes, one array with child indices, exactly as
+// `std.json` does; an `XmlValue` is a document-and-index handle. A node has a
+// name, its attributes, its child element indices and its own text. Mixed
+// content keeps its text in one run: `<p>a<b/>c</p>` has the text `ac` on the
+// element, which is enough for configuration and documents, and is stated here
+// rather than pretended to be a full DOM.
+//
+// # The subset
+//
+// * elements, with attributes (`<a x="1">`);
+// * text, with the five named entities and numeric ones (`&#65;`, `&#x41;`);
+// * comments and the XML declaration are skipped;
+// * CDATA is not supported, and neither is a DTD: a parser that guesses is
+//   worse than one that refuses.
+//
+// # Errors
+//
+// Malformed XML raises `ValueError`: a tag that does not close, a mismatched
+// end tag, an attribute without a value, an unknown entity.
+
+import std.array;
+from std.array import Array;
+import std.optional;
+import std.string;
+from std.string import String;
+import std.unicode;
+import std.util;
+
+// One attribute: a name and a value.
+export type XmlAttribute {
+    // The attribute's name.
+    _name String;
+    // The attribute's value, with entities decoded.
+    _value String;
+}
+
+// Creates an empty attribute.
+export fn __init__(this &XmlAttribute) void {
+    (&this._name)->__init__();
+    (&this._value)->__init__();
+}
+
+// Copies an attribute.
+export fn __init__(this &XmlAttribute, other &const XmlAttribute) void {
+    (&this._name)->__init__(other._name);
+    (&this._value)->__init__(other._value);
+}
+
+// Takes an attribute's storage.
+export fn __init__(this &XmlAttribute, other &&XmlAttribute) void {
+    (&this._name)->__init__();
+    (&this._value)->__init__();
+    this._name = util.move(other._name);
+    this._value = util.move(other._value);
+}
+
+// Releases an attribute's storage.
+export fn __drop__(this &XmlAttribute) void {
+    (&this._name)->__drop__();
+    (&this._value)->__drop__();
+}
+
+// One element of the document.
+export type XmlNode {
+    // The element's name.
+    _name String;
+    // The attributes, in document order.
+    _attributes Array<XmlAttribute>;
+    // The child elements, in document order.
+    _children Array<u32>;
+    // The element's own text.
+    _text String;
+}
+
+// Creates an empty node.
+export fn __init__(this &XmlNode) void {
+    (&this._name)->__init__();
+    (&this._attributes)->__init__();
+    (&this._children)->__init__();
+    (&this._text)->__init__();
+}
+
+// Copies a node.
+export fn __init__(this &XmlNode, other &const XmlNode) void {
+    (&this._name)->__init__(other._name);
+    (&this._attributes)->__init__(other._attributes);
+    (&this._children)->__init__(other._children);
+    (&this._text)->__init__(other._text);
+}
+
+// Takes a node's storage.
+export fn __init__(this &XmlNode, other &&XmlNode) void {
+    (&this._name)->__init__();
+    (&this._attributes)->__init__();
+    (&this._children)->__init__();
+    (&this._text)->__init__();
+    this._name = util.move(other._name);
+    this._attributes = util.move(other._attributes);
+    this._children = util.move(other._children);
+    this._text = util.move(other._text);
+}
+
+// Releases a node's storage.
+export fn __drop__(this &XmlNode) void {
+    (&this._name)->__drop__();
+    (&this._attributes)->__drop__();
+    (&this._children)->__drop__();
+    (&this._text)->__drop__();
+}
+
+// A parsed XML document.
+export type XmlDocument {
+    // The nodes.
+    _nodes Array<XmlNode>;
+    // The root element's index.
+    _root u32;
+}
+
+// Creates an empty document.
+export fn __init__(this &XmlDocument) void {
+    (&this._nodes)->__init__();
+    this._root = 0u32;
+}
+
+// Moves a document's storage.
+export fn __init__(this &XmlDocument, other &&XmlDocument) void {
+    (&this._nodes)->__init__();
+    this._nodes = util.move(other._nodes);
+    this._root = other._root;
+}
+
+// Releases the nodes.
+export fn __drop__(this &XmlDocument) void {
+    (&this._nodes)->__drop__();
+}
+
+// The root element.
+export fn root(this &XmlDocument) XmlValue {
+    return XmlValue(this, this._root);
+}
+
+// Makes room for one node and returns its index.
+fn add_node(this &XmlDocument) u32 {
+    node XmlNode = XmlNode();
+    index u32 = this._nodes.length() as u32;
+    this._nodes.push(util.move(node));
+    return index;
+}
+
+// A handle to one element in a document.
+export type XmlValue {
+    // The document.
+    _document *XmlDocument;
+    // The node's index.
+    _index u32;
+}
+
+// Builds a handle.
+export fn __init__(this &XmlValue, document *XmlDocument, index u32) void {
+    this._document = document;
+    this._index = index;
+}
+
+// The node a handle names.
+fn node_of(this &const XmlValue) *XmlNode {
+    return &this._document._nodes[this._index as usize];
+}
+
+// The element's name.
+export fn name(this &const XmlValue) String {
+    return this.node_of()._name;
+}
+
+// The element's own text.
+export fn text(this &const XmlValue) String {
+    return this.node_of()._text;
+}
+
+// The number of child elements.
+export fn child_count(this &const XmlValue) usize {
+    return this.node_of()._children.length();
+}
+
+// The child element at `index`.
+export fn child(this &const XmlValue, index usize) XmlValue except {
+    if (index >= this.node_of()._children.length()) {
+        raise "ValueError": "the element has no such child";
+    }
+    return XmlValue(this._document, this.node_of()._children[index]);
+}
+
+// The number of attributes.
+export fn attribute_count(this &const XmlValue) usize {
+    return this.node_of()._attributes.length();
+}
+
+// The attribute's name at `index`.
+export fn attribute_name(this &const XmlValue, index usize) String except {
+    if (index >= this.node_of()._attributes.length()) {
+        raise "ValueError": "the element has no such attribute";
+    }
+    return this.node_of()._attributes[index]._name;
+}
+
+// The attribute's value at `index`.
+export fn attribute_value(this &const XmlValue, index usize) String except {
+    if (index >= this.node_of()._attributes.length()) {
+        raise "ValueError": "the element has no such attribute";
+    }
+    return this.node_of()._attributes[index]._value;
+}
+
+// The value of the attribute named `key`, or an absent optional.
+export fn attribute(this &const XmlValue, key &const String) ?String {
+    index usize = 0;
+    while (index < this.node_of()._attributes.length()) {
+        if (this.node_of()._attributes[index]._name == key) {
+            return optional.some<String>(this.node_of()._attributes[index]._value);
+        }
+        index += 1;
+    }
+    return optional.none<String>();
+}
+
+// The parser's state.
+type Parser {
+    _text String;
+    _index usize;
+    _document *XmlDocument;
+}
+
+// Creates a parser over `text`.
+fn __init__(this &Parser, text &const String, document *XmlDocument) void {
+    (&this._text)->__init__(text);
+    this._index = 0usize;
+    this._document = document;
+}
+
+// Parses XML text into a document.
+export fn parse_xml(text &const String) XmlDocument except {
+    document XmlDocument = XmlDocument();
+    parser Parser = Parser(text, &document);
+    parser.skip_miscellaneous()?!;
+    if (!parser.at('<')) {
+        raise "ValueError": "XML must start with an element";
+    }
+    root_index u32 = parser.parse_element()?!;
+    parser.skip_miscellaneous()?!;
+    if (parser._index != parser._text.length()) {
+        raise "ValueError": "trailing text after the root element";
+    }
+    document._root = root_index;
+    return document;
+}
+
+// Skips comments, the XML declaration and whitespace between elements.
+fn skip_miscellaneous(this &Parser) void except {
+    while (true) {
+        this.skip_space();
+        if (this.starts_with("<?") || this.starts_with("<!--")) {
+            if (this.starts_with("<?") ) {
+                this.skip_until("?>")?!;
+            } else {
+                this.skip_until("-->")?!;
+            }
+            continue;
+        }
+        return;
+    }
+}
+
+// Advances past `closing`, raising when the text ends first.
+fn skip_until(this &Parser, closing *const char) void except {
+    length usize = c_length(closing);
+    while (this._index + length <= this._text.length()) {
+        if (this.matches(closing)) {
+            this._index += length;
+            return;
+        }
+        this._index += 1;
+    }
+    raise "ValueError": "a comment or declaration is not closed";
+}
+
+// Whether the text at the parser matches `word`.
+fn matches(this &Parser, word *const char) bool {
+    length usize = c_length(word);
+    if (this._index + length > this._text.length()) {
+        return false;
+    }
+    index usize = 0;
+    while (index < length) {
+        if (this._text[this._index + index] != word[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Whether the text at the parser starts with `word`.
+fn starts_with(this &Parser, word *const char) bool {
+    return this.matches(word);
+}
+
+// Reads one element, returning its node index.
+fn parse_element(this &Parser) u32 except {
+    this.expect('<')?!;
+    index u32 = this._document->add_node();
+    node *XmlNode = &this._document->_nodes[index as usize];
+    node._name = this.parse_name()?!;
+    this.parse_attributes(node)?!;
+    this.skip_space();
+    if (this.at('/')) {
+        this._index += 1;
+        this.expect('>')?!;
+        return index;
+    }
+    this.expect('>')?!;
+    // Children and text, until this element's end tag.
+    while (true) {
+        if (this._index >= this._text.length()) {
+            raise "ValueError": "the element is not closed";
+        }
+        if (this.starts_with("</")) {
+            this._index += 2;
+            closing String = this.parse_name()?!;
+            if (!(closing == node._name)) {
+                raise "ValueError": "a closing tag does not match its element";
+            }
+            this.skip_space();
+            this.expect('>')?!;
+            node._text = trim_spaces(&node._text);
+            return index;
+        }
+        if (this.starts_with("<!--")) {
+            this.skip_until("-->")?!;
+            continue;
+        }
+        if (this.at('<')) {
+            child u32 = this.parse_element()?!;
+            node._children.push(child);
+            continue;
+        }
+        character String = this.parse_text_run()?!;
+        node._text.push(&character);
+    }
+}
+
+// Reads attributes into `node` until the tag's end.
+fn parse_attributes(this &Parser, node *XmlNode) void except {
+    while (true) {
+        this.skip_space();
+        if (this.at('>') || this.at('/')) {
+            return;
+        }
+        attribute_name String = this.parse_name()?!;
+        this.skip_space();
+        this.expect('=')?!;
+        this.skip_space();
+        character char = this._text[this._index];
+        if (character != '"' as char && character != '\'' as char) {
+            raise "ValueError": "an attribute value must be quoted";
+        }
+        this._index += 1;
+        start usize = this._index;
+        while (this._index < this._text.length() && this._text[this._index] != character) {
+            this._index += 1;
+        }
+        if (this._index >= this._text.length()) {
+            raise "ValueError": "an attribute value is not closed";
+        }
+        raw String = this._text.substring(start, this._index - start);
+        this._index += 1;
+        attribute XmlAttribute = XmlAttribute();
+        attribute._name = util.move(attribute_name);
+        attribute._value = decode_entities(&raw)?!;
+        node._attributes.push(util.move(attribute));
+    }
+}
+
+// Reads an element or attribute name.
+fn parse_name(this &Parser) String except {
+    start usize = this._index;
+    while (this._index < this._text.length()) {
+        character char = this._text[this._index];
+        if ((character >= 'a' as char && character <= 'z' as char)
+            || (character >= 'A' as char && character <= 'Z' as char)
+            || (character >= '0' as char && character <= '9' as char)
+            || character == '_' as char || character == '-' as char || character == ':' as char
+            || character == '.' as char)
+        {
+            this._index += 1;
+        } else {
+            break;
+        }
+    }
+    if (start == this._index) {
+        raise "ValueError": "expected a name";
+    }
+    return this._text.substring(start, this._index - start);
+}
+
+// Reads text up to the next `<`, decoding entities.
+fn parse_text_run(this &Parser) String except {
+    start usize = this._index;
+    while (this._index < this._text.length() && !this.at('<')) {
+        this._index += 1;
+    }
+    raw String = this._text.substring(start, this._index - start);
+    return decode_entities(&raw)?!;
+}
+
+// Decodes the entities a text or attribute value may contain.
+fn decode_entities(raw &const String) String except {
+    result String = String();
+    index usize = 0;
+    while (index < raw.length()) {
+        current char = raw[index];
+        if (current != '&' as char) {
+            result.push(current);
+            index += 1;
+            continue;
+        }
+        // Find the semicolon after the ampersand.
+        end usize = index + 1;
+        while (end < raw.length() && raw[end] != ';' as char) {
+            end += 1;
+        }
+        if (end >= raw.length()) {
+            raise "ValueError": "an entity is not closed";
+        }
+        entity String = raw.substring(index + 1, end - index - 1);
+        result.push(decode_entity(&entity)?!);
+        index = end + 1;
+    }
+    return result;
+}
+
+// Decodes one entity name or number.
+fn decode_entity(entity &const String) String except {
+    if (entity == String("lt")) {
+        return String("<");
+    }
+    if (entity == String("gt")) {
+        return String(">");
+    }
+    if (entity == String("amp")) {
+        return String("&");
+    }
+    if (entity == String("quot")) {
+        return String("\"");
+    }
+    if (entity == String("apos")) {
+        return String("'");
+    }
+    if (entity.length() > 1 && entity[0] == '#' as char) {
+        value u32 = 0u32;
+        if (entity[1] == 'x' as char) {
+            index usize = 2;
+            while (index < entity.length()) {
+                value = value * 16u32 + hex_digit(entity[index])?!;
+                index += 1;
+            }
+        } else {
+            index usize = 1;
+            while (index < entity.length()) {
+                value = value * 10u32 + ((entity[index] as int) - ('0' as int)) as u32;
+                index += 1;
+            }
+        }
+        return unicode.encode(value)?!;
+    }
+    raise "ValueError": "unknown XML entity";
+}
+
+// The value of one hex digit.
+fn hex_digit(character char) u32 except {
+    if (character >= '0' as char && character <= '9' as char) {
+        return ((character as int) - ('0' as int)) as u32;
+    }
+    if (character >= 'a' as char && character <= 'f' as char) {
+        return (((character as int) - ('a' as int)) + 10) as u32;
+    }
+    if (character >= 'A' as char && character <= 'F' as char) {
+        return (((character as int) - ('A' as int)) + 10) as u32;
+    }
+    raise "ValueError": "not a hex digit";
+}
+
+// Skips whitespace.
+fn skip_space(this &Parser) void {
+    while (this._index < this._text.length()) {
+        character char = this._text[this._index];
+        if (character == ' ' as char || character == '\t' as char
+            || character == '\n' as char || character == '\r' as char) {
+            this._index += 1;
+        } else {
+            return;
+        }
+    }
+}
+
+// Whether the parser is looking at `character`.
+fn at(this &Parser, character char) bool {
+    if (this._index >= this._text.length()) {
+        return false;
+    }
+    return this._text[this._index] == character;
+}
+
+// Consumes `character` or raises.
+fn expect(this &Parser, character char) void except {
+    if (!this.at(character)) {
+        raise "ValueError": "unexpected character";
+    }
+    this._index += 1;
+}
+
+// The string without its surrounding whitespace.
+fn trim_spaces(text &String) String {
+    start usize = 0;
+    while (start < text.length() && is_space(text[start])) {
+        start += 1;
+    }
+    end usize = text.length();
+    while (end > start && is_space(text[end - 1])) {
+        end -= 1;
+    }
+    return text.substring(start, end - start);
+}
+
+// Whether a character is whitespace.
+fn is_space(character char) bool {
+    return character == ' ' as char || character == '\t' as char
+        || character == '\n' as char || character == '\r' as char;
+}
+
+// The length of a C string.
+fn c_length(word *const char) usize {
+    length usize = 0;
+    while (word[length] != '\0') {
+        length += 1;
+    }
+    return length;
+}
+
+// Writes an element and its children as XML text.
+export fn serialize(value &const XmlValue) String except {
+    result String = String();
+    write_element(&result, value)?!;
+    return result;
+}
+
+// Appends one element.
+fn write_element(out &String, value &const XmlValue) void except {
+    node *XmlNode = value.node_of();
+    out.push('<');
+    out.push(node._name);
+    index usize = 0;
+    while (index < node._attributes.length()) {
+        out.push(' ');
+        out.push(node._attributes[index]._name);
+        out.push("=\"");
+        write_escaped(out, node._attributes[index]._value);
+        out.push('"');
+        index += 1;
+    }
+    if (node._children.empty() && node._text.empty()) {
+        out.push("/>");
+        return;
+    }
+    out.push('>');
+    write_escaped(out, node._text);
+    index = 0;
+    while (index < node._children.length()) {
+        child_value XmlValue = XmlValue(value._document, node._children[index]);
+        write_element(out, &child_value)?!;
+        index += 1;
+    }
+    out.push("</");
+    out.push(node._name);
+    out.push('>');
+}
+
+// Appends text with the five entities escaped.
+fn write_escaped(out &String, text_value &const String) void {
+    index usize = 0;
+    while (index < text_value.length()) {
+        character char = text_value[index];
+        if (character == '<' as char) {
+            out.push("&lt;");
+        } else if (character == '>' as char) {
+            out.push("&gt;");
+        } else if (character == '&' as char) {
+            out.push("&amp;");
+        } else if (character == '"' as char) {
+            out.push("&quot;");
+        } else {
+            out.push(character);
+        }
+        index += 1;
+    }
+}

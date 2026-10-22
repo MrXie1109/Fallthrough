@@ -1,0 +1,144 @@
+// Range tools that do not need a new type.
+//
+// The algorithms in `std.algorithm` are whole-range operations; these are the
+// small moves a loop makes on a pair of positions:
+//
+//     cursor *int = iter.advance(values.begin(), 2);
+//     stop *int = iter.skip(values.begin(), values.end(), 2);   // same thing
+//     first *int = iter.find_if(values.begin(), values.end(), odd);
+//
+// Each is one template over the iterator type, so a pointer range and a
+// `Deque`'s `ListIterator`-like class both work; the `@enable_if` says which
+// iterator operations the body needs.
+
+import std.iterator;
+
+// Moves `first` forward `count` steps, or to `last` if the range ends first.
+@enable_if(InputIterator(It))
+export
+template <It type>
+fn advance(first It, last It, count usize) It {
+    cursor It = first;
+    steps usize = 0;
+    while (steps < count && cursor != last) {
+        ++cursor;
+        steps += 1;
+    }
+    return cursor;
+}
+
+// The position after skipping `count` elements from `first`.
+@enable_if(InputIterator(It))
+export
+template <It type>
+fn skip(first It, last It, count usize) It {
+    return advance(first, last, count);
+}
+
+// The position after taking `count` elements from `first`.
+@enable_if(InputIterator(It))
+export
+template <It type>
+fn take(first It, last It, count usize) It {
+    return advance(first, last, count);
+}
+
+// The position of the first element a predicate accepts, or `last`.
+@enable_if(InputIterator(It))
+export
+template <It type, Pred type>
+fn find_if(first It, last It, predicate Pred) It {
+    check Pred = predicate;
+    cursor It = first;
+    while (cursor != last) {
+        if (check(*cursor)) {
+            return cursor;
+        }
+        ++cursor;
+    }
+    return last;
+}
+
+// How many elements a predicate accepts.
+@enable_if(InputIterator(It))
+export
+template <It type, Pred type>
+fn count_if(first It, last It, predicate Pred) usize {
+    check Pred = predicate;
+    total usize = 0;
+    cursor It = first;
+    while (cursor != last) {
+        if (check(*cursor)) {
+            total += 1;
+        }
+        ++cursor;
+    }
+    return total;
+}
+
+// Whether every element satisfies a predicate.
+@enable_if(InputIterator(It))
+export
+template <It type, Pred type>
+fn all_of(first It, last It, predicate Pred) bool {
+    check Pred = predicate;
+    cursor It = first;
+    while (cursor != last) {
+        if (!check(*cursor)) {
+            return false;
+        }
+        ++cursor;
+    }
+    return true;
+}
+
+// Whether any element satisfies a predicate.
+@enable_if(InputIterator(It))
+export
+template <It type, Pred type>
+fn any_of(first It, last It, predicate Pred) bool {
+    check Pred = predicate;
+    return find_if(first, last, check) != last;
+}
+
+// Whether no element satisfies a predicate.
+@enable_if(InputIterator(It))
+export
+template <It type, Pred type>
+fn none_of(first It, last It, predicate Pred) bool {
+    return !any_of(first, last, predicate);
+}
+
+// The position of the `index`th element, or `last` when the range is shorter.
+@enable_if(InputIterator(It))
+export
+template <It type>
+fn nth(first It, last It, index usize) It {
+    return advance(first, last, index);
+}
+
+// A predicate that accepts even numbers.
+export type Even {
+}
+
+// Creates the predicate.
+export fn __init__(this &Even) void {
+}
+
+// Answers whether `value` is even.
+export fn __call__(this &const Even, value &const int) bool {
+    return value % 2 == 0;
+}
+
+// A predicate that accepts odd numbers.
+export type Odd {
+}
+
+// Creates the predicate.
+export fn __init__(this &Odd) void {
+}
+
+// Answers whether `value` is odd.
+export fn __call__(this &const Odd, value &const int) bool {
+    return value % 2 != 0;
+}

@@ -1,0 +1,80 @@
+// Allocation, process control, and number conversion.
+//
+// Part of the C bindings: the declarations from `stdlib.h`.
+//
+// This module is not meant to be imported on its own. `standard/C.ftm` gathers
+// it with the others and re-exports everything, so `import C;` is what a
+// program writes and `C.printf` is what it calls.
+//
+// Every declaration is `export`, which is what makes it visible to the module
+// that re-exports it; a module's declarations are private by default.
+
+// The two values `exit` takes.
+//
+// They are constants of the module, so a program writes `C.EXIT_SUCCESS`, and
+// they are exported because a program that imported the umbrella must be able
+// to name them.
+export EXIT_SUCCESS const int = 0;
+export EXIT_FAILURE const int = 1;
+
+// -------------------------------------------------------------- stdlib.h
+
+// Allocates uninitialised memory.
+@extern_C export fn malloc(size usize) *byte;
+
+// Allocates zeroed memory.
+@extern_C export fn calloc(count usize, size usize) *byte;
+
+// Resizes an allocation.
+@extern_C export fn realloc(pointer *byte, size usize) *byte;
+
+// Releases an allocation.
+@extern_C export fn free(pointer *byte) void;
+
+// Parses an integer.
+@extern_C export fn atoi(text *const c8) int;
+
+// Parses a long integer.
+@extern_C export fn atol(text *const c8) i64;
+
+// Parses a floating-point number.
+@extern_C export fn atof(text *const c8) double;
+
+// Parses an integer, reporting where parsing stopped.
+@extern_C export fn strtol(text *const c8, end *c8, base int) i64;
+
+// Parses a floating-point number, reporting where parsing stopped.
+@extern_C export fn strtod(text *const c8, end *c8) double;
+
+// Exits the process.
+@extern_C export fn exit(status int) void;
+
+// Aborts the process.
+@extern_C export fn abort() void;
+
+// Returns the absolute value of an integer.
+@extern_C export fn abs(value int) int;
+
+// Returns the absolute value of a long integer.
+@extern_C export fn labs(value i64) i64;
+
+// Divides two integers.
+@extern_C export fn div(numerator int, denominator int) i64;
+
+// Generates a pseudo-random number.
+@extern_C export fn rand() int;
+
+// Seeds the pseudo-random generator.
+@extern_C export fn srand(seed u32) void;
+
+// Sorts an array in place.
+@extern_C export fn qsort(base *byte, count usize, size usize, compare *byte) void;
+
+// Searches a sorted array.
+@extern_C export fn bsearch(key *const byte, base *const byte, count usize, size usize, compare *byte) *byte;
+
+// Runs a command through the shell.
+@extern_C export fn system(command *const c8) int;
+
+// Reads an environment variable.
+@extern_C export fn getenv(name *const c8) *c8;

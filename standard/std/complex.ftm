@@ -1,0 +1,116 @@
+// Complex numbers, as a value type.
+//
+//     sum Complex = complex.add(.{ 1.0, 2.0 }, .{ 3.0, -4.0 });
+//     length f64 = sum.abs();
+//
+// A complex number is a pair of reals, so it is a two-field type: no allocation,
+// no ownership, and every operation returns a value. The arithmetic is the
+// textbook formulas, division included (multiply by the conjugate).
+
+import std.math;
+import std.string;
+from std.string import String;
+
+// A complex number `real + imaginary * i`.
+export type Complex {
+    // The real part.
+    re f64;
+    // The imaginary part.
+    im f64;
+}
+
+// Makes a complex number.
+export fn complex(real f64, imaginary f64) Complex {
+    return .{ real, imaginary };
+}
+
+// The imaginary unit.
+export fn i() Complex {
+    return .{ 0.0, 1.0 };
+}
+
+// Addition.
+export fn add(this &const Complex, second &const Complex) Complex {
+    return .{ this.re + second.re, this.im + second.im };
+}
+
+// Subtraction.
+export fn sub(this &const Complex, second &const Complex) Complex {
+    return .{ this.re - second.re, this.im - second.im };
+}
+
+// Multiplication: `(a+bi)(c+di) = (ac-bd) + (ad+bc)i`.
+export fn mul(this &const Complex, second &const Complex) Complex {
+    return .{
+        this.re * second.re - this.im * second.im,
+        this.re * second.im + this.im * second.re
+    };
+}
+
+// Division, by multiplying numerator and denominator by the conjugate.
+export fn div(this &const Complex, second &const Complex) Complex except {
+    denominator f64 = second.re * second.re + second.im * second.im;
+    if (denominator == 0.0) {
+        raise "ValueError": "division by zero";
+    }
+    return .{
+        (this.re * second.re + this.im * second.im) / denominator,
+        (this.im * second.re - this.re * second.im) / denominator
+    };
+}
+
+// The conjugate `a - bi`.
+export fn conjugate(this &const Complex) Complex {
+    return .{ this.re, -this.im };
+}
+
+// The magnitude.
+export fn abs(this &const Complex) f64 {
+    return math.hypot(this.re, this.im);
+}
+
+// The argument: the angle from the positive real axis, in radians.
+export fn arg(this &const Complex) f64 {
+    return math.atan2(this.im, this.re);
+}
+
+// The square of the magnitude, which avoids a square root.
+export fn norm_squared(this &const Complex) f64 {
+    return this.re * this.re + this.im * this.im;
+}
+
+// `value` raised to a real power, through polar form.
+export fn pow(this &const Complex, exponent f64) Complex except {
+    magnitude f64 = this.abs();
+    if (magnitude == 0.0) {
+        if (exponent == 0.0) {
+            return .{ 1.0, 0.0 };
+        }
+        return .{ 0.0, 0.0 };
+    }
+    angle f64 = this.arg() * exponent;
+    scale f64 = math.pow(magnitude, exponent);
+    return .{ scale * math.cos(angle), scale * math.sin(angle) };
+}
+
+// Whether two complex numbers are equal.
+export fn __eq__(this &const Complex, other &const Complex) bool {
+    return this.re == other.re && this.im == other.im;
+}
+
+// Whether two complex numbers differ.
+export fn __ne__(this &const Complex, other &const Complex) bool {
+    return !(this == other);
+}
+
+// `a + bi`, so `{}` prints it.
+export fn __str__(this &const Complex) String {
+    text String = String();
+    text.push(str(this.re));
+    if (this.im >= 0.0) {
+        text.push("+");
+    }
+    text.push(str(this.im));
+    text.push("i");
+    return text;
+}

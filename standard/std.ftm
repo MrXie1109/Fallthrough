@@ -1,0 +1,69 @@
+// The standard library.
+//
+// This module is an umbrella: the pieces live in `standard/std/`, and this file
+// gathers them and re-exports everything. A program writes `import std;` and
+// reaches `std.String`, `std.panic`, and the allocation functions alike.
+//
+// The pieces are named after what they are rather than after what they contain,
+// so a program that only wants allocation can `import std.util;` and get
+// nothing else.
+
+export from std.type_traits import *;
+export from std.error import *;
+export from std.optional import *;
+export from std.bytes import *;
+export from std.basic_string import *;
+export from std.any import *;
+export from std.tuple import *;
+export from std.variant import *;
+export from std.time import *;
+export from std.log import *;
+export from std.concurrent import *;
+export from std.bitset import *;
+export from std.ring import *;
+export from std.list import *;
+export from std.encoding import *;
+export from std.unicode import *;
+export from std.strings import *;
+export from std.grid import *;
+export from std.range import *;
+export from std.iter import *;
+export from std.json import *;
+export from std.csv import *;
+export from std.toml import *;
+export from std.xml import *;
+export from std.process import *;
+export from std.term import *;
+export from std.signal import *;
+export from std.dynlib import *;
+export from std.compress import *;
+export from std.regex import *;
+export from std.net import *;
+export from std.rand_dist import *;
+export from std.uuid import *;
+export from std.matrix import *;
+export from std.debug import *;
+export from std.test import *;
+export from std.test import assert_true;
+export from std.complex import *;
+export from std.crypto import *;
+export from std.crc import *;
+export from std.string import *;
+export from std.array import *;
+export from std.memory import *;
+export from std.util import *;
+export from std.iterator import *;
+export from std.io import *;
+export from std.tree import *;
+export from std.hash import *;
+export from std.deque import *;
+export from std.heap import *;
+export from std.sync import *;
+export from std.fs import *;
+export from std.math import *;
+export from std.algorithm import *;
+export from std.random import *;
+
+// The wider character strings: the same operations over a different code unit.
+export type String16 = BasicString<u16>;
+export type String32 = BasicString<u32>;

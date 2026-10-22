@@ -1,0 +1,143 @@
+// Logging: named levels, one line each, a filter, and a stream.
+//
+//     std.log.info("starting on {}\n"? no -- the line break is the logger's);
+//     log.info("starting with {} items", count)?!;
+//
+// A log line is `[LEVEL] text`, written to standard error by default. The
+// level filter is one number: a message below the current level is dropped
+// before its text is built, so a disabled debug line costs nothing.
+//
+//     log.set_level(std.log.Level.DEBUG);
+//     log.debug("value = {}", value)?!;
+//
+// The stream is `std.err` unless the program changes it, which is what makes a
+// test or a daemon able to send logs elsewhere without every call changing.
+//
+// # Threads
+//
+// Writing is not synchronised here: a line from two threads may interleave. The
+// caller that needs whole lines from several threads wraps its logging in a
+// mutex; a logger with a lock of its own would be the same lock one level up.
+
+import std.io;
+from std.io import File, err;
+import std.string;
+from std.string import String;
+
+// How loud a message is.
+//
+// The numbers are ordered: a larger one is more important. `OFF` silences
+// everything, and is the value `set_level` takes to do it.
+export enum Level int {
+    // For the finest step-by-step detail.
+    TRACE,
+    // For development detail.
+    DEBUG,
+    // For the ordinary running commentary.
+    INFO,
+    // For something surprising that is handled.
+    WARN,
+    // For a failure.
+    ERROR,
+    // Not a message level: silences the logger.
+    OFF,
+}
+
+// Where the lines go.
+_target *File;
+
+// The lowest level that is written.
+_level int;
+
+// Points the logger at standard error and the ordinary level.
+__setup__ {
+    _target = &err;
+    _level = 2;
+}
+
+// Sets the lowest level that is written.
+export fn set_level(level Level) void {
+    _level = level as int;
+}
+
+// The lowest level that is written.
+export fn level() Level {
+    return _level as Level;
+}
+
+// Sends the lines somewhere other than standard error.
+export fn set_target(target *File) void {
+    _target = target;
+}
+
+// The text a level writes in front of its lines.
+export fn level_name(level Level) String {
+    if (level == Level.TRACE) {
+        return String("TRACE");
+    }
+    if (level == Level.DEBUG) {
+        return String("DEBUG");
+    }
+    if (level == Level.INFO) {
+        return String("INFO");
+    }
+    if (level == Level.WARN) {
+        return String("WARN");
+    }
+    return String("ERROR");
+}
+
+// Whether a message at `level` is written.
+export fn enabled(level Level) bool {
+    return (level as int) >= _level;
+}
+
+// Writes one line at `level`, if the level is enabled.
+//
+// The format rule is `std.print`'s: `{}` in the first argument stands for the
+// following values. The line ends with a newline the logger supplies.
+export
+template <Ts ...type>
+fn write(level Level, values ...Ts) void except {
+    if (!enabled(level)) {
+        return;
+    }
+    _target.print("[{}] ", level_name(level))?!;
+    _target.print(values...)?!;
+    _target.print("\n")?!;
+}
+
+// Writes a trace line.
+export
+template <Ts ...type>
+fn trace(values ...Ts) void except {
+    write(Level.TRACE, values...)?!;
+}
+
+// Writes a debug line.
+export
+template <Ts ...type>
+fn debug(values ...Ts) void except {
+    write(Level.DEBUG, values...)?!;
+}
+
+// Writes an info line.
+export
+template <Ts ...type>
+fn info(values ...Ts) void except {
+    write(Level.INFO, values...)?!;
+}
+
+// Writes a warning line.
+export
+template <Ts ...type>
+fn warn(values ...Ts) void except {
+    write(Level.WARN, values...)?!;
+}
+
+// Writes an error line.
+export
+template <Ts ...type>
+fn error(values ...Ts) void except {
+    write(Level.ERROR, values...)?!;
+}

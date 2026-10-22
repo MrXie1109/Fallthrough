@@ -1,0 +1,14 @@
+fn sizes() isize {
+    return 1;
+}
+
+fn counts() usize {
+    return 2;
+}
+
+fn main() int {
+    a isize = 1;
+    b usize = 2;
+    c byte = 3;
+    return 0;
+}

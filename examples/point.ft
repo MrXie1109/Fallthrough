@@ -1,0 +1,21 @@
+import C;
+
+type Point {
+    x int;
+    y int;
+}
+
+fn __init__(this &Point, x int, y int) void {
+    this.x = x;
+    this.y = y;
+}
+
+fn show(this &const Point) void {
+    C.printf("(%d, %d)\n", this.x, this.y);
+}
+
+fn main() int {
+    p Point = .{42, 37};
+    p.show();
+    return 0;
+}

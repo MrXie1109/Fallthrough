@@ -1,0 +1,1562 @@
+// Trees: an ordered map, the red-black tree it is built on, and the four
+// containers that wrap it.
+//
+// A tree keeps its keys in order, so a walk visits them sorted and a lookup is
+// logarithmic. The order is a *type*: `Less<K>` is `<`, and any type with a
+// `__call__(a &const K, b &const K) bool` may stand in its place, which is what
+// makes a set of a type the language does not know how to compare possible.
+//
+// The four containers are one tree with a different surface: `TMap` and `TSet`
+// hold one value per key, and `TMMap`/`TMSet` hold any number of them.
+
+// The allocator's methods are named by the bodies below -- `this.mem.alloc(..)` --
+// and a name has to be in scope where it is written. An imported *type* does not
+// bring its methods: the family that names them imports them too.
+from std.memory import DefaultAllocator, alloc, free;
+import std.memory;
+from std.util import Unit;
+import std.util as util;
+
+// ------------------------------------------------------------------- order
+
+// What a type has to provide to order the elements of a container.
+//
+// One method is the whole contract: `less(a, b)` answers whether `a` comes
+// before `b`. A strict weak order is what the tree needs, so `less(a, a)` has to
+// be false and `less(a, b) && less(b, c)` has to imply `less(a, c)`; the tree
+// relies on it rather than checking it.
+export traits Compare(it C, value E) {
+    it(*const E, *const E) -> bool,
+}
+
+// The default order: `<`.
+//
+// Every type that takes part in `<` -- the integers, the floats, `String`,
+// pointers -- is ordered by it, and a declared type joins in by defining
+// `__lt__`.
+export
+template <E type>
+type Less {
+}
+
+// Answers whether `a` comes before `b` under `<`.
+export
+template <E type>
+fn __call__(this &const Less<E>, a &const E, b &const E) bool {
+    return a < b;
+}
+
+// The reverse order: the larger element comes first.
+//
+// A container takes its order as a type, so this is how a descending map is
+// spelled: `TMap<String, int, Greater<String>>`.
+export
+template <E type>
+type Greater {
+}
+
+// Answers whether `a` comes after `b`.
+export
+template <E type>
+fn __call__(this &const Greater<E>, a &const E, b &const E) bool {
+    return b < a;
+}
+
+// -------------------------------------------------------------------- tree
+
+// One node of the tree.
+//
+// A link is a pointer to a node, and a pointer needs only the name: the member
+// being built is already a type when its fields are resolved, incomplete, which
+// is all a pointee has to be. The key and the value are constructed in place,
+// because the node's storage is raw memory from the allocator.
+export
+template <K type, V type>
+type TreeNode {
+    // The node's key, which is what the order is about.
+    key K;
+    // The node's value. A set stores a `Unit` here.
+    value V;
+    // Whether the node is red. A black node is the default, so a new node is red
+    // and the fix-up decides where that is allowed.
+    red bool;
+    // The left child, or null.
+    left *TreeNode<K, V>;
+    // The right child, or null.
+    right *TreeNode<K, V>;
+    // The parent, or null at the root.
+    parent *TreeNode<K, V>;
+}
+
+// An ordered map from keys to values, as a red-black tree.
+//
+// This is the structure the four containers share; a program that wants a map
+// writes `TMap`, which wraps it.
+//
+// The invariants are the classical ones: every node is red or black, the root is
+// black, a red node's children are black, and every path from a node to a null
+// child has the same number of black nodes. Together they bound the height at
+// twice the black height, which is what keeps every operation logarithmic.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+type RBTree {
+    // The root, or null in an empty tree.
+    root *TreeNode<K, V>;
+    // How many entries the tree holds.
+    _count usize;
+    // The allocator the nodes come from.
+    mem A;
+    // The order.
+    cmp Cmp;
+}
+
+// Creates an empty tree.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &RBTree<K, V, Cmp, A>) void {
+    this.root = nullptr;
+    this._count = 0;
+    order Cmp = .{};
+    this.cmp = util.move(order);
+    this.mem = .{};
+}
+
+// Creates an empty tree with an order and an allocator of its caller's.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &RBTree<K, V, Cmp, A>, order Cmp, memory A) void {
+    this.root = nullptr;
+    this._count = 0;
+    this.cmp = order;
+    this.mem = memory;
+}
+
+// Destroys every node.
+//
+// The walk is iterative, and it is deliberately so: a recursive helper would be
+// a template that calls itself, and a member of a family is instantiated by the
+// call that needs it, so the body would be checked again before the instantiation
+// was recorded.
+//
+// Children are taken before the node they hang from, and the link that led down
+// is cut on the way back up, so each node is visited once.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn clear(this &RBTree<K, V, Cmp, A>) void {
+    node *TreeNode<K, V> = this.root;
+    while (node != nullptr) {
+        if (node->left != nullptr) {
+            node = node->left;
+        } else if (node->right != nullptr) {
+            node = node->right;
+        } else {
+            above *TreeNode<K, V> = node->parent;
+            if (above != nullptr) {
+                if (above->left == node) {
+                    above->left = nullptr;
+                } else {
+                    above->right = nullptr;
+                }
+            }
+            node->__drop__();
+            this.mem.free(node as *byte);
+            node = above;
+        }
+    }
+    this.root = nullptr;
+    this._count = 0;
+}
+
+// Copies every entry of `node`'s subtree into this tree.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn copy_nodes(this &RBTree<K, V, Cmp, A>, node *const TreeNode<K, V>) void {
+    if (node == nullptr) {
+        return;
+    }
+    this.copy_nodes(node->left);
+    this.insert_multi(node->key, node->value);
+    this.copy_nodes(node->right);
+}
+
+// Copies another tree, nodes and all.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &RBTree<K, V, Cmp, A>, other &const RBTree<K, V, Cmp, A>) void {
+    this.root = nullptr;
+    this._count = 0;
+    order Cmp = .{};
+    this.cmp = util.move(order);
+    this.mem = .{};
+    this.cmp = other.cmp;
+    this.mem = other.mem;
+    this.copy_nodes(other.root);
+}
+
+// Takes another tree's nodes.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &RBTree<K, V, Cmp, A>, other &&RBTree<K, V, Cmp, A>) void {
+    this.root = other.root;
+    this._count = other._count;
+    this.cmp = util.move(other.cmp);
+    this.mem = util.move(other.mem);
+    other.root = nullptr;
+    other._count = 0;
+}
+
+// Copies another tree over this one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &RBTree<K, V, Cmp, A>, other &const RBTree<K, V, Cmp, A>) void {
+    if (this.root == other.root) {
+        return;
+    }
+    this.clear();
+    this.cmp = other.cmp;
+    this.mem = other.mem;
+    this.copy_nodes(other.root);
+}
+
+// Takes another tree's nodes over this one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &RBTree<K, V, Cmp, A>, other &&RBTree<K, V, Cmp, A>) void {
+    if (this.root == other.root) {
+        return;
+    }
+    this.clear();
+    this.root = other.root;
+    this._count = other._count;
+    this.cmp = util.move(other.cmp);
+    this.mem = util.move(other.mem);
+    other.root = nullptr;
+    other._count = 0;
+}
+
+// Destroys the tree with its nodes.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __drop__(this &RBTree<K, V, Cmp, A>) void {
+    this.clear();
+}
+
+// Returns how many entries the tree holds.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn length(this &const RBTree<K, V, Cmp, A>) usize {
+    return this._count;
+}
+
+// Returns `true` when the tree holds nothing.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn empty(this &const RBTree<K, V, Cmp, A>) bool {
+    return this._count == 0;
+}
+
+// Moves `node` up over its parent, which is the left rotation.
+//
+// The subtree's in-order sequence is unchanged: the parent's right child becomes
+// the node's left child, and the node takes the parent's place.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn rotate_left(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
+    above *TreeNode<K, V> = node->right;
+    // The risen node lends its left subtree to the sinking one, and it is the
+    // sinking node's *right* that takes it: that is where the risen node stood.
+    node->right = above->left;
+    if (node->right != nullptr) {
+        node->right->parent = node;
+    }
+    above->parent = node->parent;
+    if (node->parent == nullptr) {
+        this.root = above;
+    } else if (node == node->parent->left) {
+        node->parent->left = above;
+    } else {
+        node->parent->right = above;
+    }
+    above->left = node;
+    node->parent = above;
+}
+
+// Moves `node` up over its parent, the other way.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn rotate_right(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
+    above *TreeNode<K, V> = node->left;
+    // The mirror of `rotate_left`: the risen node lends its right subtree, and
+    // it is the sinking node's *left* that takes it.
+    node->left = above->right;
+    if (node->left != nullptr) {
+        node->left->parent = node;
+    }
+    above->parent = node->parent;
+    if (node->parent == nullptr) {
+        this.root = above;
+    } else if (node == node->parent->right) {
+        node->parent->right = above;
+    } else {
+        node->parent->left = above;
+    }
+    above->right = node;
+    node->parent = above;
+}
+
+// Restores the red-black invariants after an insertion.
+//
+// A new node is red. A red node under a red parent is the only violation, and it
+// is repaired by recolouring the uncle or by rotating the parent and the
+// grandparent; each step moves the violation up, so the walk ends at the root,
+// which is painted black.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert_fixup(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
+    while (node->parent != nullptr && node->parent->red) {
+        if (node->parent == (node->parent->parent)->left) {
+            uncle *TreeNode<K, V> = (node->parent->parent)->right;
+            if (uncle != nullptr && uncle->red) {
+                node->parent->red = false;
+                uncle->red = false;
+                node->parent->parent->red = true;
+                node = node->parent->parent;
+            } else {
+                if (node == node->parent->right) {
+                    node = node->parent;
+                    this.rotate_left(node);
+                }
+                node->parent->red = false;
+                node->parent->parent->red = true;
+                this.rotate_right(node->parent->parent);
+            }
+        } else {
+            uncle *TreeNode<K, V> = (node->parent->parent)->left;
+            if (uncle != nullptr && uncle->red) {
+                node->parent->red = false;
+                uncle->red = false;
+                node->parent->parent->red = true;
+                node = node->parent->parent;
+            } else {
+                if (node == node->parent->left) {
+                    node = node->parent;
+                    this.rotate_right(node);
+                }
+                node->parent->red = false;
+                node->parent->parent->red = true;
+                this.rotate_left(node->parent->parent);
+            }
+        }
+    }
+    this.root->red = false;
+}
+
+// Adds one entry, replacing the value when the key is already there.
+//
+// Returns the node that holds the key. The key itself is not replaced: a map's
+// keys are what the order is about, and replacing one could move it.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
+    existing *TreeNode<K, V> = this.find(key);
+    if (existing != nullptr) {
+        existing->value = util.move(value);
+        return existing;
+    }
+    return this.insert_new(util.move(key), util.move(value));
+}
+
+// Adds one entry whether or not the key is already there.
+//
+// This is what a multi-container is: one entry per call, in order.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert_multi(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
+    return this.insert_new(util.move(key), util.move(value));
+}
+
+// Adds an entry that is known to be new.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert_new(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
+    order Cmp = this.cmp;
+    node *TreeNode<K, V> = this.mem.alloc(sizeof(TreeNode<K, V>)) as *TreeNode<K, V>;
+    (&node->key)->__init__(util.move(key));
+    (&node->value)->__init__(util.move(value));
+    node->red = true;
+    node->left = nullptr;
+    node->right = nullptr;
+    node->parent = nullptr;
+    below *TreeNode<K, V> = nullptr;
+    walk *TreeNode<K, V> = this.root;
+    while (walk != nullptr) {
+        below = walk;
+        if (order(node->key, walk->key)) {
+            walk = walk->left;
+        } else {
+            walk = walk->right;
+        }
+    }
+    node->parent = below;
+    if (below == nullptr) {
+        this.root = node;
+    } else if (order(node->key, below->key)) {
+        below->left = node;
+    } else {
+        below->right = node;
+    }
+    this._count += 1;
+    this.insert_fixup(node);
+    return node;
+}
+
+// Returns the node holding `key`, or null.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn find(this &const RBTree<K, V, Cmp, A>, key &const K) *const TreeNode<K, V> {
+    order Cmp = this.cmp;
+    walk *TreeNode<K, V> = this.root;
+    while (walk != nullptr) {
+        if (order(key, walk->key)) {
+            walk = walk->left;
+        } else if (order(walk->key, key)) {
+            walk = walk->right;
+        } else {
+            return walk;
+        }
+    }
+    return nullptr;
+}
+
+// Returns the node holding `key`, for writing, or null.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn find(this &RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
+    order Cmp = this.cmp;
+    walk *TreeNode<K, V> = this.root;
+    while (walk != nullptr) {
+        if (order(key, walk->key)) {
+            walk = walk->left;
+        } else if (order(walk->key, key)) {
+            walk = walk->right;
+        } else {
+            return walk;
+        }
+    }
+    return nullptr;
+}
+
+// Returns `true` when the key is there.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn contains(this &const RBTree<K, V, Cmp, A>, key &const K) bool {
+    return this.find(key) != nullptr;
+}
+
+// Returns how many entries have this key.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn count(this &const RBTree<K, V, Cmp, A>, key &const K) usize {
+    order Cmp = this.cmp;
+    total usize = 0;
+    walk *TreeNode<K, V> = this.lower_bound(key);
+    while (walk != nullptr && !order(key, walk->key)) {
+        total += 1;
+        walk = successor(walk);
+    }
+    return total;
+}
+
+// Returns the first node whose key is not less than `key`, or null.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn lower_bound(this &const RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
+    order Cmp = this.cmp;
+    found *TreeNode<K, V> = nullptr;
+    walk *TreeNode<K, V> = this.root;
+    while (walk != nullptr) {
+        if (order(walk->key, key)) {
+            walk = walk->right;
+        } else {
+            found = walk;
+            walk = walk->left;
+        }
+    }
+    return found;
+}
+
+// Returns the first node whose key is greater than `key`, or null.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn upper_bound(this &const RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
+    order Cmp = this.cmp;
+    found *TreeNode<K, V> = nullptr;
+    walk *TreeNode<K, V> = this.root;
+    while (walk != nullptr) {
+        if (order(key, walk->key)) {
+            found = walk;
+            walk = walk->left;
+        } else {
+            walk = walk->right;
+        }
+    }
+    return found;
+}
+
+// Removes the entry with this key, and returns whether there was one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase(this &RBTree<K, V, Cmp, A>, key &const K) bool {
+    node *TreeNode<K, V> = this.find(key);
+    if (node == nullptr) {
+        return false;
+    }
+    this.remove_node(node);
+    return true;
+}
+
+// Removes every entry with this key, and returns how many there were.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase_all(this &RBTree<K, V, Cmp, A>, key &const K) usize {
+    removed usize = 0;
+    while (true) {
+        node *TreeNode<K, V> = this.find(key);
+        if (node == nullptr) {
+            break;
+        }
+        this.remove_node(node);
+        removed += 1;
+    }
+    return removed;
+}
+
+// The leftmost node of the subtree rooted at `node`.
+template <K type, V type>
+fn minimum(node *TreeNode<K, V>) *TreeNode<K, V> {
+    walk *TreeNode<K, V> = node;
+    while (walk != nullptr && walk->left != nullptr) {
+        walk = walk->left;
+    }
+    return walk;
+}
+
+// The rightmost node of the subtree rooted at `node`.
+template <K type, V type>
+fn maximum(node *TreeNode<K, V>) *TreeNode<K, V> {
+    walk *TreeNode<K, V> = node;
+    while (walk != nullptr && walk->right != nullptr) {
+        walk = walk->right;
+    }
+    return walk;
+}
+
+// The node that comes after `node` in order, or null at the end.
+template <K type, V type>
+fn successor(node *TreeNode<K, V>) *TreeNode<K, V> {
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (node->right != nullptr) {
+        return minimum(node->right);
+    }
+    walk *TreeNode<K, V> = node;
+    above *TreeNode<K, V> = walk->parent;
+    while (above != nullptr && walk == above->right) {
+        walk = above;
+        above = above->parent;
+    }
+    return above;
+}
+
+// The node that comes before `node` in order, or null at the beginning.
+template <K type, V type>
+fn predecessor(node *TreeNode<K, V>) *TreeNode<K, V> {
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (node->left != nullptr) {
+        return maximum(node->left);
+    }
+    walk *TreeNode<K, V> = node;
+    above *TreeNode<K, V> = walk->parent;
+    while (above != nullptr && walk == above->left) {
+        walk = above;
+        above = above->parent;
+    }
+    return above;
+}
+
+// Puts `replacement` where `node` is.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn transplant(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>, replacement *TreeNode<K, V>) void {
+    if (node->parent == nullptr) {
+        this.root = replacement;
+    } else if (node == node->parent->left) {
+        node->parent->left = replacement;
+    } else {
+        node->parent->right = replacement;
+    }
+    if (replacement != nullptr) {
+        replacement->parent = node->parent;
+    }
+}
+
+// Removes one node and restores the invariants.
+//
+// Removing a black node shortens every path through it by one black node, which
+// the fix-up repairs by borrowing a black node from a sibling or by pushing the
+// deficit up. The child that takes the removed node's place may be null, so its
+// parent is what the walk follows.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn remove_node(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
+    removed *TreeNode<K, V> = node;
+    removed_red bool = removed->red;
+    child *TreeNode<K, V> = nullptr;
+    above *TreeNode<K, V> = nullptr;
+    if (node->left == nullptr) {
+        child = node->right;
+        above = node->parent;
+        this.transplant(node, node->right);
+    } else if (node->right == nullptr) {
+        child = node->left;
+        above = node->parent;
+        this.transplant(node, node->left);
+    } else {
+        removed = minimum(node->right);
+        removed_red = removed->red;
+        child = removed->right;
+        if (removed->parent == node) {
+            above = removed;
+            if (child != nullptr) {
+                child->parent = removed;
+            }
+        } else {
+            above = removed->parent;
+            this.transplant(removed, removed->right);
+            removed->right = node->right;
+            removed->right->parent = removed;
+        }
+        this.transplant(node, removed);
+        removed->left = node->left;
+        removed->left->parent = removed;
+        removed->red = node->red;
+    }
+    node->__drop__();
+    this.mem.free(node as *byte);
+    this._count -= 1;
+    if (!removed_red) {
+        this.erase_fixup(child, above);
+    }
+}
+
+// Restores the invariants after a removal.
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase_fixup(this &RBTree<K, V, Cmp, A>, start *TreeNode<K, V>, start_parent *TreeNode<K, V>) void {
+    node *TreeNode<K, V> = start;
+    above *TreeNode<K, V> = start_parent;
+    while (node != this.root && (node == nullptr || !node->red)) {
+        if (above == nullptr) {
+            break;
+        }
+        if (node == above->left) {
+            sibling *TreeNode<K, V> = above->right;
+            if (sibling != nullptr && sibling->red) {
+                sibling->red = false;
+                above->red = true;
+                this.rotate_left(above);
+                sibling = above->right;
+            }
+            if (sibling == nullptr) {
+                node = above;
+                above = above->parent;
+                continue;
+            }
+            left_black bool = sibling->left == nullptr || !sibling->left->red;
+            right_black bool = sibling->right == nullptr || !sibling->right->red;
+            if (left_black && right_black) {
+                sibling->red = true;
+                node = above;
+                above = above->parent;
+            } else {
+                if (right_black) {
+                    if (sibling->left != nullptr) {
+                        sibling->left->red = false;
+                    }
+                    sibling->red = true;
+                    this.rotate_right(sibling);
+                    sibling = above->right;
+                }
+                sibling->red = above->red;
+                above->red = false;
+                if (sibling->right != nullptr) {
+                    sibling->right->red = false;
+                }
+                this.rotate_left(above);
+                node = this.root;
+                above = nullptr;
+            }
+        } else {
+            sibling *TreeNode<K, V> = above->left;
+            if (sibling != nullptr && sibling->red) {
+                sibling->red = false;
+                above->red = true;
+                this.rotate_right(above);
+                sibling = above->left;
+            }
+            if (sibling == nullptr) {
+                node = above;
+                above = above->parent;
+                continue;
+            }
+            left_black bool = sibling->left == nullptr || !sibling->left->red;
+            right_black bool = sibling->right == nullptr || !sibling->right->red;
+            if (left_black && right_black) {
+                sibling->red = true;
+                node = above;
+                above = above->parent;
+            } else {
+                if (left_black) {
+                    if (sibling->right != nullptr) {
+                        sibling->right->red = false;
+                    }
+                    sibling->red = true;
+                    this.rotate_left(sibling);
+                    sibling = above->left;
+                }
+                sibling->red = above->red;
+                above->red = false;
+                if (sibling->left != nullptr) {
+                    sibling->left->red = false;
+                }
+                this.rotate_right(above);
+                node = this.root;
+                above = nullptr;
+            }
+        }
+    }
+    if (node != nullptr) {
+        node->red = false;
+    }
+}
+
+// ----------------------------------------------------------------- iterators
+
+// A position in a map, which walks the entries in key order.
+//
+// `*it` is the mapped value and `it.key()` is the key, so a map is walked without
+// building a pair for every step. `++` and `--` are the node's own links, so a
+// walk needs no stack.
+export
+template <K type, V type>
+type MapIterator {
+    // The node the iterator stands on, or null at the end.
+    node *TreeNode<K, V>;
+}
+
+// Creates an iterator that stands nowhere, which is how `end()` is written.
+export
+template <K type, V type>
+fn __init__(this &MapIterator<K, V>) void {
+    this.node = nullptr;
+}
+
+// Creates an iterator standing on a node.
+export
+template <K type, V type>
+fn __init__(this &MapIterator<K, V>, node *TreeNode<K, V>) void {
+    this.node = node;
+}
+
+// Moves to the next key.
+export
+template <K type, V type>
+fn __inc__(this &MapIterator<K, V>) void {
+    this.node = successor(this.node);
+}
+
+// Moves to the previous key.
+export
+template <K type, V type>
+fn __dec__(this &MapIterator<K, V>) void {
+    this.node = predecessor(this.node);
+}
+
+// The mapped value at this position, for writing.
+export
+template <K type, V type>
+fn __deref__(this &MapIterator<K, V>) &V {
+    return &this.node->value;
+}
+
+// The key at this position, for reading.
+export
+template <K type, V type>
+fn key(this &const MapIterator<K, V>) &const K {
+    return &this.node->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type, V type>
+fn __eq__(this &const MapIterator<K, V>, other &const MapIterator<K, V>) bool {
+    return this.node == other.node;
+}
+
+// Whether two positions differ.
+export
+template <K type, V type>
+fn __ne__(this &const MapIterator<K, V>, other &const MapIterator<K, V>) bool {
+    return this.node != other.node;
+}
+
+// A position in a map, read only.
+export
+template <K type, V type>
+type ConstMapIterator {
+    // The node the iterator stands on, or null at the end.
+    node *const TreeNode<K, V>;
+}
+
+// Creates an iterator that stands nowhere.
+export
+template <K type, V type>
+fn __init__(this &ConstMapIterator<K, V>) void {
+    this.node = nullptr;
+}
+
+// Creates an iterator standing on a node.
+export
+template <K type, V type>
+fn __init__(this &ConstMapIterator<K, V>, node *const TreeNode<K, V>) void {
+    this.node = node;
+}
+
+// Moves to the next key.
+export
+template <K type, V type>
+fn __inc__(this &ConstMapIterator<K, V>) void {
+    this.node = successor(this.node as *TreeNode<K, V>) as *const TreeNode<K, V>;
+}
+
+// Moves to the previous key.
+export
+template <K type, V type>
+fn __dec__(this &ConstMapIterator<K, V>) void {
+    this.node = predecessor(this.node as *TreeNode<K, V>) as *const TreeNode<K, V>;
+}
+
+// The mapped value at this position, for reading.
+export
+template <K type, V type>
+fn __deref__(this &const ConstMapIterator<K, V>) &const V {
+    return &this.node->value;
+}
+
+// The key at this position, for reading.
+export
+template <K type, V type>
+fn key(this &const ConstMapIterator<K, V>) &const K {
+    return &this.node->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type, V type>
+fn __eq__(this &const ConstMapIterator<K, V>, other &const ConstMapIterator<K, V>) bool {
+    return this.node == other.node;
+}
+
+// Whether two positions differ.
+export
+template <K type, V type>
+fn __ne__(this &const ConstMapIterator<K, V>, other &const ConstMapIterator<K, V>) bool {
+    return this.node != other.node;
+}
+
+// A position in a set, which walks the keys in order.
+export
+template <K type>
+type SetIterator {
+    // The node the iterator stands on, or null at the end.
+    node *TreeNode<K, Unit>;
+}
+
+// Creates an iterator that stands nowhere.
+export
+template <K type>
+fn __init__(this &SetIterator<K>) void {
+    this.node = nullptr;
+}
+
+// Creates an iterator standing on a node.
+export
+template <K type>
+fn __init__(this &SetIterator<K>, node *TreeNode<K, Unit>) void {
+    this.node = node;
+}
+
+// Moves to the next key.
+export
+template <K type>
+fn __inc__(this &SetIterator<K>) void {
+    this.node = successor(this.node);
+}
+
+// Moves to the previous key.
+export
+template <K type>
+fn __dec__(this &SetIterator<K>) void {
+    this.node = predecessor(this.node);
+}
+
+// The key at this position, for reading.
+export
+template <K type>
+fn __deref__(this &SetIterator<K>) &const K {
+    return &this.node->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type>
+fn __eq__(this &const SetIterator<K>, other &const SetIterator<K>) bool {
+    return this.node == other.node;
+}
+
+// Whether two positions differ.
+export
+template <K type>
+fn __ne__(this &const SetIterator<K>, other &const SetIterator<K>) bool {
+    return this.node != other.node;
+}
+
+// A position in a set, read only.
+export
+template <K type>
+type ConstSetIterator {
+    // The node the iterator stands on, or null at the end.
+    node *const TreeNode<K, Unit>;
+}
+
+// Creates an iterator that stands nowhere.
+export
+template <K type>
+fn __init__(this &ConstSetIterator<K>) void {
+    this.node = nullptr;
+}
+
+// Creates an iterator standing on a node.
+export
+template <K type>
+fn __init__(this &ConstSetIterator<K>, node *const TreeNode<K, Unit>) void {
+    this.node = node;
+}
+
+// Moves to the next key.
+export
+template <K type>
+fn __inc__(this &ConstSetIterator<K>) void {
+    this.node = successor(this.node as *TreeNode<K, Unit>) as *const TreeNode<K, Unit>;
+}
+
+// Moves to the previous key.
+export
+template <K type>
+fn __dec__(this &ConstSetIterator<K>) void {
+    this.node = predecessor(this.node as *TreeNode<K, Unit>) as *const TreeNode<K, Unit>;
+}
+
+// The key at this position, for reading.
+export
+template <K type>
+fn __deref__(this &const ConstSetIterator<K>) &const K {
+    return &this.node->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type>
+fn __eq__(this &const ConstSetIterator<K>, other &const ConstSetIterator<K>) bool {
+    return this.node == other.node;
+}
+
+// Whether two positions differ.
+export
+template <K type>
+fn __ne__(this &const ConstSetIterator<K>, other &const ConstSetIterator<K>) bool {
+    return this.node != other.node;
+}
+
+// ------------------------------------------------------------------ TMap
+
+// An ordered map: one value per key, walked in key order.
+//
+// The wrapper adds the surface a program expects -- `insert`, `find`, `at`,
+// `erase`, `begin`/`end` -- and leaves the tree to the structure that holds it.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+type TMap {
+    // The tree that holds the entries.
+    tree RBTree<K, V, Cmp, A>;
+}
+
+// Adds an entry, replacing the value when the key is already there.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert(this &TMap<K, V, Cmp, A>, key K, value V) void {
+    this.tree.insert(util.move(key), util.move(value));
+}
+
+// Returns the value for a key, or null.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn find(this &TMap<K, V, Cmp, A>, key &const K) *V {
+    node *TreeNode<K, V> = this.tree.find(key);
+    if (node == nullptr) {
+        return nullptr;
+    }
+    return &node->value;
+}
+
+// Returns the value for a key, or null, for reading.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn find(this &const TMap<K, V, Cmp, A>, key &const K) *const V {
+    node *const TreeNode<K, V> = this.tree.find(key);
+    if (node == nullptr) {
+        return nullptr;
+    }
+    return &node->value;
+}
+
+// Returns the value for a key, and aborts when there is none.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn at(this &TMap<K, V, Cmp, A>, key &const K) &V {
+    value *V = this.find(key);
+    if (value == nullptr) {
+        util.panic("TMap has no such key");
+    }
+    return value[0];
+}
+
+// Returns the value for a key, and aborts when there is none, for reading.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn at(this &const TMap<K, V, Cmp, A>, key &const K) &const V {
+    value *const V = this.find(key);
+    if (value == nullptr) {
+        util.panic("TMap has no such key");
+    }
+    return value[0];
+}
+
+// Indexes the map: `m[key]` is the value, and a missing key aborts.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __getitem__(this &TMap<K, V, Cmp, A>, key &const K) &V {
+    return this.at(key);
+}
+
+// Whether the key is there.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn contains(this &const TMap<K, V, Cmp, A>, key &const K) bool {
+    return this.tree.contains(key);
+}
+
+// How many entries have this key. A map has at most one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn count(this &const TMap<K, V, Cmp, A>, key &const K) usize {
+    return this.tree.count(key);
+}
+
+// Removes the entry with this key, and returns whether there was one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase(this &TMap<K, V, Cmp, A>, key &const K) bool {
+    return this.tree.erase(key);
+}
+
+// Removes every entry.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn clear(this &TMap<K, V, Cmp, A>) void {
+    this.tree.clear();
+}
+
+// How many entries the map holds.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn length(this &const TMap<K, V, Cmp, A>) usize {
+    return this.tree.length();
+}
+
+// Whether the map holds nothing.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn empty(this &const TMap<K, V, Cmp, A>) bool {
+    return this.tree.empty();
+}
+
+// The first entry by key.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn begin(this &TMap<K, V, Cmp, A>) MapIterator<K, V> {
+    return MapIterator<K, V>(minimum(this.tree.root));
+}
+
+// One past the last entry.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn end(this &TMap<K, V, Cmp, A>) MapIterator<K, V> {
+    return MapIterator<K, V>();
+}
+
+// The first entry by key, for reading.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn begin(this &const TMap<K, V, Cmp, A>) ConstMapIterator<K, V> {
+    return ConstMapIterator<K, V>(minimum(this.tree.root));
+}
+
+// One past the last entry, for reading.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn end(this &const TMap<K, V, Cmp, A>) ConstMapIterator<K, V> {
+    return ConstMapIterator<K, V>();
+}
+
+// ------------------------------------------------------------------ TSet
+
+// An ordered set: one entry per key, walked in key order.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+type TSet {
+    // The tree that holds the keys, with a `Unit` where a map keeps a value.
+    tree RBTree<K, Unit, Cmp, A>;
+}
+
+// Adds a key, and does nothing when it is already there.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert(this &TSet<K, Cmp, A>, key K) void {
+    unit Unit = .{};
+    this.tree.insert(util.move(key), util.move(unit));
+}
+
+// Whether the key is there.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn contains(this &const TSet<K, Cmp, A>, key &const K) bool {
+    return this.tree.contains(key);
+}
+
+// How many entries have this key. A set has at most one.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn count(this &const TSet<K, Cmp, A>, key &const K) usize {
+    return this.tree.count(key);
+}
+
+// Removes the key, and returns whether it was there.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase(this &TSet<K, Cmp, A>, key &const K) bool {
+    return this.tree.erase(key);
+}
+
+// Removes every key.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn clear(this &TSet<K, Cmp, A>) void {
+    this.tree.clear();
+}
+
+// How many keys the set holds.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn length(this &const TSet<K, Cmp, A>) usize {
+    return this.tree.length();
+}
+
+// Whether the set holds nothing.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn empty(this &const TSet<K, Cmp, A>) bool {
+    return this.tree.empty();
+}
+
+// The first key.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn begin(this &TSet<K, Cmp, A>) SetIterator<K> {
+    return SetIterator<K>(minimum(this.tree.root));
+}
+
+// One past the last key.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn end(this &TSet<K, Cmp, A>) SetIterator<K> {
+    return SetIterator<K>();
+}
+
+// The first key, for reading.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn begin(this &const TSet<K, Cmp, A>) ConstSetIterator<K> {
+    return ConstSetIterator<K>(minimum(this.tree.root));
+}
+
+// One past the last key, for reading.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn end(this &const TSet<K, Cmp, A>) ConstSetIterator<K> {
+    return ConstSetIterator<K>();
+}
+
+// ----------------------------------------------------------------- TMMap
+
+// An ordered multi-map: any number of values per key, walked in key order.
+//
+// A multi-container keeps the entries in insertion order within one key, because
+// an equal key is placed to the right of the ones already there.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+type TMMap {
+    // The tree that holds the entries.
+    tree RBTree<K, V, Cmp, A>;
+}
+
+// Adds an entry, whether or not the key is already there.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert(this &TMMap<K, V, Cmp, A>, key K, value V) void {
+    this.tree.insert_multi(util.move(key), util.move(value));
+}
+
+// Returns the first value for a key, or null.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn find(this &TMMap<K, V, Cmp, A>, key &const K) *V {
+    node *TreeNode<K, V> = this.tree.lower_bound(key);
+    if (node == nullptr || this.tree.cmp(key, node->key)) {
+        return nullptr;
+    }
+    return &node->value;
+}
+
+// Whether the key is there.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn contains(this &const TMMap<K, V, Cmp, A>, key &const K) bool {
+    return this.tree.contains(key);
+}
+
+// How many entries have this key.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn count(this &const TMMap<K, V, Cmp, A>, key &const K) usize {
+    return this.tree.count(key);
+}
+
+// Removes the first entry with this key, and returns whether there was one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase(this &TMMap<K, V, Cmp, A>, key &const K) bool {
+    return this.tree.erase(key);
+}
+
+// Removes every entry with this key, and returns how many there were.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase_all(this &TMMap<K, V, Cmp, A>, key &const K) usize {
+    return this.tree.erase_all(key);
+}
+
+// Removes every entry.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn clear(this &TMMap<K, V, Cmp, A>) void {
+    this.tree.clear();
+}
+
+// How many entries the map holds.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn length(this &const TMMap<K, V, Cmp, A>) usize {
+    return this.tree.length();
+}
+
+// Whether the map holds nothing.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn empty(this &const TMMap<K, V, Cmp, A>) bool {
+    return this.tree.empty();
+}
+
+// The first entry by key.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn begin(this &TMMap<K, V, Cmp, A>) MapIterator<K, V> {
+    return MapIterator<K, V>(minimum(this.tree.root));
+}
+
+// One past the last entry.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn end(this &TMMap<K, V, Cmp, A>) MapIterator<K, V> {
+    return MapIterator<K, V>();
+}
+
+// ----------------------------------------------------------------- TMSet
+
+// An ordered multi-set: any number of copies of a key, walked in key order.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+type TMSet {
+    // The tree that holds the keys, with a `Unit` where a map keeps a value.
+    tree RBTree<K, Unit, Cmp, A>;
+}
+
+// Adds a key, whether or not it is already there.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn insert(this &TMSet<K, Cmp, A>, key K) void {
+    unit Unit = .{};
+    this.tree.insert_multi(util.move(key), util.move(unit));
+}
+
+// Whether the key is there.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn contains(this &const TMSet<K, Cmp, A>, key &const K) bool {
+    return this.tree.contains(key);
+}
+
+// How many copies of the key are there.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn count(this &const TMSet<K, Cmp, A>, key &const K) usize {
+    return this.tree.count(key);
+}
+
+// Removes one copy of the key, and returns whether it was there.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase(this &TMSet<K, Cmp, A>, key &const K) bool {
+    return this.tree.erase(key);
+}
+
+// Removes every copy of the key, and returns how many there were.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn erase_all(this &TMSet<K, Cmp, A>, key &const K) usize {
+    return this.tree.erase_all(key);
+}
+
+// Removes every key.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn clear(this &TMSet<K, Cmp, A>) void {
+    this.tree.clear();
+}
+
+// How many keys the set holds.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn length(this &const TMSet<K, Cmp, A>) usize {
+    return this.tree.length();
+}
+
+// Whether the set holds nothing.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn empty(this &const TMSet<K, Cmp, A>) bool {
+    return this.tree.empty();
+}
+
+// The first key.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn begin(this &TMSet<K, Cmp, A>) SetIterator<K> {
+    return SetIterator<K>(minimum(this.tree.root));
+}
+
+// One past the last key.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn end(this &TMSet<K, Cmp, A>) SetIterator<K> {
+    return SetIterator<K>();
+}
+
+// ------------------------------------------------------- container construction
+
+// Creates an empty map.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMap<K, V, Cmp, A>) void {
+    (&this.tree)->__init__();
+}
+
+
+// Copies another tmap through its tree.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMap<K, V, Cmp, A>, other &const TMap<K, V, Cmp, A>) void {
+    (&this.tree)->__init__(other.tree);
+}
+
+// Takes another tmap's tree.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMap<K, V, Cmp, A>, other &&TMap<K, V, Cmp, A>) void {
+    (&this.tree)->__init__(util.move(other.tree));
+}
+
+// Copies another tmap over this one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TMap<K, V, Cmp, A>, other &const TMap<K, V, Cmp, A>) void {
+    this.tree = other.tree;
+}
+
+// Takes another tmap's tree over this one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TMap<K, V, Cmp, A>, other &&TMap<K, V, Cmp, A>) void {
+    this.tree = util.move(other.tree);
+}
+
+// Creates an empty map with an order and an allocator of its caller's.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMap<K, V, Cmp, A>, order Cmp, memory A) void {
+    (&this.tree)->__init__(order, memory);
+}
+
+// Creates an empty set.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TSet<K, Cmp, A>) void {
+    (&this.tree)->__init__();
+}
+
+
+// Copies another tset through its tree.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TSet<K, Cmp, A>, other &const TSet<K, Cmp, A>) void {
+    (&this.tree)->__init__(other.tree);
+}
+
+// Takes another tset's tree.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TSet<K, Cmp, A>, other &&TSet<K, Cmp, A>) void {
+    (&this.tree)->__init__(util.move(other.tree));
+}
+
+// Copies another tset over this one.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TSet<K, Cmp, A>, other &const TSet<K, Cmp, A>) void {
+    this.tree = other.tree;
+}
+
+// Takes another tset's tree over this one.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TSet<K, Cmp, A>, other &&TSet<K, Cmp, A>) void {
+    this.tree = util.move(other.tree);
+}
+
+// Creates an empty set with an order and an allocator of its caller's.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TSet<K, Cmp, A>, order Cmp, memory A) void {
+    (&this.tree)->__init__(order, memory);
+}
+
+// Creates an empty multi-map.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMMap<K, V, Cmp, A>) void {
+    (&this.tree)->__init__();
+}
+
+
+// Copies another tmmap through its tree.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMMap<K, V, Cmp, A>, other &const TMMap<K, V, Cmp, A>) void {
+    (&this.tree)->__init__(other.tree);
+}
+
+// Takes another tmmap's tree.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMMap<K, V, Cmp, A>, other &&TMMap<K, V, Cmp, A>) void {
+    (&this.tree)->__init__(util.move(other.tree));
+}
+
+// Copies another tmmap over this one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TMMap<K, V, Cmp, A>, other &const TMMap<K, V, Cmp, A>) void {
+    this.tree = other.tree;
+}
+
+// Takes another tmmap's tree over this one.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TMMap<K, V, Cmp, A>, other &&TMMap<K, V, Cmp, A>) void {
+    this.tree = util.move(other.tree);
+}
+
+// Creates an empty multi-map with an order and an allocator of its caller's.
+export
+template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMMap<K, V, Cmp, A>, order Cmp, memory A) void {
+    (&this.tree)->__init__(order, memory);
+}
+
+// Creates an empty multi-set.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMSet<K, Cmp, A>) void {
+    (&this.tree)->__init__();
+}
+
+
+// Copies another tmset through its tree.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMSet<K, Cmp, A>, other &const TMSet<K, Cmp, A>) void {
+    (&this.tree)->__init__(other.tree);
+}
+
+// Takes another tmset's tree.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMSet<K, Cmp, A>, other &&TMSet<K, Cmp, A>) void {
+    (&this.tree)->__init__(util.move(other.tree));
+}
+
+// Copies another tmset over this one.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TMSet<K, Cmp, A>, other &const TMSet<K, Cmp, A>) void {
+    this.tree = other.tree;
+}
+
+// Takes another tmset's tree over this one.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __assign__(this &TMSet<K, Cmp, A>, other &&TMSet<K, Cmp, A>) void {
+    this.tree = util.move(other.tree);
+}
+
+// Creates an empty multi-set with an order and an allocator of its caller's.
+export
+template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
+fn __init__(this &TMSet<K, Cmp, A>, order Cmp, memory A) void {
+    (&this.tree)->__init__(order, memory);
+}

@@ -1,0 +1,191 @@
+// Variants: a value that is one of a fixed list of types.
+//
+// `Variant2<A, B>` holds either an `A` or a `B`, and says which. The tag is the
+// position in the list, so `is_first()`/`is_second()` answer without a
+// conversion and `first()`/`second()` raise `TypeError` when the value is the
+// other one -- a wrong question raises rather than reinterpreting storage.
+//
+//     value Variant2<int, String> = Variant2<int, String>(3);
+//     if (value.is_first()) {
+//         std.print("{}\n", value.first()?!)?!;
+//     }
+//
+// # Storage
+//
+// The alternatives live on the heap, one pointer each, and only the pointer of
+// the alternative the variant holds is non-null. Both alternatives are then
+// always in a state `__drop__` can read -- the inactive one is a null pointer,
+// not uninitialised bytes -- and a variant can hold a type with no default
+// constructor. The trade is one allocation for the held value.
+
+import std.string;
+from std.string import String;
+import std.util;
+
+// A value that is either an `A` or a `B`.
+export
+template <A type, B type>
+type Variant2 {
+    // Which alternative is held: 0 for `A`, 1 for `B`, -1 for neither.
+    _tag int;
+    // The `A` alternative, or null.
+    _first *A;
+    // The `B` alternative, or null.
+    _second *B;
+}
+
+// Creates an empty variant.
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>) void {
+    this._tag = -1;
+    this._first = nullptr;
+    this._second = nullptr;
+}
+
+// Creates a variant holding an `A`.
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>, value A) void {
+    this._tag = -1;
+    this._first = nullptr;
+    this._second = nullptr;
+    this.set_first(value);
+}
+
+// Creates a variant holding a `B`.
+export
+template <A type, B type>
+fn make_second(this &Variant2<A, B>, value B) void {
+    this.set_second(value);
+}
+
+// Copies another variant's value.
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>, other &const Variant2<A, B>) void {
+    this._tag = -1;
+    this._first = nullptr;
+    this._second = nullptr;
+    if (other._tag == 0) {
+        this.set_first(*other._first);
+    } else if (other._tag == 1) {
+        this.set_second(*other._second);
+    }
+}
+
+// Takes another variant's value.
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>, other &&Variant2<A, B>) void {
+    this._tag = other._tag;
+    this._first = other._first;
+    this._second = other._second;
+    other._tag = -1;
+    other._first = nullptr;
+    other._second = nullptr;
+}
+
+// Copies another variant into this one.
+export
+template <A type, B type>
+fn __assign__(this &Variant2<A, B>, other &const Variant2<A, B>) void {
+    this.release();
+    if (other._tag == 0) {
+        this.set_first(*other._first);
+    } else if (other._tag == 1) {
+        this.set_second(*other._second);
+    }
+}
+
+// Moves another variant's value into this one.
+export
+template <A type, B type>
+fn __assign__(this &Variant2<A, B>, other &&Variant2<A, B>) void {
+    this.release();
+    this._tag = other._tag;
+    this._first = other._first;
+    this._second = other._second;
+    other._tag = -1;
+    other._first = nullptr;
+    other._second = nullptr;
+}
+
+// Releases the held value.
+template <A type, B type>
+fn release(this &Variant2<A, B>) void {
+    if (this._first != nullptr) {
+        this._first->__drop__();
+        util.free(this._first as *byte);
+        this._first = nullptr;
+    }
+    if (this._second != nullptr) {
+        this._second->__drop__();
+        util.free(this._second as *byte);
+        this._second = nullptr;
+    }
+    this._tag = -1;
+}
+
+// Releases the held value.
+export
+template <A type, B type>
+fn __drop__(this &Variant2<A, B>) void {
+    this.release();
+}
+
+// Whether the variant holds an `A`.
+export
+template <A type, B type>
+fn is_first(this &const Variant2<A, B>) bool {
+    return this._tag == 0;
+}
+
+// Whether the variant holds a `B`.
+export
+template <A type, B type>
+fn is_second(this &const Variant2<A, B>) bool {
+    return this._tag == 1;
+}
+
+// The held `A`, or a raise when the variant holds a `B`.
+export
+template <A type, B type>
+fn first(this &const Variant2<A, B>) A except {
+    if (this._tag != 0) {
+        raise "TypeError": "the variant does not hold the first alternative";
+    }
+    return *this._first;
+}
+
+// The held `B`, or a raise when the variant holds an `A`.
+export
+template <A type, B type>
+fn second(this &const Variant2<A, B>) B except {
+    if (this._tag != 1) {
+        raise "TypeError": "the variant does not hold the second alternative";
+    }
+    return *this._second;
+}
+
+// Stores an `A`.
+export
+template <A type, B type>
+fn set_first(this &Variant2<A, B>, value A) void {
+    this.release();
+    storage *A = util.allocate(sizeof(A)) as *A;
+    storage->__init__(value);
+    this._first = storage;
+    this._tag = 0;
+}
+
+// Stores a `B`.
+export
+template <A type, B type>
+fn set_second(this &Variant2<A, B>, value B) void {
+    this.release();
+    storage *B = util.allocate(sizeof(B)) as *B;
+    storage->__init__(value);
+    this._second = storage;
+    this._tag = 1;
+}

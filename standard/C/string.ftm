@@ -1,0 +1,57 @@
+// Memory and string operations.
+//
+// Part of the C bindings: the declarations from `string.h`.
+//
+// This module is not meant to be imported on its own. `standard/C.ftm` gathers
+// it with the others and re-exports everything, so `import C;` is what a
+// program writes and `C.printf` is what it calls.
+//
+// Every declaration is `export`, which is what makes it visible to the module
+// that re-exports it; a module's declarations are private by default.
+
+// -------------------------------------------------------------- string.h
+
+// Returns the length of a string, not counting the terminator.
+@extern_C export fn strlen(text *const c8) usize;
+
+// Copies a string.
+@extern_C export fn strcpy(destination *c8, source *const c8) *c8;
+
+// Copies at most `size` bytes of a string.
+@extern_C export fn strncpy(destination *c8, source *const c8, size usize) *c8;
+
+// Appends a string.
+@extern_C export fn strcat(destination *c8, source *const c8) *c8;
+
+// Appends at most `size` bytes of a string.
+@extern_C export fn strncat(destination *c8, source *const c8, size usize) *c8;
+
+// Compares two strings.
+@extern_C export fn strcmp(left *const c8, right *const c8) int;
+
+// Compares at most `size` bytes of two strings.
+@extern_C export fn strncmp(left *const c8, right *const c8, size usize) int;
+
+// Finds a character in a string.
+@extern_C export fn strchr(text *const c8, character int) *c8;
+
+// Finds the last occurrence of a character in a string.
+@extern_C export fn strrchr(text *const c8, character int) *c8;
+
+// Finds a substring.
+@extern_C export fn strstr(haystack *const c8, needle *const c8) *c8;
+
+// Copies a block of memory, which must not overlap.
+@extern_C export fn memcpy(destination *byte, source *const byte, size usize) *byte;
+
+// Copies a block of memory, which may overlap.
+@extern_C export fn memmove(destination *byte, source *const byte, size usize) *byte;
+
+// Fills a block of memory.
+@extern_C export fn memset(destination *byte, value int, size usize) *byte;
+
+// Compares two blocks of memory.
+@extern_C export fn memcmp(left *const byte, right *const byte, size usize) int;
+
+// Finds a byte in a block of memory.
+@extern_C export fn memchr(block *const c8, value int, size usize) *c8;

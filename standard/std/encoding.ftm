@@ -1,0 +1,227 @@
+// Encodings: hex, base64, and URL percent-encoding.
+//
+// The three are the representations a byte sequence takes when it has to travel
+// as text: hex for a dump, base64 for a header or a JSON string, percent for a
+// URL. Each has an encode that always succeeds and a decode that raises
+// `ValueError` on text that is not that encoding.
+//
+//     hex String = hex_encode(&bytes);        // "4142"
+//     back Bytes = hex_decode(&hex)?!;         // the same bytes
+//
+// # Not a codec
+//
+// This is not text encoding: the input of `encode` is `Bytes` and the output of
+// `decode` is `Bytes`, because the bytes need not be text at all. Converting
+// text to and from UTF-8 is `std.unicode`'s job.
+
+import std.bytes;
+from std.bytes import Bytes;
+import std.string;
+from std.string import String;
+
+// Encodes bytes as lowercase hex.
+export fn hex_encode(bytes &const Bytes) String {
+    text String = String();
+    index usize = 0;
+    while (index < bytes.length()) {
+        value u8 = bytes[index];
+        text.push(hex_digit((value >> 4u8) as u8));
+        text.push(hex_digit(value & 0x0fu8));
+        index += 1;
+    }
+    return text;
+}
+
+// One lowercase hex digit.
+fn hex_digit(value u8) char {
+    if (value < 10u8) {
+        return ('0' as int + (value as int)) as char;
+    }
+    return ('a' as int + ((value - 10u8) as int)) as char;
+}
+
+// Decodes lowercase or uppercase hex, raising on anything else.
+export fn hex_decode(text &const String) Bytes except {
+    if (text.length() % 2 != 0) {
+        raise "ValueError": "hex text has an odd number of characters";
+    }
+    result Bytes = Bytes();
+    index usize = 0;
+    while (index < text.length()) {
+        high u8 = hex_value(text[index])?!;
+        low u8 = hex_value(text[index + 1])?!;
+        result.push((high * 16u8 + low) as byte);
+        index += 2;
+    }
+    return result;
+}
+
+// The value of one hex character.
+fn hex_value(character char) u8 except {
+    if (character >= '0' as char && character <= '9' as char) {
+        return ((character as int) - ('0' as int)) as u8;
+    }
+    if (character >= 'a' as char && character <= 'f' as char) {
+        return (((character as int) - ('a' as int)) + 10) as u8;
+    }
+    if (character >= 'A' as char && character <= 'F' as char) {
+        return (((character as int) - ('A' as int)) + 10) as u8;
+    }
+    raise "ValueError": "not a hex digit";
+}
+
+// Encodes bytes as standard base64, with `=` padding.
+export fn base64_encode(bytes &const Bytes) String {
+    text String = String();
+    index usize = 0;
+    while (index + 3 <= bytes.length()) {
+        block u32 = ((bytes[index] as u32) << 16u32)
+            | ((bytes[index + 1] as u32) << 8u32)
+            | (bytes[index + 2] as u32);
+        text.push(base64_char((block >> 18u32) as u8));
+        text.push(base64_char((block >> 12u32) as u8));
+        text.push(base64_char((block >> 6u32) as u8));
+        text.push(base64_char(block as u8));
+        index += 3;
+    }
+    remaining usize = bytes.length() - index;
+    if (remaining == 1) {
+        block u32 = (bytes[index] as u32) << 16u32;
+        text.push(base64_char((block >> 18u32) as u8));
+        text.push(base64_char((block >> 12u32) as u8));
+        text.push('=');
+        text.push('=');
+    } else if (remaining == 2) {
+        block u32 = ((bytes[index] as u32) << 16u32) | ((bytes[index + 1] as u32) << 8u32);
+        text.push(base64_char((block >> 18u32) as u8));
+        text.push(base64_char((block >> 12u32) as u8));
+        text.push(base64_char((block >> 6u32) as u8));
+        text.push('=');
+    }
+    return text;
+}
+
+// One base64 alphabet character from its six-bit value.
+fn base64_char(value u8) char {
+    code u8 = value & 0x3fu8;
+    if (code < 26u8) {
+        return ('A' as int + (code as int)) as char;
+    }
+    if (code < 52u8) {
+        return ('a' as int + ((code - 26u8) as int)) as char;
+    }
+    if (code < 62u8) {
+        return ('0' as int + ((code - 52u8) as int)) as char;
+    }
+    if (code == 62u8) {
+        return '+' as char;
+    }
+    return '/' as char;
+}
+
+// Decodes standard base64, raising on anything else.
+export fn base64_decode(text &const String) Bytes except {
+    result Bytes = Bytes();
+    accumulator u32 = 0u32;
+    bits u32 = 0u32;
+    index usize = 0;
+    while (index < text.length()) {
+        character char = text[index];
+        if (character == '=' as char) {
+            break;
+        }
+        value u32 = base64_value(character)?!;
+        accumulator = (accumulator << 6u32) | value;
+        bits += 6u32;
+        if (bits >= 8u32) {
+            bits -= 8u32;
+            result.push(((accumulator >> bits) & 0xffu32) as byte);
+        }
+        index += 1;
+    }
+    return result;
+}
+
+// The six-bit value of one base64 character.
+fn base64_value(character char) u32 except {
+    if (character >= 'A' as char && character <= 'Z' as char) {
+        return ((character as int) - ('A' as int)) as u32;
+    }
+    if (character >= 'a' as char && character <= 'z' as char) {
+        return (((character as int) - ('a' as int)) + 26) as u32;
+    }
+    if (character >= '0' as char && character <= '9' as char) {
+        return (((character as int) - ('0' as int)) + 52) as u32;
+    }
+    if (character == '+' as char) {
+        return 62u32;
+    }
+    if (character == '/' as char) {
+        return 63u32;
+    }
+    raise "ValueError": "not a base64 character";
+}
+
+// Encodes text for a URL: letters, digits and `- _ . ~` stay, everything else
+// becomes `%XX`.
+export fn percent_encode(text &const String) String {
+    result String = String();
+    index usize = 0;
+    while (index < text.length()) {
+        character char = text[index];
+        if (unreserved(character)) {
+            result.push(character);
+        } else {
+            result.push('%');
+            result.push(percent_digit(((character as int) >> 4) as u8));
+            result.push(percent_digit(((character as int)) as u8 & 0x0fu8));
+        }
+        index += 1;
+    }
+    return result;
+}
+
+// Whether a character may stand for itself in a URL.
+fn unreserved(character char) bool {
+    if (character >= 'a' as char && character <= 'z' as char) {
+        return true;
+    }
+    if (character >= 'A' as char && character <= 'Z' as char) {
+        return true;
+    }
+    if (character >= '0' as char && character <= '9' as char) {
+        return true;
+    }
+    return character == '-' as char || character == '_' as char
+        || character == '.' as char || character == '~' as char;
+}
+
+// One uppercase digit of a percent escape.
+fn percent_digit(value u8) char {
+    if (value < 10u8) {
+        return ('0' as int + (value as int)) as char;
+    }
+    return ('A' as int + ((value - 10u8) as int)) as char;
+}
+
+// Decodes `%XX` escapes, raising on anything else.
+export fn percent_decode(text &const String) Bytes except {
+    result Bytes = Bytes();
+    index usize = 0;
+    while (index < text.length()) {
+        character char = text[index];
+        if (character == '%' as char) {
+            if (index + 2 >= text.length()) {
+                raise "ValueError": "a percent escape is incomplete";
+            }
+            high u8 = hex_value(text[index + 1])?!;
+            low u8 = hex_value(text[index + 2])?!;
+            result.push((high * 16u8 + low) as byte);
+            index += 3;
+        } else {
+            result.push(character as byte);
+            index += 1;
+        }
+    }
+    return result;
+}

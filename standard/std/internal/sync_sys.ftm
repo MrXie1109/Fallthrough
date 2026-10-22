@@ -1,0 +1,77 @@
+// The synchronisation primitives, as POSIX provides them.
+//
+// `std.sync` owns the storage and the interface; this file is the part that
+// names the operating system's calls. It is the POSIX half of a pair:
+// `sync_sys.windows.ftm` is the other, and the loader picks the one for the
+// target platform.
+//
+// A mutex and a condition variable are addressed as raw storage -- `*byte` --
+// because their layout belongs to the C library. `std.sync` sizes the bytes;
+// nothing here copies them.
+
+@extern_C fn pthread_mutex_lock(mutex *byte) int;
+@extern_C fn pthread_mutex_unlock(mutex *byte) int;
+@extern_C fn pthread_cond_wait(condition *byte, mutex *byte) int;
+@extern_C fn pthread_cond_signal(condition *byte) int;
+@extern_C fn pthread_cond_broadcast(condition *byte) int;
+// The handle is one word on both sides, so the storage is a `*byte` and the
+// value is passed as it stands: `pthread_t` is an unsigned long, which is the
+// same word a pointer is.
+@extern_C fn pthread_create(thread *byte, attr *byte, start *fn(*byte) u32, argument *byte) int;
+@extern_C fn pthread_join(thread *byte, result *byte) int;
+@extern_C fn usleep(microseconds u32) int;
+
+// Prepares newly zeroed storage as a mutex.
+//
+// Zeroed bytes are `PTHREAD_MUTEX_INITIALIZER` on this platform, so there is
+// nothing to do; the macOS backend (which has the same C calls but not that
+// initial value) overrides this.
+export fn mutex_init(storage *byte) void {
+    // The initial value of the storage is the platform's initializer, so there
+    // is nothing to call.
+}
+
+// Prepares newly zeroed storage as a condition variable.
+export fn cond_init(storage *byte) void {
+    // The initial value of the storage is the platform's initializer.
+}
+
+// Locks the mutex in `storage`, waiting while another thread holds it.
+export fn mutex_lock(storage *byte) bool {
+    return pthread_mutex_lock(storage) == 0;
+}
+
+// Unlocks the mutex in `storage`.
+export fn mutex_unlock(storage *byte) bool {
+    return pthread_mutex_unlock(storage) == 0;
+}
+
+// Waits on `condition`, releasing `mutex` while it waits.
+export fn cond_wait(condition *byte, mutex *byte) bool {
+    return pthread_cond_wait(condition, mutex) == 0;
+}
+
+// Wakes one waiter on `condition`.
+export fn cond_signal(condition *byte) bool {
+    return pthread_cond_signal(condition) == 0;
+}
+
+// Wakes every waiter on `condition`.
+export fn cond_broadcast(condition *byte) bool {
+    return pthread_cond_broadcast(condition) == 0;
+}
+
+// Starts `start(argument)` on a new thread, writing its handle through `thread`.
+export fn thread_start(thread *byte, start *fn(*byte) u32, argument *byte) bool {
+    return pthread_create(thread, nullptr, start, argument) == 0;
+}
+
+// Waits for `thread` to finish.
+export fn thread_join(thread *byte) bool {
+    return pthread_join(thread, nullptr) == 0;
+}
+
+// Suspends the calling thread for `milliseconds`.
+export fn sleep_ms(milliseconds usize) void {
+    usleep((milliseconds * 1000) as u32);
+}

@@ -1,0 +1,31 @@
+// Loading shared libraries, POSIX.
+//
+// `dlopen` hands back a handle, `dlsym` a symbol's address, and `dlclose`
+// releases the library. Linux and macOS share the calls.
+
+@extern_C fn dlopen(path *const char, flags i32) *byte;
+@extern_C fn dlsym(handle *byte, name *const char) *byte;
+@extern_C fn dlclose(handle *byte) i32;
+
+// Resolve every symbol eagerly, which is what a caller that needs one symbol
+// now wants: a missing one fails at `open`, not at the first call.
+RTLD_NOW const i32 = 2;
+
+// Loads the library at `path`.
+export fn open(path *const char) *byte except {
+    handle *byte = dlopen(path, RTLD_NOW);
+    if (handle == nullptr) {
+        raise "LibraryError": "dlopen failed";
+    }
+    return handle;
+}
+
+// The address of `name`, or null when the library has no such symbol.
+export fn symbol(handle *byte, name *const char) *byte {
+    return dlsym(handle, name);
+}
+
+// Releases the library.
+export fn close(handle *byte) bool {
+    return dlclose(handle) == 0;
+}

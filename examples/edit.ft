@@ -1,0 +1,50 @@
+// Inserting into the middle and erasing from the front.
+//
+// Both containers keep their elements contiguous, so an edit away from the end
+// has to move the ones after it. That is the cost of the layout, and it is why
+// `push` -- which moves nothing -- is the operation to prefer.
+
+import std;
+
+fn main() int {
+    // --- Array ------------------------------------------------------------
+    a Array<int> = Array<int>();
+    a.push(1);
+    a.push(3);
+    a.push(4);
+    C.printf("start:      %lu long, back %d\n", a.length(), a.back());
+
+    // Inserting at a position moves 3 and 4 up, and leaves the order alone.
+    // The position is an iterator -- a pointer at an element.
+    a.insert(a.begin() + 1, 2);
+    C.printf("insert(1,2): [%d %d %d %d]\n", a[0], a[1], a[2], a[3]);
+
+    // Erasing returns what it removed and closes the gap.
+    gone int = a.erase(a.begin());
+    C.printf("erase(0):    removed %d, [%d %d %d]\n", gone, a[0], a[1], a[2]);
+
+    // A position at the end appends, which is the one place where nothing
+    // moves.
+    a.insert(a.end(), 9);
+    C.printf("insert(len): [%d %d %d %d]\n", a[0], a[1], a[2], a[3]);
+
+    // --- String -----------------------------------------------------------
+    s String = "ac";
+
+    // The tail and the terminator both move, so the text stays terminated.
+    s.insert(1, 'b');
+    C.printf("string char:   %s (%lu)\n", s.data(), s.length());
+
+    t String = ">>";
+    s.insert(0, t);
+    C.printf("string text:   %s (%lu)\n", s.data(), s.length());
+
+    dropped char = s.erase(0);
+    C.printf("string erase:  removed %c, left %s\n", dropped, s.data());
+
+    // Working on the end is cheap, which is the point of `push`.
+    s.push('!');
+    C.printf("string push:   %s\n", s.data());
+
+    return 0;
+}

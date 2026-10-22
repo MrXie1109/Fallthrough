@@ -1,0 +1,126 @@
+// Colour and text styles for a terminal.
+//
+//     std.print("{}{}warning{}\n", term.bold(), term.yellow(), term.reset())?!;
+//
+// The escape sequences are ANSI SGR, which every terminal on the platforms here
+// understands. The *policy* -- whether to emit them at all -- is
+// `supports_color()`: a `NO_COLOR` environment variable, a dumb terminal, or an
+// output that is not a terminal all say no, so a program can colour
+// unconditionally and still be readable when redirected to a file.
+
+import std.optional;
+import std.os;
+import std.string;
+from std.string import String;
+import std.internal.term_sys;
+
+// The eight colours every terminal has.
+export enum Color int {
+    // Black.
+    BLACK,
+    // Red.
+    RED,
+    // Green.
+    GREEN,
+    // Yellow.
+    YELLOW,
+    // Blue.
+    BLUE,
+    // Magenta.
+    MAGENTA,
+    // Cyan.
+    CYAN,
+    // White.
+    WHITE,
+}
+
+// The SGR number of a colour.
+fn code(color Color) int {
+    if (color == Color.BLACK) {
+        return 30;
+    }
+    if (color == Color.RED) {
+        return 31;
+    }
+    if (color == Color.GREEN) {
+        return 32;
+    }
+    if (color == Color.YELLOW) {
+        return 33;
+    }
+    if (color == Color.BLUE) {
+        return 34;
+    }
+    if (color == Color.MAGENTA) {
+        return 35;
+    }
+    if (color == Color.CYAN) {
+        return 36;
+    }
+    return 37;
+}
+
+// The escape sequence for `color` as the foreground.
+export fn color_fg(color Color) String {
+    return sgr(code(color));
+}
+
+// The escape sequence for `color` as the background.
+export fn color_bg(color Color) String {
+    return sgr(code(color) + 10);
+}
+
+// Bold text.
+export fn style_bold() String {
+    return sgr(1);
+}
+
+// Dim text.
+export fn style_dim() String {
+    return sgr(2);
+}
+
+// Underlined text.
+export fn style_underline() String {
+    return sgr(4);
+}
+
+// Normal intensity and no underline.
+export fn style_reset() String {
+    return sgr(0);
+}
+
+// Builds one SGR sequence.
+fn sgr(number int) String {
+    text String = String();
+    text.push(0x1b as char);
+    text.push('[' as char);
+    number_text String = str(number);
+    text.push(&number_text);
+    text.push('m' as char);
+    return text;
+}
+
+// Whether colour is appropriate on standard output.
+//
+// Three answers are no: `NO_COLOR` is set (the convention for "I do not want
+// colour"), `TERM` is `dumb`, and standard output is not a terminal.
+export fn supports_color() bool {
+    no_color String = String("NO_COLOR");
+    if (os.has_env(no_color.data())) {
+        return false;
+    }
+    term_text String = String("TERM");
+    setting String = String();
+    try {
+        setting = os.getenv(term_text.data())?!;
+    } except {
+        // An environment that cannot be read is not a reason to refuse colour;
+        // the terminal check below still answers.
+    }
+    dumb String = String("dumb");
+    if (setting == dumb) {
+        return false;
+    }
+    return term_sys.is_terminal(1);
+}

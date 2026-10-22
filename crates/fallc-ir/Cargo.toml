@@ -1,0 +1,28 @@
+[package]
+name = "fallc-ir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The Fallthrough code generator: lowers the checked AST to LLVM IR."
+
+[dependencies]
+fallc-ast.workspace = true
+fallc-diag.workspace = true
+fallc-sema.workspace = true
+fallc-span.workspace = true
+
+# LLVM is the IR. There is no hand-rolled intermediate representation in this
+# crate: lowering goes straight from the checked AST to LLVM IR through inkwell.
+#
+# The feature name is `llvm18-1` rather than the more usual `llvm18-0` because
+# the Aliyun mirror's index (the only reachable one here) advertises it that
+# way; see `.cargo/config.toml`. `force-dynamic` is required because this
+# machine's LLVM 18 ships no static `libPolly.a`.
+inkwell = { version = "0.10", default-features = false, features = [
+    "llvm18-1",
+    "llvm18-1-force-dynamic",
+] }
+
+[lints]
+workspace = true

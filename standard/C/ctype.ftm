@@ -1,0 +1,39 @@
+// Character classification.
+//
+// Part of the C bindings: the declarations from `ctype.h`.
+//
+// This module is not meant to be imported on its own. `standard/C.ftm` gathers
+// it with the others and re-exports everything, so `import C;` is what a
+// program writes and `C.printf` is what it calls.
+//
+// Every declaration is `export`, which is what makes it visible to the module
+// that re-exports it; a module's declarations are private by default.
+
+// ---------------------------------------------------------------- ctype.h
+
+// Reports whether a character is alphabetic.
+@extern_C export fn isalpha(character int) int;
+
+// Reports whether a character is a digit.
+@extern_C export fn isdigit(character int) int;
+
+// Reports whether a character is alphanumeric.
+@extern_C export fn isalnum(character int) int;
+
+// Reports whether a character is whitespace.
+@extern_C export fn isspace(character int) int;
+
+// Reports whether a character is uppercase.
+@extern_C export fn isupper(character int) int;
+
+// Reports whether a character is lowercase.
+@extern_C export fn islower(character int) int;
+
+// Reports whether a character is printable.
+@extern_C export fn isprint(character int) int;
+
+// Converts a character to uppercase.
+@extern_C export fn toupper(character int) int;
+
+// Converts a character to lowercase.
+@extern_C export fn tolower(character int) int;

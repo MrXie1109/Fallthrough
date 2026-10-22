@@ -1,0 +1,64 @@
+// The filesystem calls, as POSIX provides them.
+//
+// `fs.ftm` keeps the path and name rules; this module is only the system's
+// answers: make a directory, list a directory, and ask about an entry.
+
+import C;
+import std.array;
+import std.string;
+
+@extern_C fn mkdir(path *const char, mode u32) int;
+@extern_C fn opendir(path *const char) *byte;
+@extern_C fn readdir(directory *byte) *byte;
+@extern_C fn closedir(directory *byte) int;
+@extern_C fn stat(path *const char, buffer *byte) int;
+
+// Makes one directory, returning whether it worked.
+export fn mkdir_one(path *const char) bool {
+    return mkdir(path, 0o755) == 0;
+}
+
+// Reads the names in `path`, without `.` and `..`.
+//
+// The platform's `dirent` layout is this file's business: `entry_name` is the
+// only part of it that differs between systems.
+export fn read_dir_names(path *const char, names *Array<String>) bool {
+    directory *byte = opendir(path);
+    if (directory == nullptr) {
+        return false;
+    }
+    while (true) {
+        entry *byte = readdir(directory);
+        if (entry == nullptr) {
+            break;
+        }
+        name *const char = entry_name(entry);
+        if (name[0] == '.' as c8 && (name[1] == 0 as c8 || (name[1] == '.' as c8 && name[2] == 0 as c8))) {
+            continue;
+        }
+        names.push(String(name));
+    }
+    closedir(directory);
+    return true;
+}
+
+// The name inside a `dirent`, whose offset the system decides.
+fn entry_name(entry *byte) *const char {
+    // Linux: d_ino u64, d_off i64, d_reclen u16, d_type u8, d_name at 19.
+    return (entry + 19) as *const char;
+}
+
+// Whether the entry at `path` is a directory, and its size in bytes.
+//
+// `stat` writes a platform struct; the mode and the size are the two fields
+// this library reads, at the offsets the system puts them.
+export fn stat_entry(path *const char, is_dir *bool, size *i64) bool {
+    buffer [144]byte;
+    if (stat(path, &buffer[0]) != 0) {
+        return false;
+    }
+    mode u32 = *(&buffer[24] as *u32);
+    *is_dir = (mode & 0o40000u32) != 0;
+    *size = *(&buffer[48] as *i64);
+    return true;
+}

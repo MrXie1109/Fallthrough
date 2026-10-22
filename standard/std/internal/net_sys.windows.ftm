@@ -1,0 +1,139 @@
+// TCP sockets, Windows (winsock2).
+//
+// Winsock needs initialising once per process (`WSAStartup`), and its sockets
+// are `SOCKET`s, which fit a 64-bit integer; the module keeps them as `i64` and
+// the portable layer works with the same number. `closesocket` is the close.
+
+@extern_C fn WSAStartup(version u16, data *WsaData) i32;
+@extern_C fn socket(domain i32, kind i32, protocol i32) u64;
+@extern_C fn connect(fd u64, address *const byte, length i32) i32;
+@extern_C fn bind(fd u64, address *const byte, length i32) i32;
+@extern_C fn listen(fd u64, backlog i32) i32;
+@extern_C fn accept(fd u64, address *byte, length *i32) u64;
+@extern_C fn send(fd u64, buffer *const byte, length i32, flags i32) i32;
+@extern_C fn recv(fd u64, buffer *byte, length i32, flags i32) i32;
+@extern_C fn closesocket(fd u64) i32;
+@extern_C fn getsockname(fd u64, address *byte, length *i32) i32;
+
+// The `WSADATA` block; only its size matters to `WSAStartup` here.
+type WsaData {
+    version u16;
+    high_version u16;
+    description [257]u8;
+    status [129]u8;
+    max_sockets u16;
+    max_udp u16;
+    vendor *byte;
+    description_text *byte;
+    system_status *byte;
+}
+
+// The invalid socket winsock reports, as a function: the all-ones 64-bit value
+// is not accepted as a constant expression here, and computing it costs nothing.
+fn invalid_socket() u64 {
+    return 0u64 - 1u64;
+}
+
+AF_INET const i32 = 2;
+SOCK_STREAM const i32 = 1;
+IPPROTO_TCP const i32 = 6;
+
+// The part of `sockaddr_in` a connection fills in.
+type SockaddrIn {
+    family u16;
+    port u16;
+    address u32;
+    zero0 u32;
+    zero1 u32;
+}
+
+// The address in network order.
+//
+// `sin_addr` is a 32-bit field already in network byte order, so on a
+// little-endian machine the *first* address byte has to be the low byte of the
+// integer: writing `127.0.0.1` as `0x7f000001` put `1.0.0.127` on the wire.
+fn address_of(first u8, second u8, third u8, fourth u8) u32 {
+    return (first as u32)
+        | ((second as u32) << 8)
+        | ((third as u32) << 16)
+        | ((fourth as u32) << 24);
+}
+
+// The port in network order.
+fn port_of(port u16) u16 {
+    return ((port as u16) << 8) | ((port >> 8) as u16);
+}
+
+// Fills the address structure shared by bind and connect.
+fn fill(address *SockaddrIn, first u8, second u8, third u8, fourth u8, port u16) void {
+    address.family = AF_INET as u16;
+    address.port = port_of(port);
+    address.address = address_of(first, second, third, fourth);
+    address.zero0 = 0u32;
+    address.zero1 = 0u32;
+}
+
+// Starts winsock for this process.
+export fn startup() bool except {
+    data WsaData;
+    if (WSAStartup(0x0202u16, &data) != 0) {
+        raise "NetworkError": "WSAStartup failed";
+    }
+    return true;
+}
+
+// Opens a TCP socket.
+export fn open_stream() i64 except {
+    fd u64 = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd == invalid_socket()) {
+        raise "NetworkError": "socket failed";
+    }
+    return fd as i64;
+}
+
+// Connects `fd`.
+export fn connect_ipv4(fd i64, first u8, second u8, third u8, fourth u8, port u16) bool {
+    address SockaddrIn;
+    fill(&address, first, second, third, fourth, port);
+    return connect(fd as u64, (&address) as *const byte, sizeof(SockaddrIn) as i32) == 0;
+}
+
+// Binds and listens.
+export fn listen_ipv4(fd i64, first u8, second u8, third u8, fourth u8, port u16, backlog i32) bool {
+    address SockaddrIn;
+    fill(&address, first, second, third, fourth, port);
+    if (bind(fd as u64, (&address) as *const byte, sizeof(SockaddrIn) as i32) != 0) {
+        return false;
+    }
+    return listen(fd as u64, backlog) == 0;
+}
+
+// Accepts one connection.
+export fn accept_one(fd i64) i64 {
+    return accept(fd as u64, nullptr, nullptr) as i64;
+}
+
+// The port the socket is bound to, in host order.
+export fn bound_port(fd i64) u16 except {
+    address SockaddrIn;
+    length i32 = sizeof(SockaddrIn) as i32;
+    if (getsockname(fd as u64, (&address) as *byte, &length) != 0) {
+        raise "NetworkError": "getsockname failed";
+    }
+    return ((address.port >> 8) as u16) | ((address.port & 0xffu16) << 8);
+}
+
+// Sends bytes.
+export fn send_bytes(fd i64, buffer *const byte, length usize) isize {
+    return send(fd as u64, buffer, length as i32, 0) as isize;
+}
+
+// Receives bytes.
+export fn recv_bytes(fd i64, buffer *byte, length usize) isize {
+    return recv(fd as u64, buffer, length as i32, 0) as isize;
+}
+
+// Closes a socket.
+export fn close_socket(fd i64) bool {
+    return closesocket(fd as u64) == 0;
+}

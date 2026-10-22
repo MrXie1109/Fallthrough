@@ -1,0 +1,60 @@
+// Loading a shared library at run time.
+//
+//     library Library = std.open(&String("libm.so.6"))?!;
+//     address *byte = library.symbol(&String("sqrt"))?!;
+//
+// A symbol comes back as an address (`*byte`); the caller casts it to the
+// function type it expects, because only the caller knows the signature. A
+// missing symbol is a null address rather than a raise: a program probing for an
+// optional function is the common case, and it can ask.
+//
+// The platform calls -- `dlopen`/`dlsym` on POSIX, `LoadLibraryA`/
+// `GetProcAddress` on Windows -- live in `dynlib_sys`.
+
+import std.string;
+from std.string import String;
+import std.internal.dynlib_sys;
+
+// A loaded library.
+export type Library {
+    // The platform's handle, or null after `close`.
+    _handle *byte;
+}
+
+// Loads `path`.
+export fn open(path &const String) Library except {
+    handle *byte = dynlib_sys.open(path.data())?!;
+    opened Library = .{ handle };
+    return opened;
+}
+
+// The address of `name`, or null when the library has no such symbol.
+export fn symbol(this &Library, name &const String) *byte except {
+    if (this._handle == nullptr) {
+        raise "LibraryError": "the library is not loaded";
+    }
+    return dynlib_sys.symbol(this._handle, name.data());
+}
+
+// Whether the library is loaded.
+export fn loaded(this &const Library) bool {
+    return this._handle != nullptr;
+}
+
+// Releases the library.
+export fn close(this &Library) bool {
+    if (this._handle == nullptr) {
+        return true;
+    }
+    closed bool = dynlib_sys.close(this._handle);
+    this._handle = nullptr;
+    return closed;
+}
+
+// Releases the library when the handle goes.
+export fn __drop__(this &Library) void {
+    if (this._handle != nullptr) {
+        dynlib_sys.close(this._handle);
+        this._handle = nullptr;
+    }
+}

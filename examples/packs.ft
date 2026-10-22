@@ -1,0 +1,85 @@
+// A template parameter pack, and the three things that can be asked of it:
+// how many elements it has, what they add up to, and what one of them is.
+//
+// The same name serves all three, because all three are answered while
+// compiling: `values` is a list of numbers the caller wrote, not a value that
+// exists when the program runs.
+
+import C;
+
+// `values ...int` means "any number of ints". `sum<1, 2, 3>()` gets a pack of
+// three, `sum<10>()` a pack of one, and `sum<>()` an empty one -- which the
+// fold below refuses, because a sum of nothing would need an identity that the
+// language does not state.
+@constexpr
+template <values ...int>
+fn sum() int {
+    return (values + ...);
+}
+
+// A fold needs parentheses: inside them, `...` stands for "every remaining
+// element". Any binary operator works, so the product is the same shape.
+@constexpr
+template <values ...int>
+fn product() int {
+    return (values * ...);
+}
+
+// `sizeof...` counts the elements. It is a `usize`, and an empty pack counts
+// zero rather than failing.
+@constexpr
+template <values ...int>
+fn count() usize {
+    return sizeof...(values);
+}
+
+// Elements are picked with a constant subscript: the elements exist only
+// before the program runs, so which one is meant has to be known then too.
+// `sizeof...(values) - 1` is a constant expression, which is how the last one
+// is spelled.
+@constexpr
+template <values ...int>
+fn last() int {
+    return values[sizeof...(values) - 1];
+}
+
+// A pack of *types* expands into another template's arguments: `Box<Args...>`
+// is as many written arguments as the pack holds.
+template <T type>
+type Box {
+    value T;
+}
+
+template <Args ...type>
+fn boxed(v int) int {
+    box Box<int> = .{v};
+    return box.value;
+}
+
+fn main() int {
+    // 1 + 2 + 3
+    C.printf("sum<1, 2, 3>: %d\n", sum<1, 2, 3>());
+    // 10 + 20 + 30 + 40
+    C.printf("sum<10, 20, 30, 40>: %d\n", sum<10, 20, 30, 40>());
+    // 2 * 3 * 4
+    C.printf("product<2, 3, 4>: %d\n", product<2, 3, 4>());
+
+    // 3 elements, then 1, then none.
+    C.printf("count<1, 2, 3>: %lu\n", count<1, 2, 3>());
+    C.printf("count<7>: %lu\n", count<7>());
+    C.printf("count<>: %lu\n", count<>());
+
+    // The last element, chosen by an index computed from the count.
+    C.printf("last<4, 5, 6>: %d\n", last<4, 5, 6>());
+
+    // A pack of types is how a fixed prefix is written once and used with any
+    // number of type arguments.
+    C.printf("boxed<int, f64>: %d\n", boxed<int, f64>(9));
+
+    // A `constexpr` template call is a constant, so it sizes an array: this is
+    // six ints, chosen by the pack that was written.
+    numbers [sum<1, 2, 3>()]int;
+    numbers[5] = 42;
+    C.printf("sum<1, 2, 3>() as a length: %d\n", numbers[5]);
+    return 0;
+}

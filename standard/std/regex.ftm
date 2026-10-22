@@ -1,0 +1,318 @@
+// Regular expressions: a small backtracking matcher.
+//
+//     expression Regex = regex.compile(&String("^a[0-9]+z$"))?!;
+//     found Match = expression.find(&text).value()?!;
+//
+// # The syntax
+//
+// The part of regular expressions a command parser or a log filter uses:
+//
+// * a literal character matches itself;
+// * `.` matches any character except a newline;
+// * `[abc]`, `[a-z]`, `[^0-9]` match one character from (or not from) a set;
+// * `\d` (digit), `\w` (word character), `\s` (space), `\.` (a literal dot and
+//   the other punctuation escapes);
+// * `^` and `$` anchor to the start and the end of the text;
+// * `*`, `+` and `?` repeat the preceding atom, greedily.
+//
+// Out of scope, and refused at `compile` time as syntax errors: groups,
+// alternation, back-references, lazy quantifiers and bounded repetition. A
+// matcher that says what it does not support is more useful than one that
+// silently reads `(` as a literal.
+//
+// # Matching
+//
+// The matcher tries each start position and then matches the atoms in order,
+// backtracking when a repetition was too greedy. That is exponential in the
+// worst case -- a pattern like `a*a*a*b` on many `a`s -- and it is stated here
+// because it is fine for configuration-sized texts and not for a hostile one.
+
+import std.optional;
+import std.string;
+from std.string import String;
+
+// The result of a search: a half-open range of the text.
+export type Match {
+    // The index of the first matched character.
+    _start usize;
+    // The index one past the last matched character.
+    _end usize;
+}
+
+// The start of the match.
+export fn start(this &const Match) usize {
+    return this._start;
+}
+
+// One past the end of the match.
+export fn end(this &const Match) usize {
+    return this._end;
+}
+
+// The length of the match.
+export fn length(this &const Match) usize {
+    return this._end - this._start;
+}
+
+// The matched part of `text`.
+export fn matched(this &const Match, text &const String) String except {
+    if (this._end > text.length()) {
+        raise "ValueError": "the match does not belong to this text";
+    }
+    return text.substring(this._start, this._end - this._start);
+}
+
+// A compiled pattern.
+export type Regex {
+    // The pattern text.
+    _pattern String;
+}
+
+// Compiles `pattern`, refusing syntax this matcher does not implement.
+export fn compile(pattern &const String) Regex except {
+    index usize = 0;
+    while (index < pattern.length()) {
+        character char = pattern[index];
+        if (character == '(' as char || character == ')' as char || character == '|' as char) {
+            raise "ValueError": "groups and alternation are not supported";
+        }
+        if (character == '{' as char || character == '}' as char) {
+            raise "ValueError": "bounded repetition is not supported";
+        }
+        if (character == '\\' as char || character == '[' as char) {
+            // The escapes and classes are validated by the matcher's atom
+            // scanner; that keeps one place that understands their length.
+            index = atom_end(pattern, index)?!;
+        } else {
+            index += 1;
+        }
+    }
+    expression Regex = .{ String(pattern) };
+    return expression;
+}
+
+// The index just past the atom starting at `index`.
+fn atom_end(pattern &const String, index usize) usize except {
+    character char = pattern[index];
+    if (character == '\\' as char) {
+        if (index + 1usize >= pattern.length()) {
+            raise "ValueError": "a pattern ends with a backslash";
+        }
+        return index + 2usize;
+    }
+    if (character == '[' as char) {
+        index += 1;
+        if (index < pattern.length() && pattern[index] == '^' as char) {
+            index += 1;
+        }
+        if (index < pattern.length() && pattern[index] == ']' as char) {
+            index += 1;
+        }
+        while (index < pattern.length() && pattern[index] != ']' as char) {
+            index += 1;
+        }
+        if (index >= pattern.length()) {
+            raise "ValueError": "a character class is not closed";
+        }
+        return index + 1usize;
+    }
+    if (character == '*' as char || character == '+' as char || character == '?' as char) {
+        raise "ValueError": "a quantifier has nothing to repeat";
+    }
+    return index + 1usize;
+}
+
+// Whether the atom between `start` and `stop` matches `character`.
+fn atom_matches(
+    pattern &const String,
+    start usize,
+    stop usize,
+    character char
+) bool {
+    first char = pattern[start];
+    if (first == '.' as char) {
+        return character != '\n' as char;
+    }
+    if (first == '\\' as char) {
+        second char = pattern[start + 1usize];
+        if (second == 'd' as char) {
+            return is_digit(character);
+        }
+        if (second == 'w' as char) {
+            return is_word(character);
+        }
+        if (second == 's' as char) {
+            return is_space(character);
+        }
+        return character == second;
+    }
+    if (first == '[' as char) {
+        return class_matches(pattern, start + 1usize, stop - 1usize, character);
+    }
+    return character == first;
+}
+
+// Whether `character` is in the class between `start` and `stop`.
+fn class_matches(
+    pattern &const String,
+    start usize,
+    stop usize,
+    character char
+) bool {
+    negated bool = false;
+    index usize = start;
+    if (index < stop && pattern[index] == '^' as char) {
+        negated = true;
+        index += 1;
+    }
+    found bool = false;
+    while (index < stop) {
+        if (index + 2usize < stop && pattern[index + 1usize] == '-' as char) {
+            low char = pattern[index];
+            high char = pattern[index + 2usize];
+            if (character >= low && character <= high) {
+                found = true;
+            }
+            index += 3usize;
+            continue;
+        }
+        if (pattern[index] == character) {
+            found = true;
+        }
+        index += 1;
+    }
+    if (negated) {
+        return !found;
+    }
+    return found;
+}
+
+// Whether `character` is a digit.
+fn is_digit(character char) bool {
+    return character >= '0' as char && character <= '9' as char;
+}
+
+// Whether `character` is a word character.
+fn is_word(character char) bool {
+    return is_digit(character)
+        || (character >= 'a' as char && character <= 'z' as char)
+        || (character >= 'A' as char && character <= 'Z' as char)
+        || character == '_' as char;
+}
+
+// Whether `character` is whitespace.
+fn is_space(character char) bool {
+    return character == ' ' as char || character == '\t' as char
+        || character == '\n' as char || character == '\r' as char;
+}
+
+// Matches the pattern from `pattern_index` against `text` from `text_index`.
+//
+// Returns the end of the match when the rest succeeds, or none.
+fn match_sequence(
+    pattern &const String,
+    pattern_index usize,
+    text &const String,
+    text_index usize,
+    must_end bool
+) ?usize except {
+    if (pattern_index >= pattern.length()) {
+        if (must_end && text_index != text.length()) {
+            return optional.none<usize>();
+        }
+        return optional.some<usize>(text_index);
+    }
+    character char = pattern[pattern_index];
+    if (character == '$' as char && pattern_index + 1usize == pattern.length()) {
+        if (text_index == text.length()) {
+            return optional.some<usize>(text_index);
+        }
+        return optional.none<usize>();
+    }
+    stop usize = atom_end(pattern, pattern_index)?!;
+    // An anchor is an atom that consumes nothing; matching it is a check.
+    if (character == '^' as char) {
+        if (text_index != 0usize) {
+            return optional.none<usize>();
+        }
+        return match_sequence(pattern, stop, text, text_index, must_end)?!;
+    }
+    quantifier char = ' ' as char;
+    if (stop < pattern.length()) {
+        possible char = pattern[stop];
+        if (possible == '*' as char || possible == '+' as char || possible == '?' as char) {
+            quantifier = possible;
+            stop += 1usize;
+        }
+    }
+    if (quantifier == ' ' as char) {
+        if (text_index >= text.length()) {
+            return optional.none<usize>();
+        }
+        if (!atom_matches(pattern, pattern_index, stop, text[text_index])) {
+            return optional.none<usize>();
+        }
+        return match_sequence(pattern, stop, text, text_index + 1usize, must_end)?!;
+    }
+    if (quantifier == '?' as char) {
+        // Try the atom once, then zero times.
+        if (text_index < text.length()
+            && atom_matches(pattern, pattern_index, stop, text[text_index]))
+        {
+            matched_once ?usize = match_sequence(pattern, stop, text, text_index + 1usize, must_end)?!;
+            if (matched_once.present()) {
+                return matched_once;
+            }
+        }
+        return match_sequence(pattern, stop, text, text_index, must_end)?!;
+    }
+    // `*` and `+`: consume greedily, then back off one at a time.
+    count usize = 0usize;
+    while (text_index + count < text.length()
+        && atom_matches(pattern, pattern_index, stop, text[text_index + count]))
+    {
+        count += 1usize;
+    }
+    if (quantifier == '+' as char && count == 0usize) {
+        return optional.none<usize>();
+    }
+    while (true) {
+        rest ?usize = match_sequence(pattern, stop, text, text_index + count, must_end)?!;
+        if (rest.present()) {
+            return rest;
+        }
+        if (count == 0usize) {
+            return optional.none<usize>();
+        }
+        count -= 1usize;
+    }
+}
+
+// Searches `text` for the first match.
+export fn find(this &const Regex, text &const String) ?Match except {
+    anchored bool = this._pattern.length() > 0usize && this._pattern[0] == '^' as char;
+    start usize = 0usize;
+    while (start <= text.length()) {
+        found ?usize = match_sequence(this._pattern, 0usize, text, start, false)?!;
+        if (found.present()) {
+            end_index usize = found.value()?!;
+            return optional.some<Match>(.{ start, end_index });
+        }
+        if (anchored) {
+            return optional.none<Match>();
+        }
+        start += 1usize;
+    }
+    return optional.none<Match>();
+}
+
+// Whether `text` contains a match.
+export fn is_match(this &const Regex, text &const String) bool except {
+    found ?Match = this.find(text)?!;
+    return found.present();
+}
+
+// The pattern text.
+export fn pattern(this &const Regex) String {
+    return this._pattern;
+}

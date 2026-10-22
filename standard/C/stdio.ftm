@@ -1,0 +1,103 @@
+// Reading and writing through the C standard I/O library.
+//
+// Part of the C bindings: the declarations from `stdio.h`.
+//
+// This module is not meant to be imported on its own. `standard/C.ftm` gathers
+// it with the others and re-exports everything, so `import C;` is what a
+// program writes and `C.printf` is what it calls.
+//
+// Every declaration is `export`, which is what makes it visible to the module
+// that re-exports it; a module's declarations are private by default.
+
+// The standard streams, which the C library owns.
+//
+// `stdin` is a `FILE *`, which this language has no type for; a stream is
+// passed around opaquely, so the bindings name it `*c8` and the pointer is
+// never dereferenced. The declaration is `extern` because the object is in the
+// C library: `stdin` is not a variable of this program, it is one this program
+// reaches.
+export stdin *c8 @extern_C;
+export stdout *c8 @extern_C;
+export stderr *c8 @extern_C;
+// The value `getchar` and friends return at end of input.
+//
+// It is `int` rather than `char` because it has to be distinguishable from
+// every byte, which a `char` return type could not express.
+export EOF const int = -1;
+
+// ---------------------------------------------------------------- stdio.h
+
+// Writes formatted output to stdout.
+@extern_C export fn printf(fmt *const c8, ...) int;
+
+// Writes formatted output to a stream.
+@extern_C export fn fprintf(stream *c8, fmt *const c8, ...) int;
+
+// Writes formatted output into a buffer.
+@extern_C export fn sprintf(buffer *c8, fmt *const c8, ...) int;
+
+// As `sprintf`, with a size limit.
+@extern_C export fn snprintf(buffer *c8, size usize, fmt *const c8, ...) int;
+
+// Writes a string and a newline to stdout.
+@extern_C export fn puts(text *const c8) int;
+
+// Writes a string to a stream.
+@extern_C export fn fputs(text *const c8, stream *c8) int;
+
+// Writes one character to a stream.
+@extern_C export fn fputc(character int, stream *c8) int;
+
+// Writes one character to stdout.
+@extern_C export fn putchar(character int) int;
+
+// Reads formatted input from stdin.
+@extern_C export fn scanf(fmt *const c8, ...) int;
+
+// Reads a line from a stream into a buffer.
+@extern_C export fn fgets(buffer *c8, size int, stream *c8) *c8;
+
+// Reads one character from a stream.
+@extern_C export fn fgetc(stream *c8) int;
+
+// Reads one character from stdin.
+@extern_C export fn getchar() int;
+
+// Opens a file.
+@extern_C export fn fopen(path *const c8, mode *const c8) *c8;
+
+// Closes a file. Returns zero on success.
+@extern_C export fn fclose(stream *c8) int;
+
+// Flushes a stream's buffer.
+@extern_C export fn fflush(stream *c8) int;
+
+// Reads a whole file into a buffer.
+@extern_C export fn fread(buffer *c8, size usize, count usize, stream *c8) usize;
+
+// Writes to a file.
+@extern_C export fn fwrite(buffer *const c8, size usize, count usize, stream *c8) usize;
+
+// Moves a stream's position.
+@extern_C export fn fseek(stream *c8, offset isize, whence int) int;
+
+// Reports a stream's position.
+@extern_C export fn ftell(stream *c8) isize;
+
+// Rewinds a stream to its start.
+@extern_C export fn rewind(stream *c8) void;
+
+// Reports the end-of-file indicator.
+@extern_C export fn feof(stream *c8) int;
+
+// Reports a stream error.
+@extern_C export fn ferror(stream *c8) int;
+
+// Reports the last error as a string.
+@extern_C export fn strerror(code int) *c8;
+
+// Removes a file or an empty directory. Returns zero on success.
+@extern_C export fn remove(path *const c8) int;
+
+// Renames a file or a directory. Returns zero on success.
+@extern_C export fn rename(source *const c8, destination *const c8) int;

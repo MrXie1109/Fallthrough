@@ -1,0 +1,102 @@
+// A small test harness: macros for assertions, functions for the rest.
+//
+//     fn main() int except {
+//         $CHECK(1 + 1 == 2);
+//         $CHECK_EQ(2, 1 + 1);
+//         return 0;
+//     }
+//
+// # Why macros
+//
+// An assertion is useful only when it reports *where* it failed. A function call
+// cannot know the caller's file and line; a macro can paste the condition as
+// text and hand over `$__builtin_FILE` and `$__builtin_LINE`, which expand
+// anywhere, even inside another module's macro body. The functions below take
+// those three arguments; the macros are the part a test writer types.
+//
+// # Failure
+//
+// A failed check raises `TestError`, carrying the condition and its location. The
+// program may catch it to report every case, or let it end the run with a
+// non-zero status. There is no test *runner*: a test binary is a program, its
+// tests are functions it calls, and the exit status is the verdict.
+
+import std.error;
+import std.string;
+from std.string import String;
+
+// Raises when `condition` is false.
+//
+// `what` is the condition as text, `file` and `line` locate it; the CHECK macro
+// fills all three.
+export fn assert_true(condition bool, what *const char, file *const char, line int) void except {
+    if (condition) {
+        return;
+    }
+    raise "TestError": "assertion failed: " + String(what) + " (" + String(file) + ":" + str(line) + ")";
+}
+
+// Raises when the two integers differ.
+export fn assert_equal_int(
+    actual i64,
+    expected i64,
+    what *const char,
+    file *const char,
+    line int
+) void except {
+    if (actual == expected) {
+        return;
+    }
+    raise "TestError": "expected " + str(expected) + " but got " + str(actual)
+        + " for " + String(what) + " (" + String(file) + ":" + str(line) + ")";
+}
+
+// Raises when the two reals differ.
+export fn assert_equal_real(
+    actual f64,
+    expected f64,
+    what *const char,
+    file *const char,
+    line int
+) void except {
+    if (actual == expected) {
+        return;
+    }
+    raise "TestError": "expected " + str(expected) + " but got " + str(actual)
+        + " for " + String(what) + " (" + String(file) + ":" + str(line) + ")";
+}
+
+// Raises when the two texts differ.
+export fn assert_equal_text(
+    actual &const String,
+    expected &const String,
+    what *const char,
+    file *const char,
+    line int
+) void except {
+    if (actual == expected) {
+        return;
+    }
+    raise "TestError": "expected \"" + String(expected) + "\" but got \""
+        + String(actual) + "\" for " + String(what) + " (" + String(file) + ":" + str(line) + ")";
+}
+
+// Raises an unconditional failure.
+export fn fail(message *const char, file *const char, line int) void except {
+    raise "TestError": "failed: " + String(message) + " (" + String(file) + ":" + str(line) + ")";
+}
+
+// A condition that must hold.
+export define CHECK(condition) std.assert_true(condition, #condition, $__builtin_FILE, $__builtin_LINE)?!
+
+// Two integers that must be equal.
+export define CHECK_EQ(actual, expected) std.assert_equal_int((actual) as i64, (expected) as i64, #actual, $__builtin_FILE, $__builtin_LINE)?!
+
+// Two reals that must be equal.
+export define CHECK_EQ_REAL(actual, expected) std.assert_equal_real((actual) as f64, (expected) as f64, #actual, $__builtin_FILE, $__builtin_LINE)?!
+
+// Two texts that must be equal.
+export define CHECK_EQ_TEXT(actual, expected) std.assert_equal_text(&(actual), &(expected), #actual, $__builtin_FILE, $__builtin_LINE)?!
+
+// An unconditional failure with a message.
+export define FAIL(message) std.fail(#message, $__builtin_FILE, $__builtin_LINE)?!

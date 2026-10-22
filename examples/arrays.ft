@@ -1,0 +1,92 @@
+// A growable sequence, built and read back.
+//
+// `std.Array<T>` is a family of types, one per element. `length()` counts
+// elements and `a[i]` is element `i`, so the index is an element index rather
+// than a byte offset -- the two agree, which is what makes the loop below read
+// as it looks.
+
+import std;
+
+// An element type of the program's own, to show that `Array<T>` is not limited
+// to the built-in types. It needs nothing special: `push` copies with `=`, so
+// anything copyable works.
+type Point {
+    x int;
+    y int;
+}
+
+fn __init__(this &Point, x int, y int) void {
+    this.x = x;
+    this.y = y;
+}
+
+fn show(this &const Point) void {
+    C.printf("(%d, %d)", this.x, this.y);
+}
+
+fn main() int {
+    // An array of `int`. `Array<int>()` is the empty one; the arguments are the
+    // constructor's, and a type with a constructor can be called like one.
+    numbers Array<int> = Array<int>();
+
+    numbers.push(10);
+    numbers.push(20);
+    numbers.push(30);
+
+    C.printf("length: %lu\n", numbers.length());
+
+    // `length()` is the element count, which is what the index range is.
+    total int = 0;
+    index usize = 0;
+    while (index < numbers.length()) {
+        C.printf("numbers[%lu] = %d\n", index, numbers[index]);
+        total += numbers[index];
+        index += 1;
+    }
+    C.printf("total: %d\n", total);
+
+    // `a[i]` names the element, so assigning to it writes one: there is no
+    // separate setter, because a place is what the operator already means.
+    numbers[1] = 99;
+    C.printf("after set: %d\n", numbers[1]);
+
+    // `pop` removes the last element and returns it.
+    popped int = numbers.pop();
+    C.printf("popped: %d, length: %lu\n", popped, numbers.length());
+
+    // Copying an array copies its elements; changing the copy leaves the
+    // original alone.
+    copy Array<int> = numbers;
+    copy[0] = -1;
+    C.printf("copy[0]: %d, numbers[0]: %d\n", copy[0], numbers[0]);
+
+    // A second element type is a second type, with its own functions.
+    reals Array<f64> = Array<f64>();
+    reals.push(2.5 as f64);
+    C.printf("reals[0]: %g\n", reals[0]);
+
+    // A third way to build one: `count` copies of a value.
+    sevens Array<int> = Array<int>(3, 7);
+    C.printf("sevens: %lu long, [0]=%d [2]=%d\n",
+             sevens.length(), sevens[0], sevens[2]);
+
+    // `back()` is overloaded on its receiver alone: the `&const` one reads and
+    // the `&` one writes. Which applies is decided by what the receiver allows,
+    // so `back() = -7` writes the element and the same call on a `const` array
+    // is refused. `front()` is the pair for the other end.
+    sevens.back() = -7;
+    C.printf("after back() = -7: %d (front %d)\n", sevens.back(), sevens.front());
+
+    // Anything copyable is an element, including a type of your own.
+    path Array<Point> = Array<Point>();
+    path.push(Point(1, 2));
+    path.push(Point(3, 4));
+    path[0].show();
+    C.printf(" <- first of %lu points\n", path.length());
+
+    // `data()` lends the buffer, so it can be walked as a plain pointer.
+    raw *const int = sevens.data();
+    C.printf("through data(): %d %d\n", raw[0], raw[1]);
+
+    return total;
+}

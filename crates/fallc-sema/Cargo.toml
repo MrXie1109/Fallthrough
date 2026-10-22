@@ -1,0 +1,15 @@
+[package]
+name = "fallc-sema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The Fallthrough semantic analyzer: name resolution and type checking."
+
+[dependencies]
+fallc-ast.workspace = true
+fallc-diag.workspace = true
+fallc-span.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,948 @@
+// A growable, owned sequence of elements.
+//
+// # The element type
+//
+// `Array<T>` is a family of types, one per element: `Array<int>` holds `int`s,
+// `Array<Point>` holds `Point`s. `length()` counts elements and `a[i]` is
+// element `i`, so the two agree in the way a reader expects -- the index is an
+// element index, not a byte offset.
+//
+// # Ownership
+//
+// An `Array` owns its buffer and the values in it. Copying one copies the
+// elements; destroying one destroys the elements and frees the buffer.
+// `data()` lends the buffer out, so the pointer it returns is valid only until
+// the array is changed or destroyed.
+//
+// An element slot is raw storage until a value is constructed in it. Storing a
+// value into raw storage is `T`'s `__init__(value)`; assigning over an element
+// that is already alive is `T`'s `__assign__`, and destroying one is
+// `T`'s `__drop__`. A type that owns nothing needs to write none of the three:
+// the compiler gives every primitive built-ins that store, assign and do
+// nothing, and a declared type that declares none of them keeps the language's
+// member-wise copy. Both are chosen per substituted `T`, here inside the
+// generic body, which is why `Array<String>` and `Array<Array<int>>` construct
+// their elements through `String`'s and `Array`'s own methods instead of
+// copying the bytes.
+//
+// A declared type that owns storage through its fields therefore has to
+// declare the three methods to be stored safely. Without them both the push
+// and the growth are a member-wise copy, exactly as `T b = a;` is everywhere
+// else in the language, and two elements would own one buffer. `String` and
+// `Array` declare all three.
+//
+// # Growth copies
+//
+// Growing allocates a new buffer, constructs each existing element into it, and
+// destroys the old element. The construction is a copy rather than a move:
+// selecting a move constructor needs an argument the language marks as dying,
+// and an element read out of an array is a named place, so the copying
+// `__init__` is the one that applies. Growth is still O(1) per push on average,
+// but a growth copies every element once.
+//
+// # Changing the middle costs
+//
+// The elements are contiguous, so `insert` and `erase` move everything after
+// the position they touch. `push` and `pop` work on the end, where nothing
+// moves, and are the operations to reach for when the order does not matter.
+
+import std.util;
+import std.type_traits;
+
+// How much room an empty `Array` asks for, in elements.
+//
+// A small non-zero start means the first few appends do not allocate at all,
+// which is the common case for a sequence built by a loop.
+INITIAL_CAPACITY const usize = 8;
+
+export
+template <T type>
+type Array {
+    // The element storage, private by convention like every `_` field.
+    _data *T;
+    // How many elements are stored.
+    _len usize;
+    // How many elements are allocated.
+    _cap usize;
+
+    // The types a sequence hands out. They are declared here because they
+    // belong to `Array`, and named `Array<T>.Iterator` from anywhere else.
+    //
+    // The forward ones are plain pointers: the elements are contiguous, so a
+    // position *is* an address, and the pointer operations are the iterator's
+    // operations. The reverse ones wrap a pointer, because a reverse position
+    // means "one before this", which is a different type from the pointer it
+    // holds.
+    type Iterator = *T;
+    type ConstIterator = *const T;
+    type ReverseIterator = ArrayReverseIterator<T>;
+    type ConstReverseIterator = ArrayConstReverseIterator<T>;
+}
+
+// ------------------------------------------------------------------ lifetime
+
+// Creates an empty array.
+//
+// Nothing is allocated here: an empty array needs no buffer to be valid, and
+// waiting means a sequence built by pushing allocates once rather than twice.
+export
+template <T type>
+fn __init__(this &Array<T>) void {
+    this._data = nullptr;
+    this._len = 0;
+    this._cap = 0;
+}
+
+// Creates an array holding `count` copies of `value`.
+export
+template <T type>
+fn __init__(this &Array<T>, count usize, value T) void {
+    this._data = nullptr;
+    this._len = 0;
+    this._cap = 0;
+    if (count == 0) {
+        return;
+    }
+    this.reserve(count);
+    index usize = 0;
+    while (index < count) {
+        slot *T = &this._data[index];
+        slot->__init__(value);
+        index += 1;
+    }
+    this._len = count;
+}
+
+// Copies another array's elements.
+//
+// The slots are raw storage, so each element is constructed rather than
+// assigned over: an assignment would expect a live destination, and a `String`
+// destination would free a buffer that was never allocated.
+export
+template <T type>
+fn __init__(this &Array<T>, other &const Array<T>) void {
+    this._data = nullptr;
+    this._len = 0;
+    this._cap = 0;
+    if (other._len == 0) {
+        return;
+    }
+    this.reserve(other._len);
+    index usize = 0;
+    while (index < other._len) {
+        slot *T = &this._data[index];
+        slot->__init__(other._data[index]);
+        index += 1;
+    }
+    this._len = other._len;
+}
+
+// Takes another array's buffer.
+//
+// This is the *move* form, chosen when the source is a temporary: `Array<int>
+// b = make();` transfers the buffer instead of copying the elements, so the
+// cost is the same whether the array is short or long.
+//
+// Taking the buffer means the source must not be dropped afterwards, which is
+// what an rvalue reference promises: nothing else can name it.
+export
+template <T type>
+fn __init__(this &Array<T>, other &&Array<T>) void {
+    this._data = other._data;
+    this._len = other._len;
+    this._cap = other._cap;
+    // Emptied, so the destructor of the dying array frees nothing. This is the
+    // same state the default constructor leaves: no buffer and no elements, so
+    // `length()` is zero and `data()` is null in both.
+    other._data = nullptr;
+    other._len = 0;
+    other._cap = 0;
+}
+
+// Copies another array's elements over this one.
+//
+// Declared before the move form below. Assignment takes the moving form for a
+// dying source and otherwise the first `__assign__` whose parameter the value
+// fits; a value fits `&const Array<T>` and `&&Array<T>` alike, so for a source
+// that outlives the statement the order is what decides. With the move form
+// first, `b = a;` would take the buffer out of the named `a` and leave it empty.
+// A copy is what assignment means for such a source.
+//
+// The receiver's old elements are destroyed before the new ones are
+// constructed: the new ones go into raw slots, and keeping the old ones alive
+// would leak whatever they own.
+export
+template <T type>
+fn __assign__(this &Array<T>, other &const Array<T>) void {
+    if (this._data == other._data) {
+        return;
+    }
+    this.clear();
+    this.reserve(other._len);
+    index usize = 0;
+    while (index < other._len) {
+        slot *T = &this._data[index];
+        slot->__init__(other._data[index]);
+        index += 1;
+    }
+    this._len = other._len;
+}
+
+// Takes another array's buffer in place of this one's.
+//
+// The move form of assignment: the receiver's elements are destroyed and its
+// buffer released first, so taking the source's does not leak either. A source
+// sharing this buffer is left alone: releasing it first would free the buffer
+// this is about to take.
+//
+// Declared *after* the copying form, deliberately: see the note there. The
+// checker takes this form when the source is dying, which is the only time the
+// buffer may be taken; the copying form is what a named source reaches.
+export
+template <T type>
+fn __assign__(this &Array<T>, other &&Array<T>) void {
+    if (this._data == other._data) {
+        return;
+    }
+    index usize = 0;
+    while (index < this._len) {
+        slot *T = &this._data[index];
+        slot->__drop__();
+        index += 1;
+    }
+    util.free(this._data as *byte);
+    this._data = other._data;
+    this._len = other._len;
+    this._cap = other._cap;
+    other._data = nullptr;
+    other._len = 0;
+    other._cap = 0;
+}
+
+// Destroys every element and releases the buffer.
+export
+template <T type>
+fn __drop__(this &Array<T>) void {
+    index usize = 0;
+    while (index < this._len) {
+        slot *T = &this._data[index];
+        slot->__drop__();
+        index += 1;
+    }
+    util.free(this._data as *byte);
+    this._data = nullptr;
+    this._len = 0;
+    this._cap = 0;
+}
+
+// ------------------------------------------------------------------- queries
+
+// Returns how many elements are stored.
+export
+template <T type>
+fn length(this &const Array<T>) usize {
+    return this._len;
+}
+
+// Returns how many elements are allocated.
+export
+template <T type>
+fn capacity(this &const Array<T>) usize {
+    return this._cap;
+}
+
+// Returns `true` when there are no elements.
+export
+template <T type>
+fn empty(this &const Array<T>) bool {
+    return this._len == 0;
+}
+
+// Returns the element storage.
+//
+// The pointer is borrowed, like `String.data()`: it stays valid until this
+// array is changed or destroyed.
+export
+template <T type>
+fn data(this &const Array<T>) *const T {
+    return this._data;
+}
+
+// ------------------------------------------------------------------ indexing
+
+// Returns a reference to the `index`th element.
+//
+// A *reference* rather than a value, so that `a[i]` is the element itself:
+// reading it gives a `T` and assigning to it writes one. That is what makes
+// `a[i] = v` work, and it is why the result is not a copy.
+//
+// An index past the end is a programming error, and aborts rather than
+// returning a reference to whatever follows the buffer.
+export
+template <T type>
+fn __getitem__(this &Array<T>, index usize) &T {
+    if (index >= this._len) {
+        util.panic("Array index out of range");
+    }
+    return this._data[index];
+}
+
+// Returns a reference to the `index`th element.
+//
+// A *reference* rather than a value, so that `a[i]` is the element itself:
+// reading it gives a `T` and assigning to it writes one. That is what makes
+// `a[i] = v` work, and it is why the result is not a copy.
+//
+// An index past the end is a programming error, and aborts rather than
+// returning a reference to whatever follows the buffer.
+export
+template <T type>
+fn __getitem__(this &const Array<T>, index usize) &const T {
+    if (index >= this._len) {
+        util.panic("Array index out of range");
+    }
+    return this._data[index];
+}
+
+
+// ------------------------------------------------------------------- changes
+
+// Makes room for `wanted` elements.
+//
+// Growing doubles the capacity rather than matching the request, which is what
+// makes appending in a loop cost O(1) per element on average instead of
+// reallocating every time.
+//
+// The new buffer is raw storage: each existing element is constructed into it,
+// then the old one is destroyed. The construction is a copy, for the reason
+// "Growth copies" gives at the top of the file.
+export
+template <T type>
+fn reserve(this &Array<T>, wanted usize) void {
+    if (this._cap >= wanted) {
+        return;
+    }
+    grown usize = INITIAL_CAPACITY;
+    while (grown < wanted) {
+        grown *= 2;
+    }
+    fresh *T = util.allocate(grown * sizeof(T)) as *T;
+    index usize = 0;
+    while (index < this._len) {
+        target *T = &fresh[index];
+        // Moving is the cheap path, and the compiler says whether it is also a
+        // safe one: an element type whose move can raise is copied instead, so
+        // that a raise leaves the old buffer whole rather than half emptied.
+        if ($MOVES(T)) @constexpr {
+            target->__init__(this._data[index]);
+        } else {
+            target->__init__(util.move(this._data[index]));
+        }
+        source *T = &this._data[index];
+        source->__drop__();
+        index += 1;
+    }
+    util.free(this._data as *byte);
+    this._data = fresh;
+    this._cap = grown;
+}
+
+// Releases the memory beyond the elements.
+//
+// As in `reserve`, each element is constructed into the tight buffer and then
+// destroyed in the old one.
+export
+template <T type>
+fn shrink_to_fit(this &Array<T>) void {
+    if (this._len == this._cap) {
+        return;
+    }
+    if (this._len == 0) {
+        util.free(this._data as *byte);
+        this._data = nullptr;
+        this._cap = 0;
+        return;
+    }
+    tight *T = util.allocate(this._len * sizeof(T)) as *T;
+    index usize = 0;
+    while (index < this._len) {
+        target *T = &tight[index];
+        if ($MOVES(T)) @constexpr {
+            target->__init__(this._data[index]);
+        } else {
+            target->__init__(util.move(this._data[index]));
+        }
+        source *T = &this._data[index];
+        source->__drop__();
+        index += 1;
+    }
+    util.free(this._data as *byte);
+    this._data = tight;
+    this._cap = this._len;
+}
+
+// Changes the number of elements, filling any new ones with `filler`.
+//
+// A shrinking resize destroys the elements it removes; a growing one
+// constructs each new element from `filler`.
+export
+template <T type>
+fn resize(this &Array<T>, wanted usize, filler T) void {
+    this.reserve(wanted);
+    if (wanted < this._len) {
+        index usize = wanted;
+        while (index < this._len) {
+            slot *T = &this._data[index];
+            slot->__drop__();
+            index += 1;
+        }
+        this._len = wanted;
+        return;
+    }
+    index usize = this._len;
+    while (index < wanted) {
+        slot *T = &this._data[index];
+        slot->__init__(filler);
+        index += 1;
+    }
+    this._len = wanted;
+}
+
+// Empties the array without releasing its buffer.
+//
+// The elements are destroyed, because the storage is about to become raw
+// again; the buffer itself is kept for the next push.
+export
+template <T type>
+fn clear(this &Array<T>) void {
+    index usize = 0;
+    while (index < this._len) {
+        slot *T = &this._data[index];
+        slot->__drop__();
+        index += 1;
+    }
+    this._len = 0;
+}
+
+// Appends a copy of `value`.
+//
+// The parameter is by value, so a temporary is copied once on the way in, and
+// the construction below is the second copy. That is as cheap as a by-value
+// sink gets.
+//
+// # Why there is no `&&T` overload
+//
+// The slot `_data[_len]` is raw storage, so constructing into it is
+// `T`'s `__init__` either way. The checker reaches the first fitting overload
+// rather than the one whose argument is dying, so a `&&T` form placed first
+// would take the contents out of a named argument, and placed second it would
+// never be reached. A dead overload is worse than none: it reads as a promise
+// that appending a temporary is free.
+export
+template <T type>
+fn push(this &Array<T>, value T) void {
+    this.reserve(this._len + 1);
+    slot *T = &this._data[this._len];
+    slot->__init__(value);
+    this._len += 1;
+}
+
+// Inserts a copy of `value` at `index`, moving the rest along.
+//
+// # Cost
+//
+// **Linear in the number of elements after `index`**, because every one of them
+// has to move up by one. Appending with `push` is the cheap case, and it is the
+// one to reach for when the order does not matter. Inserting at the front of an
+// `n`-element array moves all `n`.
+//
+// `index` may be the length, which appends -- the one position where nothing
+// moves and the cost is `push`'s.
+//
+// An index past the end is a programming error and aborts, rather than writing
+// somewhere outside the array.
+//
+// # How the tail moves
+//
+// Backwards, because each slot is filled from the one before it. Filling a
+// slot constructs into raw storage -- the previous occupant was just destroyed
+// -- so `__init__` is the operation, not `__assign__`: at the end of the
+// shifted range the slot has never held a value.
+//
+// # No move form
+//
+// There is no `&&T` overload. The checker reaches the first fitting overload
+// rather than the one whose argument is dying -- so a `&&T` form would either
+// take the contents out of a named argument or never be reached. An insertion
+// is linear either way: the tail has to move, and saving one element copy does
+// not change that.
+export
+template <T type>
+fn insert(this &Array<T>, at *T, value T) void {
+    // The position is measured before the buffer is reserved: growing may move
+    // the buffer, and the pointer the caller handed over belongs to the old
+    // one.
+    offset isize = at - this._data;
+    if (offset < 0 || offset as usize > this._len) {
+        util.panic("Array insert past the end");
+    }
+    index usize = offset as usize;
+    this.reserve(this._len + 1);
+    moved usize = this._len;
+    while (moved > index) {
+        target *T = &this._data[moved];
+        if ($MOVES(T)) @constexpr {
+            target->__init__(this._data[moved - 1]);
+        } else {
+            target->__init__(util.move(this._data[moved - 1]));
+        }
+        source *T = &this._data[moved - 1];
+        source->__drop__();
+        moved -= 1;
+    }
+    slot *T = &this._data[index];
+    slot->__init__(value);
+    this._len += 1;
+}
+
+// Removes the element at `index`, moving the rest back, and returns it.
+//
+// # Cost
+//
+// **Linear in the number of elements after `index`**, for the same reason
+// `insert` is: they all move down by one. Removing the last element is the
+// cheap case, and `pop` is the name for it. The relative order of the remaining
+// elements is kept.
+//
+// An index past the end is a programming error and aborts.
+//
+// The tail is shifted by assignment, because each destination is an element
+// that is still alive: `__assign__` decides what happens to the value already
+// there. The copy left at the end is destroyed once it is out of the length.
+export
+template <T type>
+fn erase(this &Array<T>, at *T) T {
+    offset isize = at - this._data;
+    if (offset < 0 || offset as usize >= this._len) {
+        util.panic("Array erase past the end");
+    }
+    index usize = offset as usize;
+    removed T = this._data[index];
+    moved usize = index;
+    while (moved + 1 < this._len) {
+        this._data[moved] = this._data[moved + 1];
+        moved += 1;
+    }
+    this._len -= 1;
+    slot *T = &this._data[this._len];
+    slot->__drop__();
+    return removed;
+}
+
+// Removes the last element and returns it.
+//
+// Popping an empty array is a programming error and aborts, because there is
+// nothing to return and a default `T` is not something this module can make.
+//
+// The returned value is constructed before the stored one is destroyed, so a
+// type that owns storage hands back a value of its own rather than a dangling
+// one.
+export
+template <T type>
+fn pop(this &Array<T>) T {
+    if (this._len == 0) {
+        util.panic("Array pop from an empty array");
+    }
+    this._len -= 1;
+    removed T = this._data[this._len];
+    slot *T = &this._data[this._len];
+    slot->__drop__();
+    return removed;
+}
+
+
+// Returns the first element.
+export
+template <T type>
+fn front(this &const Array<T>) &const T {
+    if (this._len == 0) {
+        util.panic("Array front of an empty array");
+    }
+    return this._data[0];
+}
+
+// Returns the first element as a place that can be written.
+export
+template <T type>
+fn front(this &Array<T>) &T {
+    if (this._len == 0) {
+        util.panic("Array front of an empty array");
+    }
+    return this._data[0];
+}
+
+// Returns the last element without removing it.
+export
+template <T type>
+fn back(this &const Array<T>) &const T {
+    if (this._len == 0) {
+        util.panic("Array last of an empty array");
+    }
+    return this._data[this._len - 1];
+}
+
+// Returns the last element as a place that can be written.
+export
+template <T type>
+fn back(this &Array<T>) &T {
+    if (this._len == 0) {
+        util.panic("Array last_mut of an empty array");
+    }
+    return this._data[this._len - 1];
+}
+
+// ------------------------------------------------------------------ iteration
+
+// Returns a pointer at the first element.
+//
+// The iterator of an `Array` is a pointer: the elements are contiguous, so a
+// position in them *is* an address, and `++`, `*`, `!=`, `[]` and comparisons
+// are the language's own pointer operations. Nothing is wrapped, which is why
+// `for (x int : a)` and a hand-written walk by pointer are the same code.
+export
+template <T type>
+fn begin(this &Array<T>) *T {
+    return this._data;
+}
+
+// Returns a pointer one past the last element, which is where a loop stops.
+//
+// One past rather than at the last, because that is the position an empty array
+// and a just-finished walk share: `begin() == end()` is "nothing to do", and an
+// empty array has no buffer for `_data` to point at -- `nullptr + 0` is still
+// null, which is a valid end.
+export
+template <T type>
+fn end(this &Array<T>) *T {
+    return this._data + this._len;
+}
+
+// The same positions, for an array that may not be written.
+export
+template <T type>
+fn begin(this &const Array<T>) *const T {
+    return this._data;
+}
+
+export
+template <T type>
+fn end(this &const Array<T>) *const T {
+    return this._data + this._len;
+}
+
+// A position that walks a sequence backwards.
+//
+// It holds the pointer *after* the element it yields, which is the convention
+// that makes `rbegin()` the end of the forward walk: `*it` is the element
+// before the position, `++it` moves towards the front, and two reverse
+// positions are equal when their pointers are. That is one word of state and no
+// flag, and it makes `rend()` the array's own first element.
+export
+template <T type>
+type ArrayReverseIterator {
+    _at *T;
+}
+
+export
+template <T type>
+fn __init__(this &ArrayReverseIterator<T>, at *T) void {
+    this._at = at;
+}
+
+export
+template <T type>
+fn __inc__(this &ArrayReverseIterator<T>) void {
+    this._at = this._at - 1;
+}
+
+export
+template <T type>
+fn __dec__(this &ArrayReverseIterator<T>) void {
+    this._at = this._at + 1;
+}
+
+// Moving by a count is moving by the count *backwards*: `it + n` is `n` steps
+// towards the front, `it - n` towards the back, and the difference of two
+// positions is the negative of the distance between their pointers -- the same
+// convention C++'s reverse iterators take, and the one that keeps `n + (rbegin()
+// - it)` equal to the forward index.
+
+export
+template <T type>
+fn __add__(this &const ArrayReverseIterator<T>, offset usize) ArrayReverseIterator<T> {
+    return ArrayReverseIterator<T>(this._at - offset);
+}
+
+export
+template <T type>
+fn __sub__(this &const ArrayReverseIterator<T>, offset usize) ArrayReverseIterator<T> {
+    return ArrayReverseIterator<T>(this._at + offset);
+}
+
+// The difference of two positions, which is negative when the left one comes
+// later in the walk -- that is, earlier in the array.
+export
+template <T type>
+fn __sub__(
+    this &const ArrayReverseIterator<T>,
+    other &const ArrayReverseIterator<T>
+) isize {
+    return -(this._at - other._at);
+}
+
+export
+template <T type>
+fn __iadd__(this &ArrayReverseIterator<T>, offset usize) void {
+    this._at = this._at - offset;
+}
+
+export
+template <T type>
+fn __isub__(this &ArrayReverseIterator<T>, offset usize) void {
+    this._at = this._at + offset;
+}
+
+export
+template <T type>
+fn __getitem__(this &const ArrayReverseIterator<T>, at usize) &T {
+    return (this._at - 1 - at)[0];
+}
+
+export
+template <T type>
+fn __lt__(
+    this &const ArrayReverseIterator<T>,
+    other &const ArrayReverseIterator<T>
+) bool {
+    return this._at > other._at;
+}
+
+export
+template <T type>
+fn __le__(
+    this &const ArrayReverseIterator<T>,
+    other &const ArrayReverseIterator<T>
+) bool {
+    return this._at >= other._at;
+}
+
+export
+template <T type>
+fn __gt__(
+    this &const ArrayReverseIterator<T>,
+    other &const ArrayReverseIterator<T>
+) bool {
+    return this._at < other._at;
+}
+
+export
+template <T type>
+fn __ge__(
+    this &const ArrayReverseIterator<T>,
+    other &const ArrayReverseIterator<T>
+) bool {
+    return this._at <= other._at;
+}
+
+export
+template <T type>
+fn __deref__(this &ArrayReverseIterator<T>) &T {
+    return (this._at - 1)[0];
+}
+
+export
+template <T type>
+fn __ne__(this &const ArrayReverseIterator<T>, other &const ArrayReverseIterator<T>) bool {
+    return this._at != other._at;
+}
+
+export
+template <T type>
+fn __eq__(this &const ArrayReverseIterator<T>, other &const ArrayReverseIterator<T>) bool {
+    return this._at == other._at;
+}
+
+// A read-only reverse position.
+export
+template <T type>
+type ArrayConstReverseIterator {
+    _at *const T;
+}
+
+export
+template <T type>
+fn __init__(this &ArrayConstReverseIterator<T>, at *const T) void {
+    this._at = at;
+}
+
+export
+template <T type>
+fn __inc__(this &ArrayConstReverseIterator<T>) void {
+    this._at = this._at - 1;
+}
+
+export
+template <T type>
+fn __dec__(this &ArrayConstReverseIterator<T>) void {
+    this._at = this._at + 1;
+}
+
+export
+template <T type>
+fn __add__(
+    this &const ArrayConstReverseIterator<T>,
+    offset usize
+) ArrayConstReverseIterator<T> {
+    return ArrayConstReverseIterator<T>(this._at - offset);
+}
+
+export
+template <T type>
+fn __sub__(
+    this &const ArrayConstReverseIterator<T>,
+    offset usize
+) ArrayConstReverseIterator<T> {
+    return ArrayConstReverseIterator<T>(this._at + offset);
+}
+
+export
+template <T type>
+fn __sub__(
+    this &const ArrayConstReverseIterator<T>,
+    other &const ArrayConstReverseIterator<T>
+) isize {
+    return -(this._at - other._at);
+}
+
+export
+template <T type>
+fn __iadd__(this &ArrayConstReverseIterator<T>, offset usize) void {
+    this._at = this._at - offset;
+}
+
+export
+template <T type>
+fn __isub__(this &ArrayConstReverseIterator<T>, offset usize) void {
+    this._at = this._at + offset;
+}
+
+export
+template <T type>
+fn __getitem__(this &const ArrayConstReverseIterator<T>, at usize) &const T {
+    return (this._at - 1 - at)[0];
+}
+
+export
+template <T type>
+fn __lt__(
+    this &const ArrayConstReverseIterator<T>,
+    other &const ArrayConstReverseIterator<T>
+) bool {
+    return this._at > other._at;
+}
+
+export
+template <T type>
+fn __le__(
+    this &const ArrayConstReverseIterator<T>,
+    other &const ArrayConstReverseIterator<T>
+) bool {
+    return this._at >= other._at;
+}
+
+export
+template <T type>
+fn __gt__(
+    this &const ArrayConstReverseIterator<T>,
+    other &const ArrayConstReverseIterator<T>
+) bool {
+    return this._at < other._at;
+}
+
+export
+template <T type>
+fn __ge__(
+    this &const ArrayConstReverseIterator<T>,
+    other &const ArrayConstReverseIterator<T>
+) bool {
+    return this._at <= other._at;
+}
+
+export
+template <T type>
+fn __deref__(this &ArrayConstReverseIterator<T>) &const T {
+    return (this._at - 1)[0];
+}
+
+export
+template <T type>
+fn __ne__(
+    this &const ArrayConstReverseIterator<T>,
+    other &const ArrayConstReverseIterator<T>
+) bool {
+    return this._at != other._at;
+}
+
+export
+template <T type>
+fn __eq__(
+    this &const ArrayConstReverseIterator<T>,
+    other &const ArrayConstReverseIterator<T>
+) bool {
+    return this._at == other._at;
+}
+
+// Returns a reverse position at the last element.
+export
+template <T type>
+fn rbegin(this &Array<T>) ArrayReverseIterator<T> {
+    return ArrayReverseIterator<T>(this._data + this._len);
+}
+
+// Returns a reverse position before the first element, where a reverse walk
+// stops.
+export
+template <T type>
+fn rend(this &Array<T>) ArrayReverseIterator<T> {
+    return ArrayReverseIterator<T>(this._data);
+}
+
+// Returns a position at the *last* element, walked towards the front.
+//
+// The reverse walk is a forward walk over the same storage, read backwards:
+// `rbegin()` is where a forward walk stops and `rend()` is where it starts.
+export
+template <T type>
+fn rbegin(this &Array<T>) ArrayReverseIterator<T> {
+    return ArrayReverseIterator<T>(this._data + this._len);
+}
+
+// Returns the position one past the front, which is where a reverse walk stops.
+export
+template <T type>
+fn rend(this &Array<T>) ArrayReverseIterator<T> {
+    return ArrayReverseIterator<T>(this._data);
+}
+
+// The read-only half of the reverse walk.
+export
+template <T type>
+fn rbegin(this &const Array<T>) ArrayConstReverseIterator<T> {
+    return ArrayConstReverseIterator<T>(this._data + this._len);
+}
+
+export
+template <T type>
+fn rend(this &const Array<T>) ArrayConstReverseIterator<T> {
+    return ArrayConstReverseIterator<T>(this._data);
+}

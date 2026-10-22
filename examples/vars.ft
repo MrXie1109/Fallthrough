@@ -1,0 +1,6 @@
+fn main() int {
+    x int;
+    y int = 7;
+    z auto = 42;
+    return y;
+}

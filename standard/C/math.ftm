@@ -1,0 +1,99 @@
+// The floating-point mathematics library.
+//
+// Part of the C bindings: the declarations from `math.h`.
+//
+// This module is not meant to be imported on its own. `standard/C.ftm` gathers
+// it with the others and re-exports everything, so `import C;` is what a
+// program writes and `C.printf` is what it calls.
+//
+// Every declaration is `export`, which is what makes it visible to the module
+// that re-exports it; a module's declarations are private by default.
+
+// ----------------------------------------------------------------- math.h
+
+// The absolute value of a double.
+@extern_C export fn fabs(value double) double;
+
+// The square root.
+@extern_C export fn sqrt(value double) double;
+
+// Raises to a power.
+@extern_C export fn pow(base double, exponent double) double;
+
+// The exponential function.
+@extern_C export fn exp(value double) double;
+
+// The natural logarithm.
+@extern_C export fn log(value double) double;
+
+// The base-10 logarithm.
+@extern_C export fn log10(value double) double;
+
+// The sine.
+@extern_C export fn sin(value double) double;
+
+// The cosine.
+@extern_C export fn cos(value double) double;
+
+// The tangent.
+@extern_C export fn tan(value double) double;
+
+// The floor.
+@extern_C export fn floor(value double) double;
+
+// The ceiling.
+@extern_C export fn ceil(value double) double;
+
+// Rounds to the nearest integer.
+@extern_C export fn round(value double) double;
+
+// The floating-point remainder.
+@extern_C export fn fmod(numerator double, denominator double) double;
+
+// The angle whose sine is `value`, in radians.
+@extern_C export fn asin(value double) double;
+
+// The angle whose cosine is `value`, in radians.
+@extern_C export fn acos(value double) double;
+
+// The angle whose tangent is `value`, in radians.
+@extern_C export fn atan(value double) double;
+
+// The angle of the point `(x, y)`, in radians.
+@extern_C export fn atan2(y double, x double) double;
+
+// The base-2 logarithm.
+@extern_C export fn log2(value double) double;
+
+// The hypotenuse, computed without intermediate overflow.
+@extern_C export fn hypot(x double, y double) double;
+
+// The cube root.
+@extern_C export fn cbrt(value double) double;
+
+// The integer part, toward zero.
+@extern_C export fn trunc(value double) double;
+
+// The hyperbolic sine.
+@extern_C export fn sinh(value double) double;
+
+// The hyperbolic cosine.
+@extern_C export fn cosh(value double) double;
+
+// The hyperbolic tangent.
+@extern_C export fn tanh(value double) double;
+
+// The inverse hyperbolic sine.
+@extern_C export fn asinh(value double) double;
+
+// The inverse hyperbolic cosine.
+@extern_C export fn acosh(value double) double;
+
+// The inverse hyperbolic tangent.
+@extern_C export fn atanh(value double) double;
+
+// Whether `value` is NaN.
+@extern_C export fn isnan(value double) i32;
+
+// Whether `value` is infinite.
+@extern_C export fn isinf(value double) i32;

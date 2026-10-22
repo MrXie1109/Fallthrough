@@ -1,0 +1,6 @@
+fn main() int {
+    x int = 41;
+    p *int = &x;
+    *p = *p + 1;
+    return x;
+}

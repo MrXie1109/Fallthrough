@@ -1,0 +1,9 @@
+import C;
+
+fn main() int {
+    C.printf("pi is about %f\n", 3.14159);
+    C.printf("sqrt(2) = %f\n", C.sqrt(2.0));
+    C.printf("float literal: %f\n", 2.5f as double);
+    C.printf("suffixes: %d %d\n", 42u8, 300i64);
+    return 0;
+}

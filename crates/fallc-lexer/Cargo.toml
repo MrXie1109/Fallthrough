@@ -1,0 +1,15 @@
+[package]
+name = "fallc-lexer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The Fallthrough lexer: source text to token stream."
+
+[dependencies]
+fallc-diag.workspace = true
+fallc-span.workspace = true
+unicode-ident.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,118 @@
+// TCP sockets, POSIX.
+//
+// A socket is a small integer; a connection is `connect` on it; reading and
+// writing are `send` and `recv`. The address structure is `sockaddr_in` for
+// IPv4, whose first three fields are the only ones a connection needs: the
+// family, the port and the address, each in the byte order the network uses.
+
+@extern_C fn socket(domain i32, kind i32, protocol i32) i32;
+@extern_C fn connect(fd i32, address *const byte, length u32) i32;
+@extern_C fn bind(fd i32, address *const byte, length u32) i32;
+@extern_C fn listen(fd i32, backlog i32) i32;
+@extern_C fn accept(fd i32, address *byte, length *u32) i32;
+@extern_C fn send(fd i32, buffer *const byte, length usize, flags i32) isize;
+@extern_C fn recv(fd i32, buffer *byte, length usize, flags i32) isize;
+@extern_C fn close(fd i32) i32;
+@extern_C fn getsockname(fd i32, address *byte, length *u32) i32;
+
+// `AF_INET`, `SOCK_STREAM`, `IPPROTO_TCP`.
+AF_INET const i32 = 2;
+SOCK_STREAM const i32 = 1;
+IPPROTO_TCP const i32 = 6;
+
+// The part of `sockaddr_in` a connection fills in.
+type SockaddrIn {
+    family u16;
+    port u16;
+    address u32;
+    zero0 u32;
+    zero1 u32;
+}
+
+// The address in network order.
+//
+// `sin_addr` is a 32-bit field already in network byte order, so on a
+// little-endian machine the *first* address byte has to be the low byte of the
+// integer: writing `127.0.0.1` as `0x7f000001` put `1.0.0.127` on the wire.
+fn address_of(first u8, second u8, third u8, fourth u8) u32 {
+    return (first as u32)
+        | ((second as u32) << 8)
+        | ((third as u32) << 16)
+        | ((fourth as u32) << 24);
+}
+
+// The port in network order.
+fn port_of(port u16) u16 {
+    return ((port as u16) << 8) | ((port >> 8) as u16);
+}
+
+// Fills the address structure shared by bind and connect.
+fn fill(address *SockaddrIn, first u8, second u8, third u8, fourth u8, port u16) void {
+    address.family = AF_INET as u16;
+    address.port = port_of(port);
+    address.address = address_of(first, second, third, fourth);
+    address.zero0 = 0u32;
+    address.zero1 = 0u32;
+}
+
+// Winsock has to be started on Windows; POSIX has nothing to start.
+export fn startup() bool except {
+    return true;
+}
+
+// Opens a TCP socket.
+export fn open_stream() i64 except {
+    fd i32 = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd < 0) {
+        raise "NetworkError": "socket failed";
+    }
+    return fd as i64;
+}
+
+// Connects `fd` to `first.second.third.fourth:port`.
+export fn connect_ipv4(fd i64, first u8, second u8, third u8, fourth u8, port u16) bool {
+    address SockaddrIn;
+    fill(&address, first, second, third, fourth, port);
+    return connect(fd as i32, (&address) as *const byte, sizeof(SockaddrIn) as u32) == 0;
+}
+
+// Binds `fd` to `first.second.third.fourth:port` and listens.
+export fn listen_ipv4(fd i64, first u8, second u8, third u8, fourth u8, port u16, backlog i32) bool {
+    address SockaddrIn;
+    fill(&address, first, second, third, fourth, port);
+    if (bind(fd as i32, (&address) as *const byte, sizeof(SockaddrIn) as u32) != 0) {
+        return false;
+    }
+    return listen(fd as i32, backlog) == 0;
+}
+
+// Accepts one connection, returning its socket or a negative number.
+export fn accept_one(fd i64) i64 {
+    return accept(fd as i32, nullptr, nullptr) as i64;
+}
+
+// The port the socket is bound to, in host order.
+export fn bound_port(fd i64) u16 except {
+    address SockaddrIn;
+    length u32 = sizeof(SockaddrIn) as u32;
+    if (getsockname(fd as i32, (&address) as *byte, &length) != 0) {
+        raise "NetworkError": "getsockname failed";
+    }
+    return ((address.port >> 8) as u16) | ((address.port & 0xffu16) << 8);
+}
+
+// Sends `length` bytes; returns the count sent or a negative number.
+export fn send_bytes(fd i64, buffer *const byte, length usize) isize {
+    return send(fd as i32, buffer, length, 0);
+}
+
+// Receives up to `length` bytes; returns the count read, zero at end, or a
+// negative number.
+export fn recv_bytes(fd i64, buffer *byte, length usize) isize {
+    return recv(fd as i32, buffer, length, 0);
+}
+
+// Closes a socket.
+export fn close_socket(fd i64) bool {
+    return close(fd as i32) == 0;
+}

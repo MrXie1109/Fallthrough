@@ -1,0 +1,13 @@
+[package]
+name = "fallc-ast"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The Fallthrough abstract syntax tree and its visitor infrastructure."
+
+[dependencies]
+fallc-span.workspace = true
+
+[lints]
+workspace = true

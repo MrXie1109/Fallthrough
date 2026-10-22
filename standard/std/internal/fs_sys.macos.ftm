@@ -1,0 +1,59 @@
+// The filesystem calls, as Darwin provides them.
+//
+// The POSIX calls are the same; what differs is the layout `stat` and `dirent`
+// hand back, so this file is that part of the contract.
+
+import C;
+import std.array;
+import std.string;
+
+@extern_C fn mkdir(path *const char, mode u32) int;
+@extern_C fn opendir(path *const char) *byte;
+@extern_C fn readdir(directory *byte) *byte;
+@extern_C fn closedir(directory *byte) int;
+@extern_C fn stat(path *const char, buffer *byte) int;
+
+// Makes one directory, returning whether it worked.
+export fn mkdir_one(path *const char) bool {
+    return mkdir(path, 0o755) == 0;
+}
+
+// Reads the names in `path`, without `.` and `..`.
+export fn read_dir_names(path *const char, names *Array<String>) bool {
+    directory *byte = opendir(path);
+    if (directory == nullptr) {
+        return false;
+    }
+    while (true) {
+        entry *byte = readdir(directory);
+        if (entry == nullptr) {
+            break;
+        }
+        name *const char = entry_name(entry);
+        if (name[0] == '.' as c8 && (name[1] == 0 as c8 || (name[1] == '.' as c8 && name[2] == 0 as c8))) {
+            continue;
+        }
+        names.push(String(name));
+    }
+    closedir(directory);
+    return true;
+}
+
+// The name inside a Darwin `dirent`.
+fn entry_name(entry *byte) *const char {
+    // Darwin: d_ino u64, d_seekoff u64, d_reclen u16, d_namlen u16, d_type u8,
+    // d_name at 21.
+    return (entry + 21) as *const char;
+}
+
+// Whether the entry at `path` is a directory, and its size in bytes.
+export fn stat_entry(path *const char, is_dir *bool, size *i64) bool {
+    buffer [144]byte;
+    if (stat(path, &buffer[0]) != 0) {
+        return false;
+    }
+    mode u16 = *(&buffer[4] as *u16);
+    *is_dir = (mode & 0o40000u16) != 0;
+    *size = *(&buffer[92] as *i64);
+    return true;
+}

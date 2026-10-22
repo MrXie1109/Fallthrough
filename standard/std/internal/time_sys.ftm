@@ -1,0 +1,26 @@
+// The wall clock, as the operating system reports it.
+//
+// `clock_gettime` with `CLOCK_REALTIME` is the POSIX way to ask for the wall
+// clock at nanosecond resolution: the value counts from the Unix epoch, so no
+// conversion is needed here. Linux and macOS share the call and the layout of
+// `timespec`, so one file serves both.
+
+@extern_C fn clock_gettime(clock_id int, time *Timespec) int;
+
+// `struct timespec` on the platforms here: two 64-bit fields.
+type Timespec {
+    seconds i64;
+    nanos i64;
+}
+
+// `CLOCK_REALTIME`.
+REALTIME const int = 0;
+
+// Nanoseconds since the Unix epoch, or zero when the system cannot say.
+export fn realtime_ns() i64 {
+    stamp Timespec;
+    if (clock_gettime(REALTIME, &stamp) != 0) {
+        return 0i64;
+    }
+    return stamp.seconds * 1000000000i64 + stamp.nanos;
+}

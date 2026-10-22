@@ -1,0 +1,812 @@
+// Memory: ownership, allocation, and reference counting.
+//
+// `Box` owns one value outright, `Rc` shares one between owners and frees it when
+// the last one goes, and `RcWeak` watches a shared value without owning it. Where
+// the memory comes from is a *type*: a container that names an allocator pays
+// nothing for the choice, because the call is ordinary code and an allocator with
+// no fields occupies no space.
+//
+// `Rc` is for one thread. `Arc` is the same idea with counted atomically, which is
+// what makes it shareable between threads -- its counts are `Atomic<int>`, so the
+// cost is a lock per count and the promise is the same one every reference count
+// makes: the value goes when the last owner does.
+
+// The *module* is imported as well as the type: a family's members are
+// instantiated from its declaration, and the declaration is what an import of
+// the module brings.
+import std.sync;
+from std.sync import Atomic;
+import std.util;
+
+// --------------------------------------------------------------- allocators
+
+// What a type has to provide to be usable as an allocator.
+//
+// Two methods are the whole contract: `alloc(n)` gives `n` bytes, aligned for any
+// type, and `free(p)` gives back a block that `alloc` returned. A trait rather
+// than an interface because the choice is made while compiling: a container takes
+// the allocator's *type*, and no table and no call through a pointer stand
+// between the container and the memory.
+export traits Allocator(it A) {
+    it.alloc(usize) -> *byte,
+    it.free(*byte) -> void,
+}
+
+// The allocator every container uses unless it says otherwise.
+//
+// It is the C heap, which is what `util.allocate` and `util.free` are.
+export type DefaultAllocator {
+}
+
+// Takes `size` bytes from the C heap.
+//
+// The bytes are uninitialised: constructing a value in them is the caller's job,
+// exactly as `util.allocate` says.
+export fn alloc(this &DefaultAllocator, size usize) *byte {
+    return util.allocate(size);
+}
+
+// Gives a block back to the C heap.
+export fn free(this &DefaultAllocator, block *byte) void {
+    util.free(block);
+}
+
+// ---------------------------------------------------------------------- Box
+
+// An owned value, on the heap.
+//
+// Moving a box moves the pointer, so it is cheap; copying one is not allowed,
+// because two boxes owning one value would free it twice. `get()` is how the value
+// is reached: the mutable form lends it out for writing, the const form for
+// reading, and the pointer stays valid until the box is destroyed or assigned a
+// new value.
+export
+template <T type>
+type Box {
+    // The owned value, or null in a moved-from box.
+    _value *T;
+}
+
+// Creates an empty box, which owns nothing.
+//
+// No allocation: an empty box is the moved-from state, so making one is the same
+// as making a box that has been moved from, and it is destroyed the same way.
+export
+template <T type>
+fn __init__(this &Box<T>) void {
+    this._value = nullptr;
+}
+
+// Creates a box holding a copy of `value`.
+export
+template <T type>
+fn __im_init__(this &Box<T>, value T) void {
+    this._value = util.allocate(sizeof(T)) as *T;
+    this._value->__init__(value);
+}
+
+// Takes another box's value.
+//
+// The pointer moves; the source is left null, so its destructor frees nothing.
+export
+template <T type>
+fn __init__(this &Box<T>, other &&Box<T>) void {
+    this._value = other._value;
+    other._value = nullptr;
+}
+
+// Releases the value this box owns.
+export
+template <T type>
+fn __drop__(this &Box<T>) void {
+    if (this._value != nullptr) {
+        this._value->__drop__();
+        util.free(this._value as *byte);
+        this._value = nullptr;
+    }
+}
+
+// Returns a second box holding a copy of the value.
+//
+// A `Box` is moved, not copied: `c Box<int> = b;` moves out of `b`. `clone` is
+// the copy spelled out, and it copies the value -- the two boxes own different
+// blocks.
+export
+template <T type>
+fn clone(this &const Box<T>) Box<T> {
+    return Box<T>(*this._value);
+}
+
+// Returns the value, for writing.
+//
+// An empty box owns no value, so asking for one aborts with a message rather
+// than reading through a null pointer.
+export
+template <T type>
+fn get(this &Box<T>) &T {
+    if (this._value == nullptr) {
+        util.panic("Box is empty");
+    }
+    return this._value[0];
+}
+
+// Returns the value, for reading.
+export
+template <T type>
+fn get(this &const Box<T>) &const T {
+    if (this._value == nullptr) {
+        util.panic("Box is empty");
+    }
+    return this._value[0];
+}
+
+// Returns `true` when the box owns nothing.
+export
+template <T type>
+fn empty(this &const Box<T>) bool {
+    return this._value == nullptr;
+}
+
+// ----------------------------------------------------------------------- Rc
+
+// The block a shared value lives in.
+//
+// One allocation holds the value, both counts and the allocator that made it. The
+// strong count owns the value: when the last strong reference goes, the value is
+// destroyed. The weak count owns the block: it keeps the counts readable after the
+// value is gone, and the block is freed when the last weak reference goes too.
+export
+template <T type, A type>
+type RcControl {
+    // How many `Rc` values share the value.
+    strong usize;
+    // How many `Rc` and `RcWeak` values reach the block.
+    weak usize;
+    // The allocator the block was taken from, which is what gives it back. It is
+    // a copy: a stateful allocator that counts its blocks keeps counting.
+    mem A;
+    // The shared value.
+    value T;
+}
+
+// A shared owner of one value.
+//
+// Copying an `Rc` copies the *pointer* and increments a count, so it is cheap;
+// the value is freed when the last owner goes. The count is a plain `usize`: an
+// `Rc` is for one thread, which is what makes it the cheap one. `nullptr` in
+// `_control` is the empty state -- a moved-from `Rc`, a failed `upgrade`, or one
+// created empty -- and it owns nothing.
+export
+template <T type, A type = DefaultAllocator>
+type Rc {
+    // The block the value lives in, or null when this owner owns nothing.
+    _control *RcControl<T, A>;
+}
+
+// An observer of a shared value, which does not keep it alive.
+//
+// `upgrade()` answers whether the value is still there; the block itself lives as
+// long as any weak observer does, so the counts stay readable after the last owner
+// is gone.
+export
+template <T type, A type = DefaultAllocator>
+type RcWeak {
+    // The block being observed, or null when this observer observes nothing.
+    _control *RcControl<T, A>;
+}
+
+// Creates an owner of nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Rc<T, A>) void {
+    this._control = nullptr;
+}
+
+// Creates an owner of `value`, with a strong count of one.
+//
+// The value is constructed in the block, so the parameter is the last owner of
+// what it was given: it is moved, not copied. A `T` that is expensive to copy
+// therefore costs one move per `Rc`.
+export
+template <T type, A type = DefaultAllocator>
+fn __im_init__(this &Rc<T, A>, value T) void {
+    mem A = .{};
+    this.__init__(util.move(value), mem);
+}
+
+// Creates an owner of `value`, taking the block from `memory`.
+//
+// This is how a stateful allocator is used: the allocator travels with the block,
+// so the same one gives it back however many owners the value has.
+export
+template <T type, A type = DefaultAllocator>
+fn __im_init__(this &Rc<T, A>, value T, memory A) void {
+    control *RcControl<T, A> = memory.alloc(sizeof(RcControl<T, A>)) as *RcControl<T, A>;
+    control->strong = 1;
+    // The owner is counted as a weak reference as well: the block lives while
+    // any owner or observer holds it, and the last owner destroys the value
+    // rather than the block.
+    control->weak = 1;
+    control->mem = memory;
+    (&control->value)->__init__(util.move(value));
+    this._control = control;
+}
+
+// Creates an owner of a value that is dying, moving it into the block.
+//
+// A value that is about to disappear is moved rather than copied, which is what
+// makes `Rc<Thing>(Thing(7))` cost one construction instead of two. The overload
+// comes after the by-value one for the reason a container's move form does: a
+// named value is not dying, and only a dying one may be taken apart.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Rc<T, A>, value &&T) void {
+    mem A = .{};
+    this.__init__(value, mem);
+}
+
+// Creates an owner of a dying value, taking the block from `memory`.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Rc<T, A>, value &&T, memory A) void {
+    control *RcControl<T, A> = memory.alloc(sizeof(RcControl<T, A>)) as *RcControl<T, A>;
+    control->strong = 1;
+    control->weak = 1;
+    control->mem = memory;
+    (&control->value)->__init__(value);
+    this._control = control;
+}
+
+// Shares another owner's value.
+//
+// The value is not copied; the count says how many owners there are.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Rc<T, A>, other &const Rc<T, A>) void {
+    this._control = other._control;
+    if (this._control != nullptr) {
+        this._control->strong += 1;
+        this._control->weak += 1;
+    }
+}
+
+// Takes another owner's share.
+//
+// The source is left empty, so it releases nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Rc<T, A>, other &&Rc<T, A>) void {
+    this._control = other._control;
+    other._control = nullptr;
+}
+
+// Shares another owner's value, releasing what this owner held.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Rc<T, A>, other &const Rc<T, A>) void {
+    replacement Rc<T, A> = Rc<T, A>(other);
+    this.__assign__(util.move(replacement));
+}
+
+// Takes another owner's share, releasing what this owner held.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Rc<T, A>, other &&Rc<T, A>) void {
+    if (this._control == other._control) {
+        return;
+    }
+    this.__drop__();
+    this._control = other._control;
+    other._control = nullptr;
+}
+
+// Releases this owner's share, destroying the value with the last one.
+export
+template <T type, A type = DefaultAllocator>
+fn __drop__(this &Rc<T, A>) void {
+    if (this._control == nullptr) {
+        return;
+    }
+    this._control->strong -= 1;
+    this._control->weak -= 1;
+    if (this._control->strong == 0) {
+        (&this._control->value)->__drop__();
+    }
+    if (this._control->weak == 0) {
+        this._control->mem.free(this._control as *byte);
+    }
+    this._control = nullptr;
+}
+
+// Returns another owner of the same value.
+//
+// This is the copy that a program writes on purpose, as against the one an
+// assignment makes: `b Rc<int> = a.clone();`.
+export
+template <T type, A type = DefaultAllocator>
+fn clone(this &const Rc<T, A>) Rc<T, A> {
+    out Rc<T, A> = Rc<T, A>(this);
+    return out;
+}
+
+// Returns the value, for reading.
+export
+template <T type, A type = DefaultAllocator>
+fn get(this &const Rc<T, A>) &const T {
+    if (this._control == nullptr) {
+        util.panic("Rc is empty");
+    }
+    return &this._control->value;
+}
+
+// Returns the value, for writing.
+//
+// The other owners see the write. That is the point of sharing, and it is why the
+// mutable form is on a mutable owner: holding `&const Rc<T>` is a promise not to
+// write the value through it.
+export
+template <T type, A type = DefaultAllocator>
+fn get(this &Rc<T, A>) &T {
+    if (this._control == nullptr) {
+        util.panic("Rc is empty");
+    }
+    return &this._control->value;
+}
+
+// Reads through the shared value: `*r` is the value.
+export
+template <T type, A type = DefaultAllocator>
+fn __deref__(this &const Rc<T, A>) &const T {
+    if (this._control == nullptr) {
+        util.panic("Rc is empty");
+    }
+    return &this._control->value;
+}
+
+// Writes through the shared value.
+export
+template <T type, A type = DefaultAllocator>
+fn __deref__(this &Rc<T, A>) &T {
+    if (this._control == nullptr) {
+        util.panic("Rc is empty");
+    }
+    return &this._control->value;
+}
+
+// Returns `true` when this owner owns nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn empty(this &const Rc<T, A>) bool {
+    return this._control == nullptr;
+}
+
+// Returns how many strong owners the value has.
+export
+template <T type, A type = DefaultAllocator>
+fn strong_count(this &const Rc<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return this._control->strong;
+}
+
+// Returns how many weak observers the value has.
+export
+template <T type, A type = DefaultAllocator>
+fn weak_count(this &const Rc<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return this._control->weak - this._control->strong;
+}
+
+// Returns a weak observer of this owner's value.
+export
+template <T type, A type = DefaultAllocator>
+fn downgrade(this &const Rc<T, A>) RcWeak<T, A> {
+    out RcWeak<T, A> = RcWeak<T, A>();
+    out._control = this._control;
+    if (out._control != nullptr) {
+        out._control->weak += 1;
+    }
+    return out;
+}
+
+// -------------------------------------------------------------------- RcWeak
+
+// Creates an observer of nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &RcWeak<T, A>) void {
+    this._control = nullptr;
+}
+
+// Observes the same value another observer does.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &RcWeak<T, A>, other &const RcWeak<T, A>) void {
+    this._control = other._control;
+    if (this._control != nullptr) {
+        this._control->weak += 1;
+    }
+}
+
+// Takes another observer's share.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &RcWeak<T, A>, other &&RcWeak<T, A>) void {
+    this._control = other._control;
+    other._control = nullptr;
+}
+
+// Observes another observer's value, releasing what this one observed.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &RcWeak<T, A>, other &const RcWeak<T, A>) void {
+    replacement RcWeak<T, A> = RcWeak<T, A>(other);
+    this.__assign__(util.move(replacement));
+}
+
+// Takes another observer's share, releasing what this one observed.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &RcWeak<T, A>, other &&RcWeak<T, A>) void {
+    if (this._control == other._control) {
+        return;
+    }
+    this.__drop__();
+    this._control = other._control;
+    other._control = nullptr;
+}
+
+// Stops observing.
+//
+// The block is freed when the last strong owner has already gone and this was the
+// last observer.
+export
+template <T type, A type = DefaultAllocator>
+fn __drop__(this &RcWeak<T, A>) void {
+    if (this._control == nullptr) {
+        return;
+    }
+    this._control->weak -= 1;
+    if (this._control->weak == 0) {
+        this._control->mem.free(this._control as *byte);
+    }
+    this._control = nullptr;
+}
+
+// Returns an owner of the value, or an empty `Rc` when it is gone.
+export
+template <T type, A type = DefaultAllocator>
+fn upgrade(this &const RcWeak<T, A>) Rc<T, A> {
+    out Rc<T, A> = Rc<T, A>();
+    if (this._control != nullptr && this._control->strong != 0) {
+        out._control = this._control;
+        out._control->strong += 1;
+        out._control->weak += 1;
+    }
+    return out;
+}
+
+// Returns `true` when the value has already been destroyed.
+export
+template <T type, A type = DefaultAllocator>
+fn expired(this &const RcWeak<T, A>) bool {
+    return this._control == nullptr || this._control->strong == 0;
+}
+
+// Returns how many strong owners the observed value has.
+export
+template <T type, A type = DefaultAllocator>
+fn strong_count(this &const RcWeak<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return this._control->strong;
+}
+
+// Returns how many weak observers the value has.
+export
+template <T type, A type = DefaultAllocator>
+fn weak_count(this &const RcWeak<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return this._control->weak - this._control->strong;
+}
+
+// ---------------------------------------------------------------- Arc/ArcWeak
+
+// The block an `Arc` shares: the value, the two counts, and the allocator.
+//
+// The counts are atomic, which is the one difference from an `Rc`'s block: two
+// threads incrementing at once must not lose each other's increment, and that is
+// exactly what `Atomic` promises.
+export
+template <T type, A type>
+type ArcControl {
+    // How many `Arc` values share the value.
+    strong Atomic<int>;
+    // How many `Arc` and `ArcWeak` values reach the block.
+    weak Atomic<int>;
+    // The allocator the block was taken from.
+    mem A;
+    // The shared value.
+    value T;
+}
+
+// A shared owner of one value, shareable between threads.
+export
+template <T type, A type = DefaultAllocator>
+type Arc {
+    // The block the value lives in, or null when this owner owns nothing.
+    _control *ArcControl<T, A>;
+}
+
+// An observer of an `Arc`, which does not keep the value alive.
+export
+template <T type, A type = DefaultAllocator>
+type ArcWeak {
+    // The block being observed, or null when this observer observes nothing.
+    _control *ArcControl<T, A>;
+}
+
+// Creates an owner of nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Arc<T, A>) void {
+    this._control = nullptr;
+}
+
+// Creates an owner of `value`, with a strong count of one.
+export
+template <T type, A type = DefaultAllocator>
+fn __im_init__(this &Arc<T, A>, value T) void {
+    mem A = .{};
+    this.__init__(util.move(value), mem);
+}
+
+// Creates an owner of `value`, taking the block from `memory`.
+export
+template <T type, A type = DefaultAllocator>
+fn __im_init__(this &Arc<T, A>, value T, memory A) void {
+    control *ArcControl<T, A> = memory.alloc(sizeof(ArcControl<T, A>)) as *ArcControl<T, A>;
+    control->strong.__init__(1);
+    control->weak.__init__(1);
+    control->mem = memory;
+    (&control->value)->__init__(util.move(value));
+    this._control = control;
+}
+
+// Shares another owner's value.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Arc<T, A>, other &const Arc<T, A>) void {
+    this._control = other._control;
+    if (this._control != nullptr) {
+        this._control->strong.fetch_add(1);
+        this._control->weak.fetch_add(1);
+    }
+}
+
+// Takes another owner's share.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &Arc<T, A>, other &&Arc<T, A>) void {
+    this._control = other._control;
+    other._control = nullptr;
+}
+
+// Shares another owner's value, releasing what this owner held.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Arc<T, A>, other &const Arc<T, A>) void {
+    replacement Arc<T, A> = Arc<T, A>(other);
+    this.__assign__(util.move(replacement));
+}
+
+// Takes another owner's share, releasing what this owner held.
+export
+template <T type, A type = DefaultAllocator>
+fn __assign__(this &Arc<T, A>, other &&Arc<T, A>) void {
+    if (this._control == other._control) {
+        return;
+    }
+    this.__drop__();
+    this._control = other._control;
+    other._control = nullptr;
+}
+
+// Releases this owner's share, destroying the value with the last one.
+export
+template <T type, A type = DefaultAllocator>
+fn __drop__(this &Arc<T, A>) void {
+    if (this._control == nullptr) {
+        return;
+    }
+    this._control->strong.fetch_sub(1);
+    if (this._control->strong.load() == 0) {
+        (&this._control->value)->__drop__();
+    }
+    this._control->weak.fetch_sub(1);
+    if (this._control->weak.load() == 0) {
+        this._control->mem.free(this._control as *byte);
+    }
+    this._control = nullptr;
+}
+
+// Returns another owner of the same value.
+export
+template <T type, A type = DefaultAllocator>
+fn clone(this &const Arc<T, A>) Arc<T, A> {
+    out Arc<T, A> = Arc<T, A>(this);
+    return out;
+}
+
+// Returns the value, for reading.
+export
+template <T type, A type = DefaultAllocator>
+fn get(this &const Arc<T, A>) &const T {
+    if (this._control == nullptr) {
+        util.panic("Arc is empty");
+    }
+    return &this._control->value;
+}
+
+// Returns the value, for writing.
+export
+template <T type, A type = DefaultAllocator>
+fn get(this &Arc<T, A>) &T {
+    if (this._control == nullptr) {
+        util.panic("Arc is empty");
+    }
+    return &this._control->value;
+}
+
+// Reads through the shared value: `*a` is the value.
+export
+template <T type, A type = DefaultAllocator>
+fn __deref__(this &const Arc<T, A>) &const T {
+    if (this._control == nullptr) {
+        util.panic("Arc is empty");
+    }
+    return &this._control->value;
+}
+
+export
+template <T type, A type = DefaultAllocator>
+fn __deref__(this &Arc<T, A>) &T {
+    if (this._control == nullptr) {
+        util.panic("Arc is empty");
+    }
+    return &this._control->value;
+}
+
+// Returns `true` when this owner owns nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn empty(this &const Arc<T, A>) bool {
+    return this._control == nullptr;
+}
+
+// Returns how many strong owners the value has.
+export
+template <T type, A type = DefaultAllocator>
+fn strong_count(this &const Arc<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return this._control->strong.load() as usize;
+}
+
+// Returns how many weak observers the value has.
+export
+template <T type, A type = DefaultAllocator>
+fn weak_count(this &const Arc<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return (this._control->weak.load() - this._control->strong.load()) as usize;
+}
+
+// Returns a weak observer of this owner's value.
+export
+template <T type, A type = DefaultAllocator>
+fn downgrade(this &const Arc<T, A>) ArcWeak<T, A> {
+    out ArcWeak<T, A> = ArcWeak<T, A>();
+    out._control = this._control;
+    if (out._control != nullptr) {
+        out._control->weak.fetch_add(1);
+    }
+    return out;
+}
+
+// Creates an observer of nothing.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &ArcWeak<T, A>) void {
+    this._control = nullptr;
+}
+
+// Observes the same value another observer does.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &ArcWeak<T, A>, other &const ArcWeak<T, A>) void {
+    this._control = other._control;
+    if (this._control != nullptr) {
+        this._control->weak.fetch_add(1);
+    }
+}
+
+// Takes another observer's share.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &ArcWeak<T, A>, other &&ArcWeak<T, A>) void {
+    this._control = other._control;
+    other._control = nullptr;
+}
+
+// Observes another owner's value.
+export
+template <T type, A type = DefaultAllocator>
+fn __init__(this &ArcWeak<T, A>, other &const Arc<T, A>) void {
+    this._control = other._control;
+    if (this._control != nullptr) {
+        this._control->weak.fetch_add(1);
+    }
+}
+
+// Stops observing.
+export
+template <T type, A type = DefaultAllocator>
+fn __drop__(this &ArcWeak<T, A>) void {
+    if (this._control == nullptr) {
+        return;
+    }
+    this._control->weak.fetch_sub(1);
+    if (this._control->weak.load() == 0) {
+        this._control->mem.free(this._control as *byte);
+    }
+    this._control = nullptr;
+}
+
+// Returns an owner of the value, or an empty `Arc` when it is gone.
+export
+template <T type, A type = DefaultAllocator>
+fn upgrade(this &const ArcWeak<T, A>) Arc<T, A> {
+    out Arc<T, A> = Arc<T, A>();
+    if (this._control != nullptr && this._control->strong.load() != 0) {
+        out._control = this._control;
+        out._control->strong.fetch_add(1);
+        out._control->weak.fetch_add(1);
+    }
+    return out;
+}
+
+// Returns `true` when the value has already been destroyed.
+export
+template <T type, A type = DefaultAllocator>
+fn expired(this &const ArcWeak<T, A>) bool {
+    return this._control == nullptr || this._control->strong.load() == 0;
+}
+
+// Returns how many strong owners the observed value has.
+export
+template <T type, A type = DefaultAllocator>
+fn strong_count(this &const ArcWeak<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return this._control->strong.load() as usize;
+}
+
+// Returns how many weak observers the value has.
+export
+template <T type, A type = DefaultAllocator>
+fn weak_count(this &const ArcWeak<T, A>) usize {
+    if (this._control == nullptr) {
+        return 0;
+    }
+    return (this._control->weak.load() - this._control->strong.load()) as usize;
+}

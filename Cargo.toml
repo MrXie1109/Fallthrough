@@ -1,0 +1,50 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/fallc-span",
+    "crates/fallc-diag",
+    "crates/fallc-lexer",
+    "crates/fallc-ast",
+    "crates/fallc-parser",
+    "crates/fallc-sema",
+    "crates/fallc-ir",
+    "crates/fallc",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://example.invalid/fallthrough"
+description = "The Fallthrough compiler toolchain."
+
+[workspace.dependencies]
+fallc-span = { path = "crates/fallc-span", version = "0.1.0" }
+fallc-diag = { path = "crates/fallc-diag", version = "0.1.0" }
+fallc-lexer = { path = "crates/fallc-lexer", version = "0.1.0" }
+fallc-ast = { path = "crates/fallc-ast", version = "0.1.0" }
+fallc-parser = { path = "crates/fallc-parser", version = "0.1.0" }
+fallc-sema = { path = "crates/fallc-sema", version = "0.1.0" }
+fallc-ir = { path = "crates/fallc-ir", version = "0.1.0" }
+# The Unicode identifier classes. `unicode-ident` is the crate the compiler
+# already depends on transitively, and it answers exactly the UAX #31 question
+# an identifier raises -- `XID_Start` and `XID_Continue` -- rather than the
+# approximation `char::is_alphabetic` would give.
+unicode-ident = "1.0"
+
+[workspace.lints.rust]
+# `forbid` would be preferable, but `fallc-ir` needs one documented exception to
+# hold an LLVM context and the module derived from it in the same struct:
+# inkwell has no safe owned-pairing type, and `forbid` cannot be overridden by a
+# local `allow`. Every other crate sets `forbid` for itself in its own lib.rs.
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+todo = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

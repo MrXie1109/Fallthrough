@@ -1,0 +1,332 @@
+// Type predicates, written as ordinary type families.
+//
+// A predicate such as `IsInteger(int)` is a question about a type, asked where
+// the answer has to be known before the program runs: `if constexpr` chooses a
+// branch, and `@enable_if` removes an overload. The language has no built-in
+// answer for "is this an integer"; it has type families and template
+// specialisation, which is exactly the machinery a predicate needs.
+//
+// Each predicate is a family with one constant member, `VALUE`. The generic
+// body answers `false`, and a specialisation for the types that satisfy the
+// predicate answers `true`:
+//
+//     template <T type>
+//     export type IsInteger {
+//         VALUE const bool = false;
+//     }
+//
+//     template <>
+//     type IsInteger<int> {
+//         VALUE const bool = true;
+//     }
+//
+// Asking `IsInteger(int)` instantiates the family with `int`, the full
+// specialisation replaces the generic member, and `VALUE` folds to `true` --
+// so the query is an ordinary constant expression. `IsInteger(f64)` finds no
+// specialisation and reads the generic body's `false`.
+//
+// `VALUE` is the name the compiler reads: a family that declares a constant
+// member by that name becomes a trait query. There is nothing else to declare
+// and no registration list to keep in step with the type system, which is the
+// point of doing this in the library rather than in the compiler.
+
+// Whether the type is an integer.
+//
+// `byte` is not one: it does not take part in integer arithmetic or implicit
+// conversion. `char` is not either, and neither is `bool`.
+export
+template <T type>
+type IsInteger {
+    VALUE const bool = false;
+}
+
+template <>
+type IsInteger<i8> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<i16> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<i32> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<i64> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<i128> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<u8> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<u16> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<u32> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<u64> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsInteger<u128> {
+    VALUE const bool = true;
+}
+
+// `isize` and `usize` are aliases for the pointer-width integer types, not
+// types of their own, so they reach the specialisations for `i64` and `u64`
+// above. `int` and `uint` likewise name `i32` and `u32`; writing a
+// specialisation for an alias as well would make the query ambiguous, because
+// two identical patterns match equally well.
+
+// Whether the type is a floating-point type.
+//
+// `float` and `double` are aliases for `f32` and `f64`, so the two
+// specialisations cover every spelling.
+export
+template <T type>
+type IsFloating {
+    VALUE const bool = false;
+}
+
+template <>
+type IsFloating<f32> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsFloating<f64> {
+    VALUE const bool = true;
+}
+
+// Whether the type takes part in arithmetic.
+//
+// This is `IsInteger` or `IsFloating`, enumerated rather than composed: a
+// generic body's constant is folded when the family is declared, where `T` is
+// still a parameter, so a body that asked `IsInteger(T)` would answer `false`
+// for every instantiation. Until a generic constant can be re-folded per
+// instantiation, the union is written out.
+export
+template <T type>
+type IsNumeric {
+    VALUE const bool = false;
+}
+
+template <>
+type IsNumeric<i8> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<i16> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<i32> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<i64> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<i128> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<u8> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<u16> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<u32> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<u64> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<u128> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<f32> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsNumeric<f64> {
+    VALUE const bool = true;
+}
+
+// Whether the type is a pointer.
+//
+// The three spellings are three types: a pointer to mutable storage, a pointer
+// to read-only storage, and a pointer that cannot be reassigned. The
+// specialisation machinery compares the qualifiers, so each has its own
+// pattern.
+export
+template <T type>
+type IsPointer {
+    VALUE const bool = false;
+}
+
+template <T type>
+type IsPointer<*T> {
+    VALUE const bool = true;
+}
+
+template <T type>
+type IsPointer<*const T> {
+    VALUE const bool = true;
+}
+
+template <T type>
+type IsPointer<const *T> {
+    VALUE const bool = true;
+}
+
+// Whether the type is a reference.
+//
+// An lvalue and an rvalue reference are different types, and so is each one's
+// read-only form; the four patterns cover them.
+export
+template <T type>
+type IsReference {
+    VALUE const bool = false;
+}
+
+template <T type>
+type IsReference<&T> {
+    VALUE const bool = true;
+}
+
+template <T type>
+type IsReference<&const T> {
+    VALUE const bool = true;
+}
+
+template <T type>
+type IsReference<&&T> {
+    VALUE const bool = true;
+}
+
+template <T type>
+type IsReference<&&const T> {
+    VALUE const bool = true;
+}
+
+// Whether the type is the absent type, `void`.
+//
+// `void` is not a type anything can have: a function that returns nothing is
+// written `void` and its result is the empty type. The query still asks about
+// the spelling, and the generic body answers for every real type.
+export
+template <T type>
+type IsVoid {
+    VALUE const bool = false;
+}
+
+template <>
+type IsVoid<void> {
+    VALUE const bool = true;
+}
+
+// Whether the type is `bool`.
+export
+template <T type>
+type IsBool {
+    VALUE const bool = false;
+}
+
+template <>
+type IsBool<bool> {
+    VALUE const bool = true;
+}
+
+// Whether the type is a character type.
+//
+// `char` is `c8`, so the three character widths cover every spelling.
+export
+template <T type>
+type IsCharacter {
+    VALUE const bool = false;
+}
+
+template <>
+type IsCharacter<c8> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsCharacter<c16> {
+    VALUE const bool = true;
+}
+
+template <>
+type IsCharacter<c32> {
+    VALUE const bool = true;
+}
+
+// Whether the type is an array of any element and any length.
+//
+// An array type carries its length, so a full specialisation cannot cover
+// every array. The unsized spelling `[]T` is the partial pattern: it names the
+// element and leaves the length open, and the specialisation matcher treats it
+// as matching both sized and unsized arrays.
+export
+template <T type>
+type IsArray {
+    VALUE const bool = false;
+}
+
+template <T type>
+type IsArray<[]T> {
+    VALUE const bool = true;
+}
+
+// Whether two types are the same.
+//
+// The pattern writes the parameter twice, and the matcher requires both
+// positions to bind it to the same type: `IsSame<A, A>` matches a pair only
+// when the second argument is the first.
+export
+template <A type, B type>
+type IsSame {
+    VALUE const bool = false;
+}
+
+template <A type>
+type IsSame<A, A> {
+    VALUE const bool = true;
+}

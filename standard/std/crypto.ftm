@@ -1,0 +1,363 @@
+// SHA-256 and HMAC-SHA-256.
+//
+//     digest Bytes = crypto.sha256(&message);
+//     hex String = crypto.sha256_hex(&message);
+//     mac String = crypto.hmac_sha256_hex(&key, &message);
+//
+// # What this is, and is not
+//
+// SHA-256 and its HMAC are implemented from the specification and tested against
+// the standard vectors ("abc", the empty message, and the RFC 4231 MAC cases).
+// This is *not* a cryptography library: there is no constant-time discipline for
+// comparisons, no key management, and no opinion about where a digest is
+// acceptable. A program that needs a security guarantee needs more than a hash.
+//
+// # Scope
+//
+// SHA-256 only. SHA-1 and MD5 are deliberately absent rather than provided with a
+// warning: a caller that wants a digest reaches for the one this module has, and
+// a module that says which hash it offers does not invite the older ones.
+
+import std.array;
+from std.array import Array;
+import std.string;
+from std.string import String;
+import std.bytes;
+import std.array;
+from std.array import Array;
+from std.bytes import Bytes;
+
+// The working state.
+type Sha256 {
+    first u32;
+    second u32;
+    third u32;
+    fourth u32;
+    fifth u32;
+    sixth u32;
+    seventh u32;
+    eighth u32;
+}
+
+// The SHA-256 initial state: the fractional parts of the square roots of the
+// first eight primes.
+fn initial_state() Sha256 {
+    return .{
+        0x6a09e667u32, 0xbb67ae85u32, 0x3c6ef372u32, 0xa54ff53au32,
+        0x510e527fu32, 0x9b05688cu32, 0x1f83d9abu32, 0x5be0cd19u32
+    };
+}
+
+// The sixty-four round constants: the fractional parts of the cube roots of the
+// first sixty-four primes.
+fn round_constants() Array<u32> {
+    values Array<u32> = Array<u32>();
+    values.push(0x428a2f98u32);
+    values.push(0x71374491u32);
+    values.push(0xb5c0fbcfu32);
+    values.push(0xe9b5dba5u32);
+    values.push(0x3956c25bu32);
+    values.push(0x59f111f1u32);
+    values.push(0x923f82a4u32);
+    values.push(0xab1c5ed5u32);
+    values.push(0xd807aa98u32);
+    values.push(0x12835b01u32);
+    values.push(0x243185beu32);
+    values.push(0x550c7dc3u32);
+    values.push(0x72be5d74u32);
+    values.push(0x80deb1feu32);
+    values.push(0x9bdc06a7u32);
+    values.push(0xc19bf174u32);
+    values.push(0xe49b69c1u32);
+    values.push(0xefbe4786u32);
+    values.push(0x0fc19dc6u32);
+    values.push(0x240ca1ccu32);
+    values.push(0x2de92c6fu32);
+    values.push(0x4a7484aau32);
+    values.push(0x5cb0a9dcu32);
+    values.push(0x76f988dau32);
+    values.push(0x983e5152u32);
+    values.push(0xa831c66du32);
+    values.push(0xb00327c8u32);
+    values.push(0xbf597fc7u32);
+    values.push(0xc6e00bf3u32);
+    values.push(0xd5a79147u32);
+    values.push(0x06ca6351u32);
+    values.push(0x14292967u32);
+    values.push(0x27b70a85u32);
+    values.push(0x2e1b2138u32);
+    values.push(0x4d2c6dfcu32);
+    values.push(0x53380d13u32);
+    values.push(0x650a7354u32);
+    values.push(0x766a0abbu32);
+    values.push(0x81c2c92eu32);
+    values.push(0x92722c85u32);
+    values.push(0xa2bfe8a1u32);
+    values.push(0xa81a664bu32);
+    values.push(0xc24b8b70u32);
+    values.push(0xc76c51a3u32);
+    values.push(0xd192e819u32);
+    values.push(0xd6990624u32);
+    values.push(0xf40e3585u32);
+    values.push(0x106aa070u32);
+    values.push(0x19a4c116u32);
+    values.push(0x1e376c08u32);
+    values.push(0x2748774cu32);
+    values.push(0x34b0bcb5u32);
+    values.push(0x391c0cb3u32);
+    values.push(0x4ed8aa4au32);
+    values.push(0x5b9cca4fu32);
+    values.push(0x682e6ff3u32);
+    values.push(0x748f82eeu32);
+    values.push(0x78a5636fu32);
+    values.push(0x84c87814u32);
+    values.push(0x8cc70208u32);
+    values.push(0x90befffau32);
+    values.push(0xa4506cebu32);
+    values.push(0xbef9a3f7u32);
+    values.push(0xc67178f2u32);
+    return values;
+}
+
+// Rotates `value` right by `count` bits.
+fn rotate_right(value u32, count int) u32 {
+    return (value >> count as u32) | (value << (32 - count) as u32);
+}
+
+// The first sigma of the message schedule.
+fn sigma0(value u32) u32 {
+    return rotate_right(value, 7) ^ rotate_right(value, 18) ^ (value >> 3);
+}
+
+// The second sigma of the message schedule.
+fn sigma1(value u32) u32 {
+    return rotate_right(value, 17) ^ rotate_right(value, 19) ^ (value >> 10);
+}
+
+// The first sigma of the round function.
+fn epsilon0(value u32) u32 {
+    return rotate_right(value, 2) ^ rotate_right(value, 13) ^ rotate_right(value, 22);
+}
+
+// The second sigma of the round function.
+fn epsilon1(value u32) u32 {
+    return rotate_right(value, 6) ^ rotate_right(value, 11) ^ rotate_right(value, 25);
+}
+
+// The big sigma the round adds.
+fn big_sigma0(value u32) u32 {
+    return epsilon0(value);
+}
+
+// The big sigma the round adds.
+fn big_sigma1(value u32) u32 {
+    return epsilon1(value);
+}
+
+// Runs the compression function over the padded message, returning the state.
+fn compress(message &const Bytes) Sha256 {
+    padded Bytes = pad(message);
+    constants Array<u32> = round_constants();
+    state Sha256 = initial_state();
+    offset usize = 0;
+    while (offset < padded.length()) {
+        block Array<u32> = Array<u32>();
+        word usize = 0;
+        while (word < 16usize) {
+            index usize = offset + word * 4usize;
+            value u32 = ((padded[index] as u32) << 24)
+                | ((padded[index + 1usize] as u32) << 16)
+                | ((padded[index + 2usize] as u32) << 8)
+                | (padded[index + 3usize] as u32);
+            block.push(value);
+            word += 1usize;
+        }
+        round usize = 16usize;
+        while (round < 64usize) {
+            // W[t] = sigma1(W[t-2]) + W[t-7] + sigma0(W[t-15]) + W[t-16].
+            value u32 = (sigma1(block[round - 2usize]) + block[round - 7usize]
+                + sigma0(block[round - 15usize]) + block[round - 16usize]);
+            block.push(value);
+            round += 1usize;
+        }
+        first u32 = state.first;
+        second u32 = state.second;
+        third u32 = state.third;
+        fourth u32 = state.fourth;
+        fifth u32 = state.fifth;
+        sixth u32 = state.sixth;
+        seventh u32 = state.seventh;
+        eighth u32 = state.eighth;
+        round = 0usize;
+        while (round < 64usize) {
+            choice1 u32 = (fifth & sixth) ^ ((fifth ^ 0xffffffffu32) & seventh);
+            majority u32 = (first & second) ^ (first & third) ^ (second & third);
+            // Only in the first sigma terms; kept separate for clarity.
+            add1 u32;
+            temp_first u32;
+            add1 = (eighth + big_sigma1(fifth) + choice1 + constants[round] + block[round]);
+            temp_first = add1 + big_sigma0(first) + majority;
+            eighth = seventh;
+            seventh = sixth;
+            sixth = fifth;
+            fifth = fourth + add1;
+            fourth = third;
+            third = second;
+            second = first;
+            first = temp_first;
+            round += 1usize;
+        }
+        state.first = state.first + first;
+        state.second = state.second + second;
+        state.third = state.third + third;
+        state.fourth = state.fourth + fourth;
+        state.fifth = state.fifth + fifth;
+        state.sixth = state.sixth + sixth;
+        state.seventh = state.seventh + seventh;
+        state.eighth = state.eighth + eighth;
+        offset += 64usize;
+    }
+    return state;
+}
+
+// Hashes `message` with SHA-256, returning the 32 digest bytes.
+export fn sha256(message &const Bytes) Bytes {
+    state Sha256 = compress(message);
+    return digest_bytes(state);
+}
+
+// The eight state words, for tests that compare against a reference.
+export fn sha256_state(message &const Bytes) Array<u32> {
+    state Sha256 = compress(message);
+    words Array<u32> = Array<u32>();
+    words.push(state.first);
+    words.push(state.second);
+    words.push(state.third);
+    words.push(state.fourth);
+    words.push(state.fifth);
+    words.push(state.sixth);
+    words.push(state.seventh);
+    words.push(state.eighth);
+    return words;
+}
+
+// Pads a message: a one bit, zeros, and the length in bits, big-endian.
+fn pad(message &const Bytes) Bytes {
+    padded Bytes = Bytes();
+    index usize = 0;
+    while (index < message.length()) {
+        value byte = message[index] as byte;
+        padded.push(value);
+        index += 1;
+    }
+    padded.push(0x80 as byte);
+    while (padded.length() % 64usize != 56usize) {
+        padded.push(0 as byte);
+    }
+    bits u64 = (message.length() as u64) * 8u64;
+    shift int = 56;
+    while (shift >= 0) {
+        padded.push(((bits >> shift as u64) & 0xffu64) as byte);
+        shift -= 8;
+    }
+    return padded;
+}
+
+// Writes the state as thirty-two big-endian bytes.
+fn digest_bytes(state Sha256) Bytes {
+    digest Bytes = Bytes();
+    push_word(&digest, state.first);
+    push_word(&digest, state.second);
+    push_word(&digest, state.third);
+    push_word(&digest, state.fourth);
+    push_word(&digest, state.fifth);
+    push_word(&digest, state.sixth);
+    push_word(&digest, state.seventh);
+    push_word(&digest, state.eighth);
+    return digest;
+}
+
+// Appends one word, most significant byte first.
+fn push_word(out &Bytes, value u32) void {
+    out.push(((value >> 24) & 0xffu32) as byte);
+    out.push(((value >> 16) & 0xffu32) as byte);
+    out.push(((value >> 8) & 0xffu32) as byte);
+    out.push((value & 0xffu32) as byte);
+}
+
+// The lowercase hexadecimal text of `data`.
+export fn hex(data &const Bytes) String {
+    digits String = String("0123456789abcdef");
+    text String = String();
+    index usize = 0;
+    while (index < data.length()) {
+        value u32 = data[index] as u32;
+        text.push(digits[(value >> 4) as usize]);
+        text.push(digits[(value & 0x0fu32) as usize]);
+        index += 1;
+    }
+    return text;
+}
+
+// The SHA-256 digest of `message` as lowercase hex.
+export fn sha256_hex(message &const Bytes) String {
+    digest Bytes = sha256(message);
+    return hex(&digest);
+}
+
+// HMAC-SHA-256 over `message` with `key`.
+//
+// RFC 2104's construction: hash the key into a block, exclusive-or it with the
+// inner and outer pads, and hash `H((key ^ opad) || H((key ^ ipad) || message))`.
+export fn hmac_sha256(key &const Bytes, message &const Bytes) Bytes {
+    block Bytes = Bytes();
+    index usize = 0usize;
+    if (key.length() > 64usize) {
+        digest Bytes = sha256(key);
+        index usize = 0;
+        while (index < digest.length()) {
+            value byte = digest[index] as byte;
+            block.push(value);
+            index += 1;
+        }
+    } else {
+        index = 0;
+        while (index < key.length()) {
+            value byte = key[index] as byte;
+            block.push(value);
+            index += 1;
+        }
+    }
+    while (block.length() < 64usize) {
+        block.push(0 as byte);
+    }
+    inner Bytes = Bytes();
+    outer Bytes = Bytes();
+    index = 0;
+    while (index < 64usize) {
+        inner_value byte = block[index] as byte;
+        inner.push((inner_value as u32 ^ 0x36u32) as byte);
+        outer.push((inner_value as u32 ^ 0x5cu32) as byte);
+        index += 1;
+    }
+    index = 0;
+    while (index < message.length()) {
+        value byte = message[index] as byte;
+        inner.push(value);
+        index += 1;
+    }
+    inner_digest Bytes = sha256(&inner);
+    index = 0;
+    while (index < inner_digest.length()) {
+        value byte = inner_digest[index] as byte;
+        outer.push(value);
+        index += 1;
+    }
+    return sha256(&outer);
+}
+
+// The HMAC-SHA-256 of `message` with `key` as lowercase hex.
+export fn hmac_sha256_hex(key &const Bytes, message &const Bytes) String {
+    mac Bytes = hmac_sha256(key, message);
+    return hex(&mac);
+}

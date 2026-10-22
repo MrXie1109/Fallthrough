@@ -1,0 +1,12 @@
+// Whether a file descriptor is a console, on Windows.
+//
+// The C runtime's `_isatty` answers for the standard descriptors, which is what
+// a program asks about; a HANDLE-based check would need the console mode and
+// says the same thing for the three descriptors colour is used on.
+
+@extern_C fn _isatty(fd i32) i32;
+
+// Whether `fd` is a console.
+export fn is_terminal(fd i32) bool {
+    return _isatty(fd) == 1;
+}

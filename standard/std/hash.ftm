@@ -1,0 +1,1421 @@
+// Hashing: a hasher type, the hash of the built-in types, and the four hash
+// containers.
+//
+// # The hasher is a type
+//
+// `Hash<K>` turns a key into a number, and it is a *type* for the same reason
+// the order of a tree is: which one applies is decided while compiling, and no
+// table stands between the container and the hasher. `Hash<K>` asks the key
+// itself -- `value.__hash__()` -- so a type that declares `__hash__` is
+// hashable with no further ceremony, and `__call__` is what the containers call.
+//
+// # Collisions are handled by chaining
+//
+// A bucket holds the head of a chain, so an entry never moves once it is in the
+// table, an erase is an unlink, and a key may appear any number of times -- which
+// is what the multi containers need. A table grows when it holds more entries
+// than buckets, and the chains are relinked into the larger array.
+
+import std.memory;
+from std.memory import DefaultAllocator, alloc, free;
+from std.string import String;
+from std.util import Unit;
+import std.util as util;
+
+// What a type has to provide to be used as a hash key.
+//
+// Both methods are the language's own special methods, so a type declares them
+// the way it declares any other: `fn __hash__(this &const Thing) usize` and
+// `fn __eq__(this &const Thing, other &const Thing) bool`.
+//
+// The two belong together: the hash decides which chain a key is looked for in,
+// and `__eq__` decides whether an entry in that chain is the key. A type with a
+// hash and no equality is not a key, which is why both are here.
+export traits Hashable(it T) {
+    it.__hash__() -> usize,
+    it == it -> bool,
+}
+
+// Spreads the bits of an integer, so that keys which differ only in a high
+// digit do not all land in the same bucket.
+fn mix(number usize) usize {
+    return number * 1099511628211usize;
+}
+
+// The hasher for every type that says how to hash itself.
+export
+template <T type>
+type Hash {
+}
+
+// Turns `value` into a number by asking the type.
+export
+template <T type>
+fn __call__(this &const Hash<T>, value &const T) usize {
+    return value.__hash__();
+}
+
+// ------------------------------------------------------------------ builtins
+
+// The integers are hashed by their value, spread out.
+//
+// Every width has its own spelling and so its own method: a `byte` is not a
+// `u8`, and `char` names `c8`, which is why each one is written out.
+export fn __hash__(this &const i8) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const i16) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const i32) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const i64) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const i128) usize {
+    return mix((this as i64) as usize);
+}
+
+export fn __hash__(this &const u8) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const u16) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const u32) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const u64) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const u128) usize {
+    return mix((this as u64) as usize);
+}
+
+export fn __hash__(this &const byte) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const bool) usize {
+    return mix(this as int as usize);
+}
+
+export fn __hash__(this &const c8) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const c16) usize {
+    return mix(this as usize);
+}
+
+export fn __hash__(this &const c32) usize {
+    return mix(this as usize);
+}
+
+// A string is hashed by its characters, not by the address of its buffer: two
+// strings with the same text are one key wherever they were built.
+export fn __hash__(this &const String) usize {
+    hash usize = 1469598103934665603usize;
+    bytes *const char = this.data();
+    for (i usize = 0; i < this.length(); i += 1) {
+        hash = (hash ^ ((bytes[i] as usize))) * 1099511628211usize;
+    }
+    return hash;
+}
+
+// -------------------------------------------------------------------- table
+
+// One entry in a bucket's chain.
+export
+template <K type, V type>
+type HashEntry {
+    // The key, which is what the bucket was chosen by.
+    key K;
+    // The mapped value. A set stores a `Unit` here.
+    value V;
+    // The key's hash, kept so that a comparison starts with it.
+    hash usize;
+    // The next entry in the same bucket, or null.
+    next *HashEntry<K, V>;
+}
+
+// How many buckets a table starts with.
+INITIAL_BUCKETS const usize = 8usize;
+
+// A hash table: buckets, chains, and one entry per key.
+//
+// This is the structure the four containers share; a program writes `HMap`,
+// `HSet`, `HMMap` or `HMSet`, which wrap it.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+type HashTable {
+    // The buckets, each the head of a chain: `*HashEntry<K, V>` per slot.
+    //
+    // An array of addresses rather than of entries, so that an entry keeps its
+    // own address while the table grows, and so that a chain can be walked
+    // without knowing a bucket's index.
+    _buckets *byte;
+    // How many buckets there are.
+    _capacity usize;
+    // How many entries there are.
+    _count usize;
+    // The allocator the entries and the buckets come from.
+    mem A;
+    // The hasher.
+    hasher H;
+}
+
+// Creates an empty table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HashTable<K, V, H, A>) void {
+    this._capacity = INITIAL_BUCKETS;
+    this._count = 0;
+    this.mem = .{};
+    this.hasher = .{};
+    this._buckets = this.mem.alloc(INITIAL_BUCKETS * sizeof(*byte));
+    this.clear_buckets();
+}
+
+// Creates an empty table with the caller's hasher and allocator.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HashTable<K, V, H, A>, hash H, memory A) void {
+    this._capacity = INITIAL_BUCKETS;
+    this._count = 0;
+    this.hasher = hash;
+    this.mem = memory;
+    this._buckets = this.mem.alloc(INITIAL_BUCKETS * sizeof(*byte));
+    this.clear_buckets();
+}
+
+// The buckets as an array of chain heads.
+fn heads(this &const HashTable<K, V, H, A>) **HashEntry<K, V> {
+    return this._buckets as **HashEntry<K, V>;
+}
+
+// Empties every bucket, so that a freshly allocated array reads as no chains.
+fn clear_buckets(this &HashTable<K, V, H, A>) void {
+    slots **HashEntry<K, V> = this.heads();
+    for (i usize = 0; i < this._capacity; i += 1) {
+        slots[i] = nullptr;
+    }
+}
+
+// The bucket a hash belongs in.
+fn bucket_of(this &const HashTable<K, V, H, A>, hash usize) usize {
+    return hash % this._capacity;
+}
+
+// Returns how many entries the table holds.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn length(this &const HashTable<K, V, H, A>) usize {
+    return this._count;
+}
+
+// Returns `true` when the table holds nothing.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn empty(this &const HashTable<K, V, H, A>) bool {
+    return this._count == 0;
+}
+
+// Doubles the buckets and relinks every chain into the larger array.
+//
+// The entries themselves do not move: only the heads are rewritten, which is
+// what makes growth safe to do while a value lives in the table.
+fn grow(this &HashTable<K, V, H, A>) void {
+    old_capacity usize = this._capacity;
+    old **HashEntry<K, V> = this.heads();
+    this._capacity = old_capacity * 2;
+    this._buckets = this.mem.alloc(this._capacity * sizeof(*byte));
+    this.clear_buckets();
+    slots **HashEntry<K, V> = this.heads();
+    for (i usize = 0; i < old_capacity; i += 1) {
+        entry *HashEntry<K, V> = old[i];
+        while (entry != nullptr) {
+            following *HashEntry<K, V> = entry->next;
+            bucket usize = this.bucket_of(entry->hash);
+            entry->next = slots[bucket];
+            slots[bucket] = entry;
+            entry = following;
+        }
+    }
+    this.mem.free(old as *byte);
+}
+
+// Finds the entry holding `key`, or null.
+fn entry_of(this &HashTable<K, V, H, A>, key &const K) *HashEntry<K, V> {
+    hasher H = this.hasher;
+    hash usize = hasher(key);
+    slots **HashEntry<K, V> = this.heads();
+    entry *HashEntry<K, V> = slots[this.bucket_of(hash)];
+    while (entry != nullptr) {
+        if (entry->hash == hash && entry->key == key) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return nullptr;
+}
+
+// Finds the entry holding `key`, or null, for a table read through a constant.
+fn entry_of_const(this &const HashTable<K, V, H, A>, key &const K) *const HashEntry<K, V> {
+    hasher H = this.hasher;
+    hash usize = hasher(key);
+    slots **HashEntry<K, V> = this.heads();
+    entry *HashEntry<K, V> = slots[this.bucket_of(hash)];
+    while (entry != nullptr) {
+        if (entry->hash == hash && entry->key == key) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return nullptr;
+}
+
+// Adds an entry, replacing the value when the key is already there.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn insert(this &HashTable<K, V, H, A>, key K, value V) void {
+    existing *HashEntry<K, V> = this.entry_of(key);
+    if (existing != nullptr) {
+        existing->value = util.move(value);
+        (&existing->key)->__drop__();
+        existing->key = util.move(key);
+        return;
+    }
+    this.insert_new(util.move(key), util.move(value));
+}
+
+// Adds an entry that is known to be new.
+fn insert_new(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
+    if (this._count >= this._capacity) {
+        this.grow();
+    }
+    hasher H = this.hasher;
+    hash usize = hasher(key);
+    slots **HashEntry<K, V> = this.heads();
+    bucket usize = this.bucket_of(hash);
+    entry *HashEntry<K, V> = this.mem.alloc(sizeof(HashEntry<K, V>)) as *HashEntry<K, V>;
+    (&entry->key)->__init__(util.move(key));
+    (&entry->value)->__init__(util.move(value));
+    entry->hash = hash;
+    entry->next = slots[bucket];
+    slots[bucket] = entry;
+    this._count += 1;
+    return entry;
+}
+
+// Adds an entry without looking for the key, so a key may appear many times.
+fn insert_multi(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
+    return this.insert_new(util.move(key), util.move(value));
+}
+
+// Returns the value stored for `key`, or null.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn find(this &HashTable<K, V, H, A>, key &const K) *V {
+    entry *HashEntry<K, V> = this.entry_of(key);
+    if (entry == nullptr) {
+        return nullptr;
+    }
+    return &entry->value;
+}
+
+// Returns the value stored for `key`, or null, for a constant table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn find(this &const HashTable<K, V, H, A>, key &const K) *const V {
+    entry *const HashEntry<K, V> = this.entry_of_const(key);
+    if (entry == nullptr) {
+        return nullptr;
+    }
+    return &entry->value;
+}
+
+// Whether `key` is in the table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn contains(this &const HashTable<K, V, H, A>, key &const K) bool {
+    return this.entry_of_const(key) != nullptr;
+}
+
+// How many entries hold `key`.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn count(this &const HashTable<K, V, H, A>, key &const K) usize {
+    hasher H = this.hasher;
+    hash usize = hasher(key);
+    slots **HashEntry<K, V> = this.heads();
+    entry *HashEntry<K, V> = slots[this.bucket_of(hash)];
+    found usize = 0usize;
+    while (entry != nullptr) {
+        if (entry->hash == hash && entry->key == key) {
+            found += 1;
+        }
+        entry = entry->next;
+    }
+    return found;
+}
+
+// Removes one entry holding `key`, and answers whether there was one.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase(this &HashTable<K, V, H, A>, key &const K) bool {
+    hasher H = this.hasher;
+    hash usize = hasher(key);
+    slots **HashEntry<K, V> = this.heads();
+    bucket usize = this.bucket_of(hash);
+    previous *HashEntry<K, V> = nullptr;
+    entry *HashEntry<K, V> = slots[bucket];
+    while (entry != nullptr) {
+        if (entry->hash == hash && entry->key == key) {
+            if (previous == nullptr) {
+                slots[bucket] = entry->next;
+            } else {
+                previous->next = entry->next;
+            }
+            this.release(entry);
+            this._count -= 1;
+            return true;
+        }
+        previous = entry;
+        entry = entry->next;
+    }
+    return false;
+}
+
+// Removes every entry holding `key`, and answers how many there were.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase_all(this &HashTable<K, V, H, A>, key &const K) usize {
+    hasher H = this.hasher;
+    hash usize = hasher(key);
+    slots **HashEntry<K, V> = this.heads();
+    bucket usize = this.bucket_of(hash);
+    previous *HashEntry<K, V> = nullptr;
+    entry *HashEntry<K, V> = slots[bucket];
+    removed usize = 0usize;
+    while (entry != nullptr) {
+        following *HashEntry<K, V> = entry->next;
+        if (entry->hash == hash && entry->key == key) {
+            if (previous == nullptr) {
+                slots[bucket] = following;
+            } else {
+                previous->next = following;
+            }
+            this.release(entry);
+            this._count -= 1;
+            removed += 1;
+        } else {
+            previous = entry;
+        }
+        entry = following;
+    }
+    return removed;
+}
+
+// Destroys one entry that is no longer in any chain.
+fn release(this &HashTable<K, V, H, A>, entry *HashEntry<K, V>) void {
+    (&entry->key)->__drop__();
+    (&entry->value)->__drop__();
+    this.mem.free(entry as *byte);
+}
+
+// Removes every entry.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn clear(this &HashTable<K, V, H, A>) void {
+    slots **HashEntry<K, V> = this.heads();
+    for (i usize = 0; i < this._capacity; i += 1) {
+        entry *HashEntry<K, V> = slots[i];
+        while (entry != nullptr) {
+            following *HashEntry<K, V> = entry->next;
+            this.release(entry);
+            entry = following;
+        }
+        slots[i] = nullptr;
+    }
+    this._count = 0;
+}
+
+// Copies every entry of `other` into this empty table.
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn copy_entries(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) void {
+    slots **HashEntry<K, V> = other.heads();
+    index usize = 0;
+    while (index < other._capacity) {
+        entry *HashEntry<K, V> = slots[index];
+        while (entry != nullptr) {
+            this.insert_multi(entry->key, entry->value);
+            entry = entry->next;
+        }
+        index += 1;
+    }
+}
+
+// Copies another table, chains and all.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) void {
+    this.mem = other.mem;
+    this.hasher = other.hasher;
+    this._capacity = INITIAL_BUCKETS;
+    this._count = 0;
+    this._buckets = this.mem.alloc(INITIAL_BUCKETS * sizeof(*byte));
+    this.clear_buckets();
+    this.copy_entries(other);
+}
+
+// Takes another table's chains.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HashTable<K, V, H, A>, other &&HashTable<K, V, H, A>) void {
+    this._buckets = other._buckets;
+    this._capacity = other._capacity;
+    this._count = other._count;
+    this.mem = util.move(other.mem);
+    this.hasher = util.move(other.hasher);
+    other._buckets = nullptr;
+    other._capacity = 0;
+    other._count = 0;
+}
+
+// Copies another table over this one.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __assign__(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) void {
+    if (this._buckets == other._buckets) {
+        return;
+    }
+    this.clear();
+    this.mem = other.mem;
+    this.hasher = other.hasher;
+    this.copy_entries(other);
+}
+
+// Takes another table's chains over this one.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __assign__(this &HashTable<K, V, H, A>, other &&HashTable<K, V, H, A>) void {
+    if (this._buckets == other._buckets) {
+        return;
+    }
+    this.clear();
+    this.mem.free(this._buckets as *byte);
+    this._buckets = other._buckets;
+    this._capacity = other._capacity;
+    this._count = other._count;
+    this.mem = util.move(other.mem);
+    this.hasher = util.move(other.hasher);
+    other._buckets = nullptr;
+    other._capacity = 0;
+    other._count = 0;
+}
+
+// Destroys the table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __drop__(this &HashTable<K, V, H, A>) void {
+    this.clear();
+    this.mem.free(this._buckets);
+    this._buckets = nullptr;
+    this._capacity = 0;
+}
+
+// ----------------------------------------------------------------- iterators
+
+// A position in a table, which walks every entry.
+//
+// The bucket the entry is in is remembered, so stepping is "the rest of this
+// chain, or the next bucket that has one" and needs no second scan.
+export
+template <K type, V type>
+type HashIterator {
+    // The buckets being walked, or null at the end.
+    buckets *byte;
+    // How many buckets there are.
+    capacity usize;
+    // The bucket the current entry is in.
+    index usize;
+    // The entry the iterator stands on, or null at the end.
+    entry *HashEntry<K, V>;
+}
+
+// Creates an iterator that stands nowhere, which is how `end()` is written.
+export
+template <K type, V type>
+fn __init__(this &HashIterator<K, V>) void {
+    this.buckets = nullptr;
+    this.capacity = 0;
+    this.index = 0;
+    this.entry = nullptr;
+}
+
+// Creates an iterator over a table's buckets, standing on the first entry.
+export
+template <K type, V type>
+fn __init__(this &HashIterator<K, V>, buckets *byte, capacity usize) void {
+    this.buckets = buckets;
+    this.capacity = capacity;
+    this.index = 0;
+    this.entry = nullptr;
+    this.seek();
+}
+
+// Finds the first entry from the current bucket on.
+fn seek(this &HashIterator<K, V>) void {
+    if (this.entry != nullptr) {
+        return;
+    }
+    slots **HashEntry<K, V> = this.buckets as **HashEntry<K, V>;
+    while (this.index < this.capacity) {
+        entry *HashEntry<K, V> = slots[this.index];
+        if (entry != nullptr) {
+            this.entry = entry;
+            return;
+        }
+        this.index += 1;
+    }
+}
+
+// Moves to the next entry.
+export
+template <K type, V type>
+fn __inc__(this &HashIterator<K, V>) void {
+    this.entry = this.entry->next;
+    if (this.entry == nullptr) {
+        this.index += 1;
+        this.seek();
+    }
+}
+
+// The mapped value at this position, for writing.
+export
+template <K type, V type>
+fn __deref__(this &HashIterator<K, V>) &V {
+    return &this.entry->value;
+}
+
+// The key at this position, for reading.
+export
+template <K type, V type>
+fn key(this &const HashIterator<K, V>) &const K {
+    return &this.entry->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type, V type>
+fn __eq__(this &const HashIterator<K, V>, other &const HashIterator<K, V>) bool {
+    return this.entry == other.entry;
+}
+
+// Whether two positions differ.
+export
+template <K type, V type>
+fn __ne__(this &const HashIterator<K, V>, other &const HashIterator<K, V>) bool {
+    return this.entry != other.entry;
+}
+
+// A position in a table, read only.
+export
+template <K type, V type>
+type ConstHashIterator {
+    // The buckets being walked, or null at the end.
+    buckets *byte;
+    // How many buckets there are.
+    capacity usize;
+    // The bucket the current entry is in.
+    index usize;
+    // The entry the iterator stands on, or null at the end.
+    entry *const HashEntry<K, V>;
+}
+
+// Creates an iterator that stands nowhere.
+export
+template <K type, V type>
+fn __init__(this &ConstHashIterator<K, V>) void {
+    this.buckets = nullptr;
+    this.capacity = 0;
+    this.index = 0;
+    this.entry = nullptr;
+}
+
+// Creates an iterator over a table's buckets.
+export
+template <K type, V type>
+fn __init__(this &ConstHashIterator<K, V>, buckets *byte, capacity usize) void {
+    this.buckets = buckets;
+    this.capacity = capacity;
+    this.index = 0;
+    this.entry = nullptr;
+    this.seek();
+}
+
+// Finds the first entry from the current bucket on.
+fn seek(this &ConstHashIterator<K, V>) void {
+    if (this.entry != nullptr) {
+        return;
+    }
+    slots **HashEntry<K, V> = this.buckets as **HashEntry<K, V>;
+    while (this.index < this.capacity) {
+        entry *HashEntry<K, V> = slots[this.index];
+        if (entry != nullptr) {
+            this.entry = entry;
+            return;
+        }
+        this.index += 1;
+    }
+}
+
+// Moves to the next entry.
+export
+template <K type, V type>
+fn __inc__(this &ConstHashIterator<K, V>) void {
+    this.entry = this.entry->next;
+    if (this.entry == nullptr) {
+        this.index += 1;
+        this.seek();
+    }
+}
+
+// The mapped value at this position, for reading.
+export
+template <K type, V type>
+fn __deref__(this &const ConstHashIterator<K, V>) &const V {
+    return &this.entry->value;
+}
+
+// The key at this position, for reading.
+export
+template <K type, V type>
+fn key(this &const ConstHashIterator<K, V>) &const K {
+    return &this.entry->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type, V type>
+fn __eq__(this &const ConstHashIterator<K, V>, other &const ConstHashIterator<K, V>) bool {
+    return this.entry == other.entry;
+}
+
+// Whether two positions differ.
+export
+template <K type, V type>
+fn __ne__(this &const ConstHashIterator<K, V>, other &const ConstHashIterator<K, V>) bool {
+    return this.entry != other.entry;
+}
+
+// A position in a set, which walks the keys.
+//
+// A set stores a `Unit` as its value, so the iterator shared with a map would
+// hand out `&Unit`; this one hands out the key, which is what a set has.
+export
+template <K type>
+type SetHashIterator {
+    // The buckets being walked, or null at the end.
+    buckets *byte;
+    // How many buckets there are.
+    capacity usize;
+    // The bucket the current entry is in.
+    index usize;
+    // The entry the iterator stands on, or null at the end.
+    entry *HashEntry<K, Unit>;
+}
+
+// Creates an iterator that stands nowhere.
+export
+template <K type>
+fn __init__(this &SetHashIterator<K>) void {
+    this.buckets = nullptr;
+    this.capacity = 0;
+    this.index = 0;
+    this.entry = nullptr;
+}
+
+// Creates an iterator over a table's buckets.
+export
+template <K type>
+fn __init__(this &SetHashIterator<K>, buckets *byte, capacity usize) void {
+    this.buckets = buckets;
+    this.capacity = capacity;
+    this.index = 0;
+    this.entry = nullptr;
+    this.seek();
+}
+
+// Finds the first entry from the current bucket on.
+fn seek(this &SetHashIterator<K>) void {
+    if (this.entry != nullptr) {
+        return;
+    }
+    slots **HashEntry<K, Unit> = this.buckets as **HashEntry<K, Unit>;
+    while (this.index < this.capacity) {
+        entry *HashEntry<K, Unit> = slots[this.index];
+        if (entry != nullptr) {
+            this.entry = entry;
+            return;
+        }
+        this.index += 1;
+    }
+}
+
+// Moves to the next key.
+export
+template <K type>
+fn __inc__(this &SetHashIterator<K>) void {
+    this.entry = this.entry->next;
+    if (this.entry == nullptr) {
+        this.index += 1;
+        this.seek();
+    }
+}
+
+// The key at this position.
+export
+template <K type>
+fn __deref__(this &const SetHashIterator<K>) &const K {
+    return &this.entry->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type>
+fn __eq__(this &const SetHashIterator<K>, other &const SetHashIterator<K>) bool {
+    return this.entry == other.entry;
+}
+
+// Whether two positions differ.
+export
+template <K type>
+fn __ne__(this &const SetHashIterator<K>, other &const SetHashIterator<K>) bool {
+    return this.entry != other.entry;
+}
+
+// A position in a set, read only.
+export
+template <K type>
+type ConstSetHashIterator {
+    buckets *byte;
+    capacity usize;
+    index usize;
+    entry *const HashEntry<K, Unit>;
+}
+
+// Creates an iterator that stands nowhere.
+export
+template <K type>
+fn __init__(this &ConstSetHashIterator<K>) void {
+    this.buckets = nullptr;
+    this.capacity = 0;
+    this.index = 0;
+    this.entry = nullptr;
+}
+
+// Creates an iterator over a table's buckets.
+export
+template <K type>
+fn __init__(this &ConstSetHashIterator<K>, buckets *byte, capacity usize) void {
+    this.buckets = buckets;
+    this.capacity = capacity;
+    this.index = 0;
+    this.entry = nullptr;
+    this.seek();
+}
+
+// Finds the first entry from the current bucket on.
+fn seek(this &ConstSetHashIterator<K>) void {
+    if (this.entry != nullptr) {
+        return;
+    }
+    slots **HashEntry<K, Unit> = this.buckets as **HashEntry<K, Unit>;
+    while (this.index < this.capacity) {
+        entry *HashEntry<K, Unit> = slots[this.index];
+        if (entry != nullptr) {
+            this.entry = entry;
+            return;
+        }
+        this.index += 1;
+    }
+}
+
+// Moves to the next key.
+export
+template <K type>
+fn __inc__(this &ConstSetHashIterator<K>) void {
+    this.entry = this.entry->next;
+    if (this.entry == nullptr) {
+        this.index += 1;
+        this.seek();
+    }
+}
+
+// The key at this position.
+export
+template <K type>
+fn __deref__(this &const ConstSetHashIterator<K>) &const K {
+    return &this.entry->key;
+}
+
+// Whether two positions are the same.
+export
+template <K type>
+fn __eq__(this &const ConstSetHashIterator<K>, other &const ConstSetHashIterator<K>) bool {
+    return this.entry == other.entry;
+}
+
+// Whether two positions differ.
+export
+template <K type>
+fn __ne__(this &const ConstSetHashIterator<K>, other &const ConstSetHashIterator<K>) bool {
+    return this.entry != other.entry;
+}
+
+// --------------------------------------------------------------- containers
+
+// A map from keys to values, with no order.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+type HMap {
+    table HashTable<K, V, H, A>;
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMap<K, V, H, A>) void {
+    (&this.table)->__init__();
+}
+
+
+// Copies another hmap through its table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMap<K, V, H, A>, other &const HMap<K, V, H, A>) void {
+    (&this.table)->__init__(other.table);
+}
+
+// Takes another hmap's table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMap<K, V, H, A>, other &&HMap<K, V, H, A>) void {
+    (&this.table)->__init__(util.move(other.table));
+}
+
+// Copies another hmap over this one.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __assign__(this &HMap<K, V, H, A>, other &const HMap<K, V, H, A>) void {
+    this.table = other.table;
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMap<K, V, H, A>, hash H, memory A) void {
+    (&this.table)->__init__(hash, memory);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __drop__(this &HMap<K, V, H, A>) void {
+    (&this.table)->__drop__();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn insert(this &HMap<K, V, H, A>, key K, value V) void {
+    this.table.insert(util.move(key), util.move(value));
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn find(this &HMap<K, V, H, A>, key &const K) *V {
+    return this.table.find(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn find(this &const HMap<K, V, H, A>, key &const K) *const V {
+    return this.table.find(key);
+}
+
+// Returns the value for a key, and aborts when there is none.
+//
+// The same rule the ordered map follows: `m[key]` names a value that must be
+// there, and `find` is the form that answers "is it?".
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn at(this &HMap<K, V, H, A>, key &const K) &V {
+    value *V = this.find(key);
+    if (value == nullptr) {
+        util.panic("HMap has no such key");
+    }
+    return value[0];
+}
+
+// Returns the value for a key, and aborts when there is none, for reading.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn at(this &const HMap<K, V, H, A>, key &const K) &const V {
+    value *const V = this.find(key);
+    if (value == nullptr) {
+        util.panic("HMap has no such key");
+    }
+    return value[0];
+}
+
+// Indexes the map: `m[key]` is the value, and a missing key aborts.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __getitem__(this &HMap<K, V, H, A>, key &const K) &V {
+    return this.at(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn contains(this &const HMap<K, V, H, A>, key &const K) bool {
+    return this.table.contains(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn count(this &const HMap<K, V, H, A>, key &const K) usize {
+    return this.table.count(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase(this &HMap<K, V, H, A>, key &const K) bool {
+    return this.table.erase(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase_all(this &HMap<K, V, H, A>, key &const K) usize {
+    return this.table.erase_all(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn clear(this &HMap<K, V, H, A>) void {
+    this.table.clear();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn length(this &const HMap<K, V, H, A>) usize {
+    return this.table.length();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn empty(this &const HMap<K, V, H, A>) bool {
+    return this.table.empty();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &HMap<K, V, H, A>) HashIterator<K, V> {
+    return HashIterator<K, V>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &HMap<K, V, H, A>) HashIterator<K, V> {
+    return HashIterator<K, V>();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &const HMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return ConstHashIterator<K, V>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &const HMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return ConstHashIterator<K, V>();
+}
+
+// A set of keys, with no order.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+type HSet {
+    table HashTable<K, Unit, H, A>;
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HSet<K, H, A>) void {
+    (&this.table)->__init__();
+}
+
+
+// Copies another hset through its table.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HSet<K, H, A>, other &const HSet<K, H, A>) void {
+    (&this.table)->__init__(other.table);
+}
+
+// Takes another hset's table.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HSet<K, H, A>, other &&HSet<K, H, A>) void {
+    (&this.table)->__init__(util.move(other.table));
+}
+
+// Copies another hset over this one.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __assign__(this &HSet<K, H, A>, other &const HSet<K, H, A>) void {
+    this.table = other.table;
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HSet<K, H, A>, hash H, memory A) void {
+    (&this.table)->__init__(hash, memory);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __drop__(this &HSet<K, H, A>) void {
+    (&this.table)->__drop__();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn insert(this &HSet<K, H, A>, key K) void {
+    placeholder Unit = .{};
+    this.table.insert(util.move(key), util.move(placeholder));
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn contains(this &const HSet<K, H, A>, key &const K) bool {
+    return this.table.contains(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn count(this &const HSet<K, H, A>, key &const K) usize {
+    return this.table.count(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase(this &HSet<K, H, A>, key &const K) bool {
+    return this.table.erase(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase_all(this &HSet<K, H, A>, key &const K) usize {
+    return this.table.erase_all(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn clear(this &HSet<K, H, A>) void {
+    this.table.clear();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn length(this &const HSet<K, H, A>) usize {
+    return this.table.length();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn empty(this &const HSet<K, H, A>) bool {
+    return this.table.empty();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &HSet<K, H, A>) SetHashIterator<K> {
+    return SetHashIterator<K>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &HSet<K, H, A>) SetHashIterator<K> {
+    return SetHashIterator<K>();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &const HSet<K, H, A>) ConstSetHashIterator<K> {
+    return ConstSetHashIterator<K>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &const HSet<K, H, A>) ConstSetHashIterator<K> {
+    return ConstSetHashIterator<K>();
+}
+
+// A map that keeps every value inserted for a key.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+type HMMap {
+    table HashTable<K, V, H, A>;
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMMap<K, V, H, A>) void {
+    (&this.table)->__init__();
+}
+
+
+// Copies another hmmap through its table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMMap<K, V, H, A>, other &const HMMap<K, V, H, A>) void {
+    (&this.table)->__init__(other.table);
+}
+
+// Takes another hmmap's table.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMMap<K, V, H, A>, other &&HMMap<K, V, H, A>) void {
+    (&this.table)->__init__(util.move(other.table));
+}
+
+// Copies another hmmap over this one.
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __assign__(this &HMMap<K, V, H, A>, other &const HMMap<K, V, H, A>) void {
+    this.table = other.table;
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMMap<K, V, H, A>, hash H, memory A) void {
+    (&this.table)->__init__(hash, memory);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn __drop__(this &HMMap<K, V, H, A>) void {
+    (&this.table)->__drop__();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn insert(this &HMMap<K, V, H, A>, key K, value V) void {
+    this.table.insert_multi(util.move(key), util.move(value));
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn find(this &HMMap<K, V, H, A>, key &const K) *V {
+    return this.table.find(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn find(this &const HMMap<K, V, H, A>, key &const K) *const V {
+    return this.table.find(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn contains(this &const HMMap<K, V, H, A>, key &const K) bool {
+    return this.table.contains(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn count(this &const HMMap<K, V, H, A>, key &const K) usize {
+    return this.table.count(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase(this &HMMap<K, V, H, A>, key &const K) bool {
+    return this.table.erase(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase_all(this &HMMap<K, V, H, A>, key &const K) usize {
+    return this.table.erase_all(key);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn clear(this &HMMap<K, V, H, A>) void {
+    this.table.clear();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn length(this &const HMMap<K, V, H, A>) usize {
+    return this.table.length();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn empty(this &const HMMap<K, V, H, A>) bool {
+    return this.table.empty();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &HMMap<K, V, H, A>) HashIterator<K, V> {
+    return HashIterator<K, V>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &HMMap<K, V, H, A>) HashIterator<K, V> {
+    return HashIterator<K, V>();
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &const HMMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return ConstHashIterator<K, V>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &const HMMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return ConstHashIterator<K, V>();
+}
+
+// A set that keeps a key every time it is inserted.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+type HMSet {
+    table HashTable<K, Unit, H, A>;
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMSet<K, H, A>) void {
+    (&this.table)->__init__();
+}
+
+
+// Copies another hmset through its table.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMSet<K, H, A>, other &const HMSet<K, H, A>) void {
+    (&this.table)->__init__(other.table);
+}
+
+// Takes another hmset's table.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMSet<K, H, A>, other &&HMSet<K, H, A>) void {
+    (&this.table)->__init__(util.move(other.table));
+}
+
+// Copies another hmset over this one.
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __assign__(this &HMSet<K, H, A>, other &const HMSet<K, H, A>) void {
+    this.table = other.table;
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __init__(this &HMSet<K, H, A>, hash H, memory A) void {
+    (&this.table)->__init__(hash, memory);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn __drop__(this &HMSet<K, H, A>) void {
+    (&this.table)->__drop__();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn insert(this &HMSet<K, H, A>, key K) void {
+    placeholder Unit = .{};
+    this.table.insert_multi(util.move(key), util.move(placeholder));
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn contains(this &const HMSet<K, H, A>, key &const K) bool {
+    return this.table.contains(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn count(this &const HMSet<K, H, A>, key &const K) usize {
+    return this.table.count(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase(this &HMSet<K, H, A>, key &const K) bool {
+    return this.table.erase(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn erase_all(this &HMSet<K, H, A>, key &const K) usize {
+    return this.table.erase_all(key);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn clear(this &HMSet<K, H, A>) void {
+    this.table.clear();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn length(this &const HMSet<K, H, A>) usize {
+    return this.table.length();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn empty(this &const HMSet<K, H, A>) bool {
+    return this.table.empty();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &HMSet<K, H, A>) SetHashIterator<K> {
+    return SetHashIterator<K>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &HMSet<K, H, A>) SetHashIterator<K> {
+    return SetHashIterator<K>();
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn begin(this &const HMSet<K, H, A>) ConstSetHashIterator<K> {
+    return ConstSetHashIterator<K>(this.table._buckets, this.table._capacity);
+}
+
+export
+template <K type, H type = Hash<K>, A type = DefaultAllocator>
+fn end(this &const HMSet<K, H, A>) ConstSetHashIterator<K> {
+    return ConstSetHashIterator<K>();
+}

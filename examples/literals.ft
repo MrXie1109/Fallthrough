@@ -1,0 +1,19 @@
+import C;
+
+fn main() int {
+    C.printf("hex %d oct %d bin %d\n", 0xFF, 0o17, 0b1010);
+    C.printf("separated %d\n", 1_000_000);
+
+    // A character literal's type comes from its width prefix, and is a `c8`
+    // without one. `'中'` needs a wider one: as a `c8` it does not fit.
+    C.printf("c8  A = %d\n", 'A' as int);
+    C.printf("c16 A = %d\n", u16'A' as int);
+    C.printf("c32 zhong = %d\n", u32'中' as int);
+    C.printf("newline = %d\n", '\n' as int);
+
+    // An ordinary string carries a terminating NUL, so it goes to `printf`
+    // as it stands; a byte string does not, so it is printed by precision.
+    C.printf("string: %s\n", "hello");
+    C.printf("bytes: %.5s\n", b"hello");
+    return 0;
+}

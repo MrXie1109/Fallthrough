@@ -1,0 +1,353 @@
+// Time: durations, monotonic instants, and the wall clock.
+//
+// Three questions, three types:
+//
+// * `Duration` is an amount of time, in nanoseconds.
+// * `Instant` is a point on the monotonic clock, which only moves forward --
+//   for measuring how long something took.
+// * `SystemTime` is a point on the wall clock, in Unix epoch nanoseconds --
+//   for saying *when* something happened.
+//
+//     start Instant = time.now();
+//     ... work ...
+//     took Duration = time.since(&start);
+//     std.print("took {} ms\n", took.millis())?!;
+//
+// # Why two clocks
+//
+// The wall clock can be changed by a person or a time server, so a duration
+// measured with it can be negative or wrong. The monotonic clock cannot, which
+// is why `Instant` is the type for measuring and `SystemTime` for recording.
+
+import C;
+import std.os;
+import std.string;
+from std.string import String;
+import std.internal.time_sys;
+
+// An amount of time.
+//
+// The unit is the nanosecond, the finest resolution the platforms here report;
+// `millis()` and `seconds()` truncate.
+export type Duration {
+    // The amount, in nanoseconds.
+    _ns i64;
+}
+
+// A duration of `nanos` nanoseconds.
+export fn __init__(this &Duration, nanos i64) void {
+    this._ns = nanos;
+}
+
+// A duration of `nanos` nanoseconds.
+export fn from_nanos(nanos i64) Duration {
+    return Duration(nanos);
+}
+
+// A duration of `millis` milliseconds.
+export fn from_millis(millis i64) Duration {
+    return Duration(millis * 1000000i64);
+}
+
+// A duration of `seconds` seconds.
+export fn from_seconds(seconds i64) Duration {
+    return Duration(seconds * 1000000000i64);
+}
+
+// The duration in whole nanoseconds.
+export fn nanos(this &const Duration) i64 {
+    return this._ns;
+}
+
+// The duration in whole milliseconds, truncated toward zero.
+export fn millis(this &const Duration) i64 {
+    return this._ns / 1000000i64;
+}
+
+// The duration in whole seconds, truncated toward zero.
+export fn seconds(this &const Duration) i64 {
+    return this._ns / 1000000000i64;
+}
+
+// The sum of two durations.
+export fn __add__(this &const Duration, other &const Duration) Duration {
+    return Duration(this._ns + other._ns);
+}
+
+// The difference of two durations.
+export fn __sub__(this &const Duration, other &const Duration) Duration {
+    return Duration(this._ns - other._ns);
+}
+
+// Whether two durations are the same amount.
+export fn __eq__(this &const Duration, other &const Duration) bool {
+    return this._ns == other._ns;
+}
+
+// Whether two durations differ.
+export fn __ne__(this &const Duration, other &const Duration) bool {
+    return this._ns != other._ns;
+}
+
+// Whether this duration is shorter than another.
+export fn __lt__(this &const Duration, other &const Duration) bool {
+    return this._ns < other._ns;
+}
+
+// The duration as text: seconds with three decimals, as a terminal would write
+// it.
+export fn __str__(this &const Duration) String {
+    negative bool = this._ns < 0i64;
+    nanos i64 = this._ns;
+    if (negative) {
+        nanos = 0i64 - nanos;
+    }
+    whole i64 = nanos / 1000000000i64;
+    fraction i64 = (nanos % 1000000000i64) / 1000000i64;
+    text String = String();
+    if (negative) {
+        text.push('-');
+    }
+    print_to(text, whole as int);
+    text.push('.');
+    if (fraction < 100i64) {
+        text.push('0');
+    }
+    if (fraction < 10i64) {
+        text.push('0');
+    }
+    print_to(text, fraction as int);
+    text.push('s');
+    return text;
+}
+
+// The number as decimal digits appended to `text`.
+//
+// A small helper rather than a `String` conversion: `str` of an `int` builds a
+// `String` of its own, and the formatting above needs the digits placed between
+// parts of a line it is already building.
+fn print_to(text &String, value int) void {
+    if (value < 0) {
+        text.push('-');
+        value = 0 - value;
+    }
+    if (value >= 10) {
+        print_to(text, value / 10);
+    }
+    text.push(('0' as int + value % 10) as char);
+}
+
+// A point on the monotonic clock.
+//
+// Only differences of two instants mean anything; the number inside is the
+// platform's own count of nanoseconds since some arbitrary start.
+export type Instant {
+    // Nanoseconds on the monotonic clock.
+    _ns i64;
+}
+
+// An instant from a monotonic count.
+export fn __init__(this &Instant, nanos i64) void {
+    this._ns = nanos;
+}
+
+// The current instant of the monotonic clock.
+export fn now() Instant {
+    return Instant(os.monotonic_ns() as i64);
+}
+
+// How long has passed since `start`.
+export fn since(start &const Instant) Duration {
+    return Duration((os.monotonic_ns() as i64) - start._ns);
+}
+
+// A point on the wall clock.
+//
+// The value is nanoseconds since the Unix epoch (1970-01-01T00:00:00Z), which
+// is the representation a file time and a log line share.
+export type SystemTime {
+    // Nanoseconds since the Unix epoch.
+    _ns i64;
+}
+
+// A wall-clock time from Unix-epoch nanoseconds.
+export fn __init__(this &SystemTime, nanos i64) void {
+    this._ns = nanos;
+}
+
+// The current instant of the wall clock.
+export fn unix_now() SystemTime {
+    return SystemTime(time_sys.realtime_ns());
+}
+
+// The current wall-clock time as nanoseconds since the Unix epoch.
+export fn unix_nanos() i64 {
+    return time_sys.realtime_ns();
+}
+
+// Whole seconds since the Unix epoch.
+export fn unix_seconds(this &const SystemTime) i64 {
+    return this._ns / 1000000000i64;
+}
+
+// The civil date and time in UTC.
+export fn to_utc(this &const SystemTime) DateTime {
+    seconds i64 = this._ns / 1000000000i64;
+    days i64 = seconds / 86400i64;
+    remainder i64 = seconds % 86400i64;
+    if (remainder < 0i64) {
+        days -= 1i64;
+        remainder += 86400i64;
+    }
+    hour i64 = remainder / 3600i64;
+    minute i64 = (remainder % 3600i64) / 60i64;
+    second i64 = remainder % 60i64;
+    civil Civil = civil_from_days(days);
+    return DateTime(civil.year, civil.month, civil.day, hour as u32, minute as u32, second as u32);
+}
+
+// The civil year, month and day of a count of days since the Unix epoch.
+type Civil {
+    year i32;
+    month u32;
+    day u32;
+}
+
+// Converts a day count to a civil date.
+//
+// Howard Hinnant's `civil_from_days`: shift the epoch to 0000-03-01, which makes
+// the leap day the last day of the year, then divide by the 400-year cycle. The
+// arithmetic is integer only, and correct for every date the epoch can express.
+fn civil_from_days(days i64) Civil {
+    shifted i64 = days + 719468i64;
+    era i64 = shifted / 146097i64;
+    if (shifted < 0i64 && shifted % 146097i64 != 0i64) {
+        era -= 1i64;
+    }
+    day_of_era i64 = shifted - era * 146097i64;
+    year_of_era i64 = (day_of_era - day_of_era / 1460i64 + day_of_era / 36524i64
+        - day_of_era / 146096i64) / 365i64;
+    year i64 = year_of_era + era * 400i64;
+    day_of_year i64 = day_of_era - (365i64 * year_of_era + year_of_era / 4i64 - year_of_era / 100i64);
+    month_prime i64 = (5i64 * day_of_year + 2i64) / 153i64;
+    day i64 = day_of_year - (153i64 * month_prime + 2i64) / 5i64 + 1i64;
+    month i64 = month_prime;
+    if (month < 10i64) {
+        month += 3i64;
+    } else {
+        month -= 9i64;
+        year += 1i64;
+    }
+    civil Civil = .{ year as i32, month as u32, day as u32 };
+    return civil;
+}
+
+// A civil date and time in UTC.
+export type DateTime {
+    // The year, as written.
+    _year i32;
+    // The month, 1 through 12.
+    _month u32;
+    // The day of the month, 1 through 31.
+    _day u32;
+    // The hour, 0 through 23.
+    _hour u32;
+    // The minute, 0 through 59.
+    _minute u32;
+    // The second, 0 through 59.
+    _second u32;
+}
+
+// Builds a date and time from its fields.
+export fn __init__(
+    this &DateTime,
+    year i32,
+    month u32,
+    day u32,
+    hour u32,
+    minute u32,
+    second u32
+) void {
+    this._year = year;
+    this._month = month;
+    this._day = day;
+    this._hour = hour;
+    this._minute = minute;
+    this._second = second;
+}
+
+// The year.
+export fn year(this &const DateTime) i32 {
+    return this._year;
+}
+
+// The month.
+export fn month(this &const DateTime) u32 {
+    return this._month;
+}
+
+// The day of the month.
+export fn day(this &const DateTime) u32 {
+    return this._day;
+}
+
+// The hour.
+export fn hour(this &const DateTime) u32 {
+    return this._hour;
+}
+
+// The minute.
+export fn minute(this &const DateTime) u32 {
+    return this._minute;
+}
+
+// The second.
+export fn second(this &const DateTime) u32 {
+    return this._second;
+}
+
+// The date and time as `YYYY-MM-DD HH:MM:SS`.
+export fn __str__(this &const DateTime) String {
+    text String = String();
+    append_padded(&text, this._year as i64, 4);
+    text.push('-');
+    append_padded(&text, this._month as i64, 2);
+    text.push('-');
+    append_padded(&text, this._day as i64, 2);
+    text.push(' ');
+    append_padded(&text, this._hour as i64, 2);
+    text.push(':');
+    append_padded(&text, this._minute as i64, 2);
+    text.push(':');
+    append_padded(&text, this._second as i64, 2);
+    return text;
+}
+
+// Appends `value` to `text` with at least `width` digits.
+fn append_padded(text &String, value i64, width usize) void {
+    divisor i64 = 1i64;
+    digits usize = 1;
+    while (digits < width) {
+        divisor *= 10i64;
+        digits += 1;
+    }
+    current i64 = value;
+    if (current < 0i64) {
+        text.push('-');
+        current = 0i64 - current;
+    }
+    while (divisor > 1i64) {
+        text.push(('0' as int + ((current / divisor) % 10i64) as int) as char);
+        divisor /= 10i64;
+    }
+    text.push(('0' as int + (current % 10i64) as int) as char);
+}
+
+// Sleeps for `duration`.
+export fn sleep(duration &const Duration) void {
+    millis i64 = duration.millis();
+    if (millis <= 0i64) {
+        return;
+    }
+    os.sleep_ms(millis as int);
+}

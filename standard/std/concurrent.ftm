@@ -1,0 +1,407 @@
+// Concurrency: a promise and its future, a channel, and a thread pool.
+//
+// The three answer different questions:
+//
+// * `Promise<T>`/`Future<T>` -- one thread produces a value, another waits for
+//   it. The promise sets it once; the future gets it once and may wait.
+// * `Channel<T>` -- many values in order from one side to the other, with
+//   `send`, `recv` and `close`.
+// * `ThreadPool` -- a fixed set of threads taking jobs from a queue, so a
+//   program does not create one thread per task.
+//
+//     channel Channel<int> = Channel<int>();
+//     producer->send(1);
+//     value int = channel.recv()?!;
+//
+// # Sharing
+//
+// A promise and its future keep one control block alive with a reference count;
+// either may die first. A channel is a plain object -- the caller keeps it alive
+// for as long as both sides use it, which is what `&channel` into a thread's
+// context does. A pool owns its threads and stops them when it is destroyed.
+
+import std.array;
+from std.array import Array;
+import std.memory;
+import std.optional;
+import std.string;
+from std.string import String;
+import std.sync;
+import std.util;
+
+// ------------------------------------------------------------- promise/future
+
+// The state a promise and a future share.
+//
+// The value is stored behind a pointer so that a type with no default
+// constructor still works: it is allocated when the promise is set, and the
+// last owner frees it.
+export
+template <T type>
+type PromiseControl {
+    // How many owners there are: the promise and every future.
+    _refs Atomic<int>;
+    // Guards the value and the readiness flag.
+    _mutex Mutex;
+    // Wakes the future when the value arrives.
+    _arrived CondVar;
+    // Whether the value has been set.
+    _ready bool;
+    // The value, or null before it is set.
+    _value *T;
+}
+
+// Creates the shared state.
+template <T type>
+fn new_control() *PromiseControl<T> {
+    control *PromiseControl<T> = util.allocate(sizeof(PromiseControl<T>)) as *PromiseControl<T>;
+    (&control._refs)->__init__(1);
+    (&control._mutex)->__init__();
+    (&control._arrived)->__init__();
+    control._ready = false;
+    control._value = nullptr;
+    return control;
+}
+
+// Drops one reference, freeing the state when the last one goes.
+template <T type>
+fn release_control(control *PromiseControl<T>) void {
+    control._refs.fetch_sub(1);
+    if (control._refs.load() != 0) {
+        return;
+    }
+    if (control._value != nullptr) {
+        control._value->__drop__();
+        util.free(control._value as *byte);
+        control._value = nullptr;
+    }
+    util.free(control as *byte);
+}
+
+// The writing end: one value, set once.
+export
+template <T type>
+type Promise {
+    // The state shared with the future.
+    _control *PromiseControl<T>;
+}
+
+// Creates a promise with a fresh state.
+export
+template <T type>
+fn __init__(this &Promise<T>) void {
+    this._control = new_control<T>();
+}
+
+// The future that will receive the value.
+export
+template <T type>
+fn future(this &Promise<T>) Future<T> {
+    this._control._refs.fetch_add(1);
+    created Future<T> = Future<T>();
+    created._control = this._control;
+    return created;
+}
+
+// Sets the value and wakes the future.
+//
+// Setting a promise twice is a no-op: the first value is the answer, and a
+// second one would silently break the rule that a future waits for one.
+export
+template <T type>
+fn set(this &Promise<T>, value T) void except {
+    this._control._mutex.lock();
+    if (!this._control._ready) {
+        storage *T = util.allocate(sizeof(T)) as *T;
+        storage->__init__(value);
+        this._control._value = storage;
+        this._control._ready = true;
+        this._control._arrived.notify_all();
+    }
+    this._control._mutex.unlock();
+}
+
+// Releases the promise's reference.
+export
+template <T type>
+fn __drop__(this &Promise<T>) void {
+    if (this._control != nullptr) {
+        release_control<T>(this._control);
+        this._control = nullptr;
+    }
+}
+
+// The reading end: waits for the value the promise sets.
+export
+template <T type>
+type Future {
+    // The state shared with the promise.
+    _control *PromiseControl<T>;
+}
+
+// Creates an unbound future; `Promise.future()` is what fills it in.
+export
+template <T type>
+fn __init__(this &Future<T>) void {
+    this._control = nullptr;
+}
+
+// Binds a future to an existing state, taking one reference.
+export
+template <T type>
+fn __init__(this &Future<T>, control *PromiseControl<T>) void {
+    this._control = control;
+}
+
+// Whether the value has arrived.
+export
+template <T type>
+fn ready(this &Future<T>) bool {
+    if (this._control == nullptr) {
+        return false;
+    }
+    this._control._mutex.lock();
+    answer bool = this._control._ready;
+    this._control._mutex.unlock();
+    return answer;
+}
+
+// Waits for the value and returns it.
+export
+template <T type>
+fn get(this &Future<T>) T except {
+    if (this._control == nullptr) {
+        raise "FutureError": "the future is unbound";
+    }
+    this._control._mutex.lock();
+    while (!this._control._ready) {
+        this._control._arrived.wait(&this._control._mutex);
+    }
+    value T = *this._control._value;
+    this._control._mutex.unlock();
+    return value;
+}
+
+// Releases the future's reference.
+export
+template <T type>
+fn __drop__(this &Future<T>) void {
+    if (this._control != nullptr) {
+        release_control<T>(this._control);
+        this._control = nullptr;
+    }
+}
+
+// ------------------------------------------------------------------- channel
+
+// A queue one side writes and the other reads, in order.
+//
+// `send` appends and wakes a reader; `recv` waits while the queue is empty and
+// raises `ChannelClosed` when the channel is closed and empty; `close` stops
+// new values and wakes every waiter.
+export
+template <T type>
+type Channel {
+    // Guards the queue and the closed flag.
+    _mutex Mutex;
+    // Wakes a reader when a value arrives, and every reader on close.
+    _filled CondVar;
+    // The values waiting to be read.
+    _queue Array<T>;
+    // Whether `close` has been called.
+    _closed bool;
+}
+
+// Creates an open channel.
+export
+template <T type>
+fn __init__(this &Channel<T>) void {
+    (&this._mutex)->__init__();
+    (&this._filled)->__init__();
+    (&this._queue)->__init__();
+    this._closed = false;
+}
+
+// Appends a value and wakes one reader.
+export
+template <T type>
+fn send(this &Channel<T>, value T) void except {
+    this._mutex.lock();
+    if (this._closed) {
+        this._mutex.unlock();
+        raise "ChannelClosed": "the channel is closed";
+    }
+    this._queue.push(value);
+    this._filled.notify_one();
+    this._mutex.unlock();
+}
+
+// Takes the next value, waiting while the queue is empty.
+export
+template <T type>
+fn recv(this &Channel<T>) T except {
+    this._mutex.lock();
+    while (this._queue.empty() && !this._closed) {
+        this._filled.wait(&this._mutex);
+    }
+    if (this._queue.empty()) {
+        this._mutex.unlock();
+        raise "ChannelClosed": "the channel is closed";
+    }
+    value T = this._queue[0];
+    this._queue.erase(this._queue.begin());
+    this._mutex.unlock();
+    return value;
+}
+
+// Takes the next value, or returns an absent optional when there is none.
+export
+template <T type>
+fn try_recv(this &Channel<T>) ?T {
+    this._mutex.lock();
+    if (this._queue.empty()) {
+        this._mutex.unlock();
+        return optional.none<T>();
+    }
+    value T = this._queue[0];
+    this._queue.erase(this._queue.begin());
+    this._mutex.unlock();
+    return optional.some(value);
+}
+
+// Stops new values and wakes every reader.
+export
+template <T type>
+fn close(this &Channel<T>) void {
+    this._mutex.lock();
+    this._closed = true;
+    this._filled.notify_all();
+    this._mutex.unlock();
+}
+
+// Whether `close` has been called.
+export
+template <T type>
+fn closed(this &Channel<T>) bool {
+    this._mutex.lock();
+    answer bool = this._closed;
+    this._mutex.unlock();
+    return answer;
+}
+
+// ---------------------------------------------------------------- thread pool
+
+// One job: what to call and what to hand it.
+type Job {
+    // The function to call.
+    task *fn(*byte) u32;
+    // Its argument.
+    argument *byte;
+}
+
+// A fixed set of threads taking jobs from a queue.
+export type ThreadPool {
+    // Guards the queue and the stopping flag.
+    _mutex Mutex;
+    // Wakes a worker when a job arrives, and every worker on shutdown.
+    _jobs CondVar;
+    // The jobs waiting to run.
+    _queue Array<Job>;
+    // The workers.
+    _threads Array<Thread>;
+    // Whether `shutdown` has been called.
+    _stopping bool;
+    // How many workers `start` creates.
+    _workers usize;
+}
+
+// Creates a pool that will run `workers` workers once `start` is called.
+//
+// The threads are not started here: a constructor runs on a temporary, and a
+// worker that was handed the temporary's address would read a pool that moved
+// when the constructor returned. `start` is called on the object in its final
+// place.
+export fn __init__(this &ThreadPool, workers usize) void {
+    (&this._mutex)->__init__();
+    (&this._jobs)->__init__();
+    (&this._queue)->__init__();
+    (&this._threads)->__init__();
+    this._stopping = false;
+    this._workers = workers;
+}
+
+// Starts the workers.
+export fn start(this &ThreadPool) void except {
+    index usize = 0;
+    while (index < this._workers) {
+        this._threads.push(Thread(worker_entry, &this as *byte)?!);
+        index += 1;
+    }
+}
+
+// The workers' body: take jobs until told to stop.
+fn worker_entry(argument *byte) u32 {
+    pool *ThreadPool = argument as *ThreadPool;
+    return pool.work();
+}
+
+// One worker's loop.
+fn work(this &ThreadPool) u32 {
+    while (true) {
+        this._mutex.lock();
+        while (this._queue.empty() && !this._stopping) {
+            this._jobs.wait(&this._mutex);
+        }
+        if (this._queue.empty()) {
+            this._mutex.unlock();
+            return 0;
+        }
+        job Job = this._queue[0];
+        this._queue.erase(this._queue.begin());
+        this._mutex.unlock();
+        task *fn(*byte) u32 = job.task;
+        task(job.argument);
+    }
+}
+
+// Queues a job and wakes one worker.
+export fn submit(this &ThreadPool, task *fn(*byte) u32, argument *byte) void {
+    this._mutex.lock();
+    job Job = .{ task, argument };
+    this._queue.push(job);
+    this._jobs.notify_one();
+    this._mutex.unlock();
+}
+
+// Tells every worker to finish the queued jobs and stop, and waits for them.
+export fn shutdown(this &ThreadPool) void except {
+    this._mutex.lock();
+    this._stopping = true;
+    this._jobs.notify_all();
+    this._mutex.unlock();
+    for (thread &Thread : this._threads) {
+        thread.join()?!;
+    }
+    this._threads.clear();
+}
+
+// Stops the pool.
+export fn __drop__(this &ThreadPool) void {
+    this._mutex.lock();
+    this._stopping = true;
+    this._jobs.notify_all();
+    this._mutex.unlock();
+    for (thread &Thread : this._threads) {
+        try {
+            thread.join()?!;
+        } except {
+            // A destructor cannot raise; a thread that could not be joined is
+            // left to the process, which is what an unhandled join would do.
+        }
+    }
+    this._threads.clear();
+    (&this._queue)->__drop__();
+    (&this._threads)->__drop__();
+    (&this._mutex)->__drop__();
+    (&this._jobs)->__drop__();
+}

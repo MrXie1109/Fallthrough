@@ -1,0 +1,208 @@
+// A value that may be absent.
+//
+// `?T` is the short spelling of `Optional<T>`, and the reason the type exists:
+// a function that can fail to produce a `T` has two honest answers -- raise, or
+// return "there is no value". The exception covers the first; this type covers
+// the second, and `value()` bridges the two by raising when there is nothing.
+//
+//     find_name(people, "ada");      // `?Person`
+//     name ?String = ...;
+//     if (name) {
+//         std.print("found {}\n", name.value())?!;
+//     }
+//
+// # Absence is a value
+//
+// Unlike a pointer, `?T` holds its `T` inline: no allocation, and no null to
+// mistake for a valid value. A `?T` starts absent; constructing it from a `T`
+// makes it present, and `reset()` makes it absent again. Reading a present
+// `?T` is `value()`, which raises `NoneError` on an absent one, so the failure
+// travels the same path as every other failure in the program.
+//
+// The comparison is structural: two optionals are equal when both are absent,
+// or when both are present and their values are equal.
+
+// A value that may be absent.
+export
+template <T type>
+type Optional {
+    // Whether there is a value at all.
+    _present bool;
+    // The value; meaningless when `_present` is false.
+    _value T;
+}
+
+// Creates an absent optional.
+export
+template <T type>
+fn __init__(this &Optional<T>) void {
+    this._present = false;
+}
+
+// Creates a present optional holding `value`.
+export
+template <T type>
+fn __init__(this &Optional<T>, value T) void {
+    this._present = true;
+    (&this._value)->__init__(value);
+}
+
+// Copies another optional: a value is copied, an absence stays absent.
+export
+template <T type>
+fn __init__(this &Optional<T>, other &const Optional<T>) void {
+    this._present = other._present;
+    if (other._present) {
+        (&this._value)->__init__(other._value);
+    }
+}
+
+// Takes another optional's value.
+export
+template <T type>
+fn __init__(this &Optional<T>, other &&Optional<T>) void {
+    this._present = other._present;
+    if (other._present) {
+        (&this._value)->__init__(other._value);
+        other._present = false;
+    }
+}
+
+// Assigns another optional's value to this one.
+export
+template <T type>
+fn __assign__(this &Optional<T>, other &const Optional<T>) void {
+    if (this._present) {
+        (&this._value)->__drop__();
+        this._present = false;
+    }
+    if (other._present) {
+        (&this._value)->__init__(other._value);
+        this._present = true;
+    }
+}
+
+// Moves another optional's value into this one.
+export
+template <T type>
+fn __assign__(this &Optional<T>, other &&Optional<T>) void {
+    if (this._present) {
+        (&this._value)->__drop__();
+        this._present = false;
+    }
+    if (other._present) {
+        (&this._value)->__init__(other._value);
+        this._present = true;
+        other._present = false;
+    }
+}
+
+// Releases the value, if there is one.
+export
+template <T type>
+fn __drop__(this &Optional<T>) void {
+    if (this._present) {
+        (&this._value)->__drop__();
+        this._present = false;
+    }
+}
+
+// Whether there is a value.
+export
+template <T type>
+fn present(this &const Optional<T>) bool {
+    return this._present;
+}
+
+// The same answer as `present()`, so `if (opt)` reads as "if there is one".
+export
+template <T type>
+fn __bool__(this &const Optional<T>) bool {
+    return this._present;
+}
+
+// The value, or a raise.
+//
+// An absent optional has no value to hand out, so the question is answered the
+// way the language answers every other failure: an exception, here `NoneError`.
+export
+template <T type>
+fn value(this &const Optional<T>) T except {
+    if (!this._present) {
+        raise "NoneError": "the optional is absent";
+    }
+    return this._value;
+}
+
+// A reference to the value, or a raise.
+export
+template <T type>
+fn reference(this &const Optional<T>) &const T except {
+    if (!this._present) {
+        raise "NoneError": "the optional is absent";
+    }
+    return &this._value;
+}
+
+// The value, or `fallback` when there is none.
+export
+template <T type>
+fn value_or(this &const Optional<T>, fallback T) T {
+    if (!this._present) {
+        return fallback;
+    }
+    return this._value;
+}
+
+// Makes the optional absent, releasing any value it held.
+export
+template <T type>
+fn reset(this &Optional<T>) void {
+    if (this._present) {
+        (&this._value)->__drop__();
+        this._present = false;
+    }
+}
+
+// Stores `value`, making the optional present.
+export
+template <T type>
+fn set(this &Optional<T>, value T) void {
+    this.reset();
+    (&this._value)->__init__(value);
+    this._present = true;
+}
+
+// The same value, as an optional.
+export
+template <T type>
+fn some(value T) Optional<T> {
+    return Optional<T>(value);
+}
+
+// No value, typed.
+export
+template <T type>
+fn none() Optional<T> {
+    return Optional<T>();
+}
+
+// Whether two optionals hold equal values, or are both absent.
+export
+template <T type>
+fn __eq__(this &const Optional<T>, other &const Optional<T>) bool {
+    if (this._present != other._present) {
+        return false;
+    }
+    if (!this._present) {
+        return true;
+    }
+    return this._value == other._value;
+}
+
+// Whether two optionals differ.
+export
+template <T type>
+fn __ne__(this &const Optional<T>, other &const Optional<T>) bool {
+    return !(this == other);
+}

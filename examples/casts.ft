@@ -1,0 +1,6 @@
+fn main() int {
+    x byte = 1;
+    y u8 = x as u8;
+    z int = y as int;
+    return z;
+}

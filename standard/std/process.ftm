@@ -1,0 +1,84 @@
+// Starting another program, and waiting for it.
+//
+//     program Process = std.spawn(&String("/bin/sh"), &arguments)?!;
+//     code int = program.wait()?!;
+//
+// # What is portable and what is not
+//
+// The *shape* is the same on every platform: start a program with an argument
+// vector, wait for it, read its exit code. How that is done differs -- POSIX
+// forks and executes, Windows builds a command line and creates a process -- and
+// lives in `process_sys` / `process_sys.windows`.
+//
+// # Exit codes
+//
+// `wait` returns the code the program exited with. A program killed by a signal
+// has no exit code; POSIX reports that as `128 + signal`, which is what a shell
+// reports, so a caller reading the status of a killed child sees a number rather
+// than nothing.
+
+import std.array;
+from std.array import Array;
+import std.string;
+from std.string import String;
+import std.util;
+import std.internal.process_sys;
+
+// A program started and not yet waited for.
+export type Process {
+    // The POSIX process id, kept for signal calls and for `wait`.
+    _pid i32;
+}
+
+// Starts `program` with `arguments`, which do not include the program's name.
+export fn spawn(program &const String, arguments &const Array<String>) Process except {
+    // `exec` wants the program's name as `argv[0]`, before the arguments: a
+    // shell reads `argv[0]` as its own name and the first argument as the
+    // option, and leaving the name out makes `sh` try to open the option as a
+    // script.
+    count usize = arguments.length();
+    slots **const char = util.allocate(sizeof(*const char) * (count + 2usize)) as **const char;
+    slots[0] = program.data();
+    index usize = 0;
+    while (index < count) {
+        slots[index + 1] = arguments[index].data();
+        index += 1;
+    }
+    slots[count + 1] = nullptr;
+    pid i32 = process_sys.spawn(program.data(), slots)?!;
+    util.free(slots as *byte);
+    started Process = .{ pid };
+    return started;
+}
+
+// Waits for the program and returns its exit code.
+//
+// A POSIX child killed by a signal answers `128 + signal`, as a shell would.
+export fn wait(this &Process) int except {
+    // The two platforms hand back different things: a raw `waitpid` status on
+    // POSIX, an exit code on Windows. Each is decoded where it is understood.
+    raw i32 = process_sys.wait(this._pid)?!;
+    // The process is reaped, so this handle no longer names a running program:
+    // leaving the pid here made `running()` answer true after `wait`.
+    this._pid = 0;
+    if (process_sys.exited_normally(raw)) {
+        return process_sys.exit_code(raw) as int;
+    }
+    return (128 + process_sys.terminating_signal(raw)) as int;
+}
+
+// Whether this handle names a running program.
+export fn running(this &const Process) bool {
+    return this._pid != 0;
+}
+
+// Asks the program to stop, by the given signal number.
+//
+// A program may ignore a signal, so this is a request; `wait` is how the caller
+// learns what actually happened.
+export fn signal(this &Process, number int) bool {
+    if (this._pid == 0) {
+        return false;
+    }
+    return process_sys.send_signal(this._pid, number as i32);
+}

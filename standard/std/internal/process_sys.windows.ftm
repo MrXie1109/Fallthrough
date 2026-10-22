@@ -1,0 +1,181 @@
+// Starting and waiting for programs on Windows.
+//
+// Windows has no `fork`: `CreateProcessA` takes a command line and hands back
+// handles to the process. The portable `Process` keeps an `i32` id and the
+// portable layer asks for a *raw status*, exactly as it does on POSIX -- so this
+// module has to provide that shape:
+//
+//   * `spawn` builds a command line from the argument vector, starts the
+//     process and keeps its handle for `wait`;
+//   * `wait` waits on the handle, reads the exit code and closes the handle;
+//   * the status helpers encode the exit code where POSIX puts it
+//     (`status >> 8`), so the portable decoder works unchanged.
+//
+// One child at a time is the limitation of keeping the handle in a module
+// value: a program that starts two children and waits for the first after the
+// second has started needs the two-handle form, which the portable `Process`
+// (a single word today) does not carry yet.
+
+import std.string;
+from std.string import String;
+import std.util;
+
+@extern_C fn CreateProcessA(
+    application_name *const char,
+    command_line *char,
+    process_attributes *byte,
+    thread_attributes *byte,
+    inherit_handles i32,
+    creation_flags u32,
+    environment *byte,
+    current_directory *const char,
+    startup_info *StartupInfo,
+    process_info *ProcessInfo
+) i32;
+
+@extern_C fn WaitForSingleObject(handle *byte, milliseconds u32) u32;
+@extern_C fn GetExitCodeProcess(handle *byte, exit_code *u32) i32;
+@extern_C fn CloseHandle(handle *byte) i32;
+
+// The `STARTUPINFOA` fields a `CreateProcessA` call has to fill in.
+type StartupInfo {
+    cb u32;
+    reserved *const char;
+    desktop *const char;
+    title *const char;
+    x u32;
+    y u32;
+    x_size u32;
+    y_size u32;
+    x_chars u32;
+    y_chars u32;
+    fill u32;
+    flags u32;
+    show u16;
+    reserved2 u16;
+    reserved_bytes *byte;
+    stdin_handle *byte;
+    stdout_handle *byte;
+    stderr_handle *byte;
+}
+
+// The `PROCESS_INFORMATION` a start fills in.
+type ProcessInfo {
+    process *byte;
+    thread *byte;
+    process_id u32;
+    thread_id u32;
+}
+
+// The flag that waits forever.
+INFINITE const u32 = 0xffffffffu32;
+
+// The handle of the child that has not been waited for yet.
+_handle *byte;
+// Its process id.
+_pid i32;
+
+// Writes `text` quoted for the command line.
+fn push_quoted(out &String, text *const char) void {
+    length usize = c_length(text);
+    out.push('"' as char);
+    index usize = 0;
+    while (index < length) {
+        character char = text[index];
+        if (character == '"' as char) {
+            // A quote inside a quoted argument is doubled, which is the
+            // command-line rule `CommandLineToArgvW` reverses.
+            out.push('"' as char);
+        }
+        out.push(character);
+        index += 1;
+    }
+    out.push('"' as char);
+}
+
+// Starts `program` with `argv` and returns its process id.
+//
+// `argv[0]` is the program's name, as `exec` wants it; `CreateProcessA` takes
+// the name from the command line instead, so the argument is used for both.
+export fn spawn(program *const char, argv *const *const char) i32 except {
+    command String = String();
+    index usize = 0;
+    while (argv[index] != nullptr) {
+        if (index > 0) {
+            command.push(' ' as char);
+        }
+        push_quoted(&command, argv[index]);
+        index += 1;
+    }
+    command.push('\0' as char);
+    startup StartupInfo;
+    startup.cb = sizeof(StartupInfo) as u32;
+    process_info ProcessInfo;
+    started i32 = CreateProcessA(
+        nullptr,
+        (command.data()) as *char,
+        nullptr,
+        nullptr,
+        0,
+        0,
+        nullptr,
+        nullptr,
+        &startup,
+        &process_info
+    );
+    if (started == 0) {
+        raise "ProcessError": "CreateProcessA failed";
+    }
+    CloseHandle(process_info.thread);
+    _handle = process_info.process;
+    _pid = process_info.process_id as i32;
+    return _pid;
+}
+
+// Waits for the child and returns a POSIX-shaped status.
+export fn wait(pid i32) i32 except {
+    if (_handle == nullptr) {
+        raise "ProcessError": "there is no child to wait for";
+    }
+    WaitForSingleObject(_handle, INFINITE);
+    code u32 = 0u32;
+    if (GetExitCodeProcess(_handle, &code) == 0) {
+        CloseHandle(_handle);
+        _handle = nullptr;
+        raise "ProcessError": "GetExitCodeProcess failed";
+    }
+    CloseHandle(_handle);
+    _handle = nullptr;
+    // The portable decoder reads the exit code from the high byte.
+    return ((code & 0xffu32) << 8) as i32;
+}
+
+// Whether a status means "exited normally"; a Windows child always exits with a
+// code, and a signal ending is not part of the model here.
+export fn exited_normally(status i32) bool {
+    return true;
+}
+
+// The exit code of a status.
+export fn exit_code(status i32) i32 {
+    return ((status >> 8) & 0xff) as i32;
+}
+
+// The signal that ended the child: none on Windows.
+export fn terminating_signal(status i32) i32 {
+    return 0;
+}
+
+// Asks the child to stop: unsupported by this backend.
+export fn send_signal(pid i32, signal i32) bool {
+    return false;
+}
+
+// The length of a C string.
+fn c_length(word *const char) usize {
+    length usize = 0;
+    while (word[length] != '\0') {
+        length += 1;
+    }
+    return length;
+}

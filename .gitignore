@@ -1,0 +1,18 @@
+target/
+# Machine-local Cargo configuration and environment (.cargo/env,
+# .cargo/config.toml). A clone builds with the standard Cargo setup.
+.cargo/
+**/*.rs.bk
+Cargo.lock.bak
+.cargo-home/
+
+# Scratch space for compiling throwaway programs by hand. Outputs are
+# binaries and generated IR, never sources worth keeping.
+scratch/
+.scratch/
+
+# Commit message drafts.
+.git-msg/
+
+# Cooperative file locks for parallel agents.
+.locks/

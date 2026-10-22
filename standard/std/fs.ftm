@@ -1,0 +1,313 @@
+// Filesystem paths.
+//
+// A path is text -- the bytes the system's file calls take -- so `Path` is a
+// `String` with the pieces a program needs to ask for: the directory, the file
+// name, the extension. Keeping it a type of its own means a path is never passed
+// where a line of text was meant, and the joining rule lives in one place.
+//
+// The separator is `/`, which is what the systems this library targets use. A
+// path is not normalised: `a/b/../c` is the path a program wrote, and asking
+// whether the file exists asks the system, which is the only party that can
+// answer.
+
+import C;
+import std.array;
+import std.internal.fs_sys;
+import std.io;
+from std.io import File, OpenMode;
+import std.string;
+from std.string import String;
+
+// A path to a file or a directory.
+export type Path {
+    // The bytes of the path.
+    _text String;
+}
+
+// Creates an empty path.
+export fn __init__(this &Path) void {
+    (&this._text)->__init__();
+}
+
+// Creates a path from a C string.
+export fn __im_init__(this &Path, text *const char) void {
+    (&this._text)->__im_init__(text);
+}
+
+// Creates a path from text that is copied.
+export fn __init__(this &Path, text &const String) void {
+    (&this._text)->__init__(text);
+}
+
+// Creates a path that is a copy of another.
+export fn __init__(this &Path, other &const Path) void {
+    (&this._text)->__init__(other._text);
+}
+
+// Takes another path's text.
+//
+// The text is constructed from the other path's, which is a copy of the bytes;
+// a `Path` is a few bytes of text and the copy is the price of not naming a
+// template this module's own check has no body for. The dying form exists so
+// that `Path(make())` picks it, and it is the same work.
+export fn __init__(this &Path, other &&Path) void {
+    (&this._text)->__init__(other._text);
+}
+
+// Copies another path over this one.
+export fn __assign__(this &Path, other &const Path) void {
+    this._text = other._text;
+}
+
+// Destroys the text.
+export fn __drop__(this &Path) void {
+    (&this._text)->__drop__();
+}
+
+// Returns the path as the C string a file call takes.
+export fn text(this &const Path) *const char {
+    return this._text.data();
+}
+
+// Returns the text the path is made of.
+export fn data(this &const Path) &const String {
+    return &this._text;
+}
+
+// Returns how many bytes the path is.
+export fn length(this &const Path) usize {
+    return this._text.length();
+}
+
+// Returns `true` when the path is empty.
+export fn empty(this &const Path) bool {
+    return this._text.empty();
+}
+
+// Returns a copy of the path.
+export fn clone(this &const Path) Path {
+    out Path = Path(this);
+    return out;
+}
+
+// Returns the path as text, for `str(path)`.
+export fn __str__(this &const Path) String {
+    copy String = this._text;
+    return copy;
+}
+
+// Whether two paths are the same text.
+export fn __eq__(this &const Path, other &const Path) bool {
+    return this._text == other._text;
+}
+
+// Whether two paths differ.
+export fn __ne__(this &const Path, other &const Path) bool {
+    return this._text != other._text;
+}
+
+// Where the last separator is, or `length()` when there is none.
+fn last_separator(this &const Path) usize {
+    last usize = this._text.length();
+    index usize = 0;
+    while (index < this._text.length()) {
+        if (this._text[index] == '/' as char) {
+            last = index;
+        }
+        index += 1;
+    }
+    return last;
+}
+
+// Returns the path that holds this one, or `.` when there is none.
+export fn directory(this &const Path) Path {
+    split usize = this.last_separator();
+    if (split == this._text.length()) {
+        // No separator at all: the path names something in the current
+        // directory, which is what `.` is.
+        return Path(".");
+    }
+    if (split == 0) {
+        return Path("/");
+    }
+    out Path = Path();
+    index usize = 0;
+    while (index < split) {
+        out._text.push(this._text[index]);
+        index += 1;
+    }
+    return out;
+}
+
+// Returns the last part of the path: the file or directory it names.
+//
+// A trailing separator names the directory it follows, so `a/b/` is `b`: the
+// separators at the end are not a name of their own.
+export fn file_name(this &const Path) String {
+    length usize = this._text.length();
+    // Skip trailing separators; the last segment ends before them.
+    end usize = length;
+    while (end > 0 && this._text[end - 1] == '/' as char) {
+        end -= 1;
+    }
+    if (end == 0) {
+        return String();
+    }
+    start usize = 0;
+    position usize = end;
+    while (position > 0) {
+        if (this._text[position - 1] == '/' as char) {
+            start = position;
+            break;
+        }
+        position -= 1;
+    }
+    out String = String();
+    index usize = start;
+    while (index < end) {
+        out.push(this._text[index]);
+        index += 1;
+    }
+    return out;
+}
+
+// Returns the extension without its dot, or the empty string when there is none.
+//
+// A dot in a directory name is not an extension: only the part after the last
+// separator is searched. A leading dot names a hidden file rather than an
+// extension, so `.bashrc` has none.
+export fn extension(this &const Path) String {
+    length usize = this._text.length();
+    separator usize = this.last_separator();
+    // The search starts after the last separator: a dot in a directory name is
+    // not an extension.
+    start usize = 0;
+    if (separator < length) {
+        start = separator + 1;
+    }
+    position usize = length;
+    while (position > start) {
+        if (this._text[position - 1] == '.' as char) {
+            // A dot at the start of the segment marks a hidden name.
+            if (position - 1 == start) {
+                return String();
+            }
+            return String(&this._text.data()[position]);
+        }
+        position -= 1;
+    }
+    return String();
+}
+
+// Returns the path with `other` appended, with one separator between them.
+export fn join(this &const Path, other &const Path) Path {
+    out Path = Path(this);
+    if (!other.empty()) {
+        ends_with_separator bool = !out.empty() && out._text[out._text.length() - 1] == '/' as char;
+        if (!out.empty() && !ends_with_separator) {
+            out._text.push('/');
+            ends_with_separator = true;
+        }
+        // `other` may bring its own leading separator; one is enough.
+        start usize = 0;
+        if (ends_with_separator && other._text[0] == '/' as char) {
+            start = 1;
+        }
+        index usize = start;
+        while (index < other._text.length()) {
+            out._text.push(other._text[index]);
+            index += 1;
+        }
+    }
+    return out;
+}
+
+// Whether the path names something the system can open.
+export fn exists(this &const Path) bool {
+    stream *c8 = C.fopen(this.text(), "rb");
+    if (stream == nullptr) {
+        return false;
+    }
+    C.fclose(stream);
+    return true;
+}
+
+// Makes the directory this path names.
+//
+// One level only: a parent that is not there is not created, which is the
+// difference between `mkdir` and `mkdir -p`.
+export fn mkdir(this &const Path) bool {
+    return fs_sys.mkdir_one(this.text());
+}
+
+// The names in the directory this path names.
+//
+// `.` and `..` are not names a caller usually wants, so they are left out; the
+// order is the system's. A directory that cannot be read raises `IOError`, and
+// the message carries the system's error number.
+export fn read_dir(this &const Path) Array<String> except {
+    names Array<String> = Array<String>();
+    if (!fs_sys.read_dir_names(this.text(), &names)) {
+        raise "IOError": String("the directory could not be read");
+    }
+    return names;
+}
+
+// The size in bytes of the file this path names.
+//
+// A directory's size is the system's bookkeeping number, not the sum of its
+// entries; `is_directory` is how a caller tells the two apart.
+export fn size(this &const Path) i64 {
+    is_dir bool = false;
+    bytes i64 = 0;
+    if (!fs_sys.stat_entry(this.text(), &is_dir, &bytes)) {
+        return -1i64;
+    }
+    return bytes;
+}
+
+// Whether the path names a directory.
+export fn is_directory(this &const Path) bool {
+    is_dir bool = false;
+    bytes i64 = 0;
+    if (!fs_sys.stat_entry(this.text(), &is_dir, &bytes)) {
+        return false;
+    }
+    return is_dir;
+}
+
+// Whether the path names a regular file.
+export fn is_file(this &const Path) bool {
+    is_dir bool = false;
+    bytes i64 = 0;
+    if (!fs_sys.stat_entry(this.text(), &is_dir, &bytes)) {
+        return false;
+    }
+    return !is_dir;
+}
+
+// Removes the file or empty directory the path names.
+//
+// Returns `false` when the system refused -- a directory with something in it,
+// or a path that is not there. A program that wants to know *why* has to ask the
+// system; this answers the question a caller usually has: did it go away?
+export fn remove(this &const Path) bool {
+    return C.remove(this.text()) == 0;
+}
+
+// Renames the file or directory the path names to `to`.
+//
+// Returns `false` when the system refused, which includes the destination being
+// on another filesystem.
+export fn rename(this &const Path, to &const Path) bool {
+    return C.rename(this.text(), to.text()) == 0;
+}
+
+// Opens the file this path names, in the given mode.
+//
+// The path and the file in one step: `p.file(OpenMode.READ)` is
+// `File(p.text(), OpenMode.READ)`, and an empty or unopenable path raises the
+// same `IOError` the constructor does.
+export fn file(this &const Path, mode OpenMode) File except {
+    return File(this.text(), mode)?!;
+}

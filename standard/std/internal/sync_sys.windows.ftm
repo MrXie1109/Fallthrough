@@ -1,0 +1,111 @@
+// The synchronisation primitives, as Windows provides them.
+//
+// `std.sync` owns the storage and the interface; this file is the part that
+// names the operating system's calls. It is the Windows half of a pair:
+// `sync_sys.ftm` is the POSIX one, and the loader picks the file for the target
+// platform, so the same `Mutex`, `CondVar` and `Thread` work on both.
+//
+// # Which Windows primitive
+//
+// An SRW lock rather than a `CRITICAL_SECTION`: a `SRWLOCK` is zero-initialised
+// by definition (`SRWLOCK_INIT` is all zeros), which is what the storage in
+// `std.sync` is, while a `CRITICAL_SECTION` must be initialized by a call and
+// has no zero value. A `CONDITION_VARIABLE` is the same: zero is its initial
+// value, and it is what `SleepConditionVariableSRW` sleeps on.
+//
+// A thread handle is a `HANDLE`, which `std.sync` stores in a `u64`; the casts
+// below are pointer-sized on every Windows ABI.
+
+import C;
+
+@extern_C fn AcquireSRWLockExclusive(lock *byte) void;
+@extern_C fn ReleaseSRWLockExclusive(lock *byte) void;
+@extern_C fn SleepConditionVariableSRW(condition *byte, lock *byte, milliseconds u32, flags u32) u32;
+@extern_C fn WakeConditionVariable(condition *byte) void;
+@extern_C fn WakeAllConditionVariable(condition *byte) void;
+@extern_C fn CreateThread(attributes *byte, stack_size usize, start *fn(*byte) u32, argument *byte, flags u32, thread_id *u32) *byte;
+@extern_C fn WaitForSingleObject(handle *byte, milliseconds u32) u32;
+@extern_C fn CloseHandle(handle *byte) u32;
+@extern_C fn Sleep(milliseconds u32) void;
+
+// `SleepConditionVariableSRW` waits forever (rather than timing out), and takes
+// exclusive ownership back before it returns.
+INFINITE_MS const u32 = 0xFFFFFFFF;
+CONDITION_VARIABLE_LOCKMODE_SHARED const u32 = 1;
+
+// Prepares newly zeroed storage as a mutex: zero *is* `SRWLOCK_INIT`.
+export fn mutex_init(storage *byte) void {
+    // The initial value of the storage is the platform's initializer, so there
+    // is nothing to call.
+}
+
+// Prepares newly zeroed storage as a condition variable: zero is its initial
+// value.
+export fn cond_init(storage *byte) void {
+    // The initial value of the storage is the platform's initializer.
+}
+
+// Locks the mutex in `storage`, waiting while another thread holds it.
+//
+// An exclusive SRW lock is not recursive, which is also what the POSIX mutex
+// here is: a thread that locks twice waits on itself on both platforms.
+export fn mutex_lock(storage *byte) bool {
+    AcquireSRWLockExclusive(storage);
+    return true;
+}
+
+// Unlocks the mutex in `storage`.
+export fn mutex_unlock(storage *byte) bool {
+    ReleaseSRWLockExclusive(storage);
+    return true;
+}
+
+// Waits on `condition`, releasing `mutex` while it waits.
+export fn cond_wait(condition *byte, mutex *byte) bool {
+    // The shared flag is not used; the lock is always acquired exclusively.
+    return SleepConditionVariableSRW(condition, mutex, INFINITE_MS, 0) != 0;
+}
+
+// Wakes one waiter on `condition`.
+export fn cond_signal(condition *byte) bool {
+    WakeConditionVariable(condition);
+    return true;
+}
+
+// Wakes every waiter on `condition`.
+export fn cond_broadcast(condition *byte) bool {
+    WakeAllConditionVariable(condition);
+    return true;
+}
+
+// Starts `start(argument)` on a new thread, writing its handle through `thread`.
+//
+// The thread's entry returns a `u32` and takes one pointer, which is the
+// Windows shape; the function `std.sync` hands over has the portable shape
+// (`*byte` in, `*byte` out). A thread function ignores its result either way, so
+// the pointer the portable shape returns is not what anyone reads.
+export fn thread_start(thread *byte, start *fn(*byte) u32, argument *byte) bool {
+    id u32 = 0;
+    handle *byte = CreateThread(nullptr, 0, start, argument, 0, &id);
+    if (handle == nullptr) {
+        return false;
+    }
+    // The storage is one word and what it holds is a pointer; the caller sees
+    // it as `*byte`, so the word is written through a pointer-to-pointer view.
+    stored **byte = thread as **byte;
+    *stored = handle;
+    return true;
+}
+
+// Waits for `thread` to finish and releases its handle.
+export fn thread_join(thread *byte) bool {
+    if (WaitForSingleObject(thread, INFINITE_MS) != 0) {
+        return false;
+    }
+    return CloseHandle(thread) != 0;
+}
+
+// Suspends the calling thread for `milliseconds`.
+export fn sleep_ms(milliseconds usize) void {
+    Sleep(milliseconds as u32);
+}

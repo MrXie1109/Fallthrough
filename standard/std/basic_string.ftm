@@ -1,0 +1,352 @@
+// A string over a character type.
+//
+// `BasicString<Char>` is the shape every string has: a run of `Char` values,
+// its length, and the operations that read, append and compare. The character
+// type is a parameter because a string is not always bytes: `String` is the
+// `char` form, and `String16`/`String32` are the same operations over wider code
+// units.
+//
+//     text BasicString<char> = BasicString<char>("hello");
+//     text.push('!');
+//
+// # Storage
+//
+// The storage is `Array<Char>`'s: a contiguous run that grows by doubling. The
+// wrapper names the character type, forwards the operations, and offers the
+// conversions that only a character string has (to `String` for `char`, from a
+// C string for `char`).
+//
+// This is the simple form: one buffer, no small-string optimisation. `String`
+// is the `char` specialisation the rest of the library uses, and it keeps small
+// strings inside the object; the two have the same surface, and a program that
+// wants a wider character type reaches for this one.
+
+import C;
+import std.type_traits;
+import std.array;
+from std.array import Array;
+import std.string;
+from std.string import String;
+import std.util;
+
+// A string of `Char` values.
+export
+template <Char type>
+type BasicString {
+    // The characters, in order.
+    _data Array<Char>;
+}
+
+// Creates an empty string.
+export
+template <Char type>
+fn __init__(this &BasicString<Char>) void {
+    (&this._data)->__init__();
+}
+
+// Copies another string.
+export
+template <Char type>
+fn __init__(this &BasicString<Char>, other &const BasicString<Char>) void {
+    (&this._data)->__init__();
+    index usize = 0;
+    while (index < other._data.length()) {
+        this._data.push(other._data[index]);
+        index += 1;
+    }
+}
+
+// Takes another string's storage.
+//
+// The member is initialised before the move assignment: assigning to an
+// uninitialised `Array` was an assignment whose destination storage is
+// whatever the object's bytes happened to be, and releasing that "storage"
+// aborted on an invalid pointer.
+export
+template <Char type>
+fn __init__(this &BasicString<Char>, other &&BasicString<Char>) void {
+    (&this._data)->__init__();
+    this._data = util.move(other._data);
+}
+
+// Copies a C string, up to its terminator.
+//
+// A `char` string literal reaches this constructor; a wider character type has
+// no literal syntax of its own, so it is built from an array.
+export
+template <Char type>
+fn __im_init__(this &BasicString<Char>, text *const char) void {
+    (&this._data)->__init__();
+    index usize = 0;
+    while (text[index] != '\0') {
+        this._data.push(text[index] as Char);
+        index += 1;
+    }
+}
+
+// Copies a run of characters.
+export
+template <Char type>
+fn __init__(this &BasicString<Char>, values &const Array<Char>) void {
+    (&this._data)->__init__();
+    index usize = 0;
+    while (index < values.length()) {
+        this._data.push(values[index]);
+        index += 1;
+    }
+}
+
+// Copies another string into this one.
+export
+template <Char type>
+fn __assign__(this &BasicString<Char>, other &const BasicString<Char>) void {
+    this._data.clear();
+    index usize = 0;
+    while (index < other._data.length()) {
+        this._data.push(other._data[index]);
+        index += 1;
+    }
+}
+
+// Moves another string's storage into this one.
+export
+template <Char type>
+fn __assign__(this &BasicString<Char>, other &&BasicString<Char>) void {
+    this._data = util.move(other._data);
+}
+
+// Releases the storage.
+export
+template <Char type>
+fn __drop__(this &BasicString<Char>) void {
+    (&this._data)->__drop__();
+}
+
+// The number of characters.
+export
+template <Char type>
+fn length(this &const BasicString<Char>) usize {
+    return this._data.length();
+}
+
+// Whether there are no characters.
+export
+template <Char type>
+fn empty(this &const BasicString<Char>) bool {
+    return this._data.empty();
+}
+
+// How much room the string has before it grows.
+export
+template <Char type>
+fn capacity(this &const BasicString<Char>) usize {
+    return this._data.capacity();
+}
+
+// The characters as a pointer.
+export
+template <Char type>
+fn data(this &BasicString<Char>) *Char {
+    return this._data.data();
+}
+
+// The characters as a read-only pointer.
+export
+template <Char type>
+fn const_data(this &const BasicString<Char>) *const Char {
+    return this._data.data();
+}
+
+// The character at `index`; writing through it writes the string.
+export
+template <Char type>
+fn __getitem__(this &BasicString<Char>, index usize) &Char {
+    return this._data[index];
+}
+
+// The character at `index`, read only.
+export
+template <Char type>
+fn __getitem__(this &const BasicString<Char>, index usize) &const Char {
+    return this._data[index];
+}
+
+// Appends one character.
+export
+template <Char type>
+fn push(this &BasicString<Char>, value Char) void {
+    this._data.push(value);
+}
+
+// Appends one character, which is what `+=` on a string does.
+export
+template <Char type>
+fn __iadd__(this &BasicString<Char>, value Char) void {
+    this._data.push(value);
+}
+
+// Appends a string.
+export
+template <Char type>
+fn append(this &BasicString<Char>, other &const BasicString<Char>) void {
+    index usize = 0;
+    while (index < other._data.length()) {
+        this._data.push(other._data[index]);
+        index += 1;
+    }
+}
+
+// Removes every character.
+export
+template <Char type>
+fn clear(this &BasicString<Char>) void {
+    this._data.clear();
+}
+
+// Makes room for `wanted` characters.
+export
+template <Char type>
+fn reserve(this &BasicString<Char>, wanted usize) void {
+    this._data.reserve(wanted);
+}
+
+// Changes the number of characters, filling new ones with `filler`.
+export
+template <Char type>
+fn resize(this &BasicString<Char>, wanted usize, filler Char) void {
+    this._data.resize(wanted, filler);
+}
+
+// The first position.
+export
+template <Char type>
+fn begin(this &BasicString<Char>) *Char {
+    return this._data.begin();
+}
+
+// The one-past-the-end position.
+export
+template <Char type>
+fn end(this &BasicString<Char>) *Char {
+    return this._data.end();
+}
+
+// The first position, read only.
+export
+template <Char type>
+fn begin(this &const BasicString<Char>) *const Char {
+    return this._data.begin();
+}
+
+// The one-past-the-end position, read only.
+export
+template <Char type>
+fn end(this &const BasicString<Char>) *const Char {
+    return this._data.end();
+}
+
+// Removes one character.
+export
+template <Char type>
+fn erase(this &BasicString<Char>, at usize) void {
+    this._data.erase(this._data.begin() + at);
+}
+
+// Inserts one character before `at`.
+export
+template <Char type>
+fn insert(this &BasicString<Char>, at usize, value Char) void {
+    this._data.insert(this._data.begin() + at, value);
+}
+
+// Returns `other` after this string: concatenation.
+export
+template <Char type>
+fn __add__(this &const BasicString<Char>, other &const BasicString<Char>) BasicString<Char> {
+    result BasicString<Char> = BasicString<Char>(this);
+    result.append(other);
+    return result;
+}
+
+// Whether two strings hold the same characters.
+export
+template <Char type>
+fn __eq__(this &const BasicString<Char>, other &const BasicString<Char>) bool {
+    if (this.length() != other.length()) {
+        return false;
+    }
+    index usize = 0;
+    while (index < this.length()) {
+        if (this._data[index] != other._data[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Whether two strings differ.
+export
+template <Char type>
+fn __ne__(this &const BasicString<Char>, other &const BasicString<Char>) bool {
+    return !(this == other);
+}
+
+// Orders two strings by their characters: a shorter prefix comes first.
+export
+template <Char type>
+fn __lt__(this &const BasicString<Char>, other &const BasicString<Char>) bool {
+    limit usize = this.length();
+    if (other.length() < limit) {
+        limit = other.length();
+    }
+    index usize = 0;
+    while (index < limit) {
+        if (this._data[index] != other._data[index]) {
+            return this._data[index] < other._data[index];
+        }
+        index += 1;
+    }
+    return this.length() < other.length();
+}
+
+// The first position of `value`, or `-1`.
+export
+template <Char type>
+fn find(this &const BasicString<Char>, value Char) isize {
+    index usize = 0;
+    while (index < this.length()) {
+        if (this._data[index] == value) {
+            return index as isize;
+        }
+        index += 1;
+    }
+    return -1isize;
+}
+
+// Whether `value` occurs.
+export
+template <Char type>
+fn contains(this &const BasicString<Char>, value Char) bool {
+    return this.find(value) >= 0;
+}
+
+// The characters of a `char` string as a `String`.
+//
+// A wider character type has no one-byte rendering; its `str` is an empty
+// string unless the characters happen to fit. Converting a `String16` for
+// display is a decoding question, which is the unicode module's job rather
+// than this one's.
+export
+template <Char type>
+fn __str__(this &const BasicString<Char>) String {
+    text String = String();
+    if (IsSame(Char, char)) @constexpr {
+        index usize = 0;
+        while (index < this.length()) {
+            text.push(this._data[index] as char);
+            index += 1;
+        }
+    }
+    return text;
+}

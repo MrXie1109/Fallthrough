@@ -1,0 +1,153 @@
+// A two-dimensional array: rows of equal length, one buffer.
+//
+//     grid Grid<int> = Grid<int>(2usize, 3usize, 0);
+//     grid.set(1, 2, 7);
+//     value int = grid.at(1, 2);
+//     rows usize = grid.rows();
+//
+// The storage is one `Array<T>` in row-major order: element `(row, column)` is
+// at `row * columns + column`. That is the layout a matrix and an image share,
+// so a grid of numbers is a contiguous run of numbers and a row is a slice of
+// it.
+//
+// # A filler value
+//
+// A grid has no way to default-construct its elements -- the element type may
+// have no such constructor -- so the constructor takes a filler value that every
+// cell starts as. `Grid<int>(rows, columns, 0)` is a grid of zeros.
+
+import std.array;
+from std.array import Array;
+import std.string;
+from std.string import String;
+import std.util;
+
+// A two-dimensional array of `T`.
+export
+template <T type>
+type Grid {
+    // The cells, row by row.
+    _data Array<T>;
+    // How many rows.
+    _rows usize;
+    // How many columns each row has.
+    _columns usize;
+}
+
+// Creates a grid of `rows` by `columns` cells, each a copy of `filler`.
+export
+template <T type>
+fn __init__(this &Grid<T>, rows usize, columns usize, filler T) void {
+    (&this._data)->__init__();
+    this._rows = rows;
+    this._columns = columns;
+    total usize = rows * columns;
+    index usize = 0;
+    while (index < total) {
+        this._data.push(filler);
+        index += 1;
+    }
+}
+
+// Copies another grid.
+export
+template <T type>
+fn __init__(this &Grid<T>, other &const Grid<T>) void {
+    (&this._data)->__init__(other._data);
+    this._rows = other._rows;
+    this._columns = other._columns;
+}
+
+// Releases the cells.
+export
+template <T type>
+fn __drop__(this &Grid<T>) void {
+    (&this._data)->__drop__();
+}
+
+// How many rows.
+export
+template <T type>
+fn rows(this &const Grid<T>) usize {
+    return this._rows;
+}
+
+// How many columns.
+export
+template <T type>
+fn columns(this &const Grid<T>) usize {
+    return this._columns;
+}
+
+// How many cells.
+export
+template <T type>
+fn length(this &const Grid<T>) usize {
+    return this._data.length();
+}
+
+// Whether there are no cells.
+export
+template <T type>
+fn empty(this &const Grid<T>) bool {
+    return this._data.empty();
+}
+
+// The cell at `(row, column)`; writing through it writes the grid.
+export
+template <T type>
+fn at(this &Grid<T>, row usize, column usize) &T {
+    if (row >= this._rows || column >= this._columns) {
+        util.panic("Grid index out of range");
+    }
+    return this._data[row * this._columns + column];
+}
+
+// The cell at `(row, column)`, read only.
+export
+template <T type>
+fn at(this &const Grid<T>, row usize, column usize) &const T {
+    if (row >= this._rows || column >= this._columns) {
+        util.panic("Grid index out of range");
+    }
+    return this._data[row * this._columns + column];
+}
+
+// Stores `value` at `(row, column)`.
+export
+template <T type>
+fn set(this &Grid<T>, row usize, column usize, value T) void {
+    this.at(row, column) = value;
+}
+
+// Writes `value` into every cell.
+export
+template <T type>
+fn fill(this &Grid<T>, value T) void {
+    index usize = 0;
+    while (index < this._data.length()) {
+        this._data[index] = value;
+        index += 1;
+    }
+}
+
+// Whether two grids have the same shape and equal cells.
+export
+template <T type>
+fn __eq__(this &const Grid<T>, other &const Grid<T>) bool {
+    if (this._rows != other._rows || this._columns != other._columns) {
+        return false;
+    }
+    row usize = 0;
+    while (row < this._rows) {
+        column usize = 0;
+        while (column < this._columns) {
+            if (this.at(row, column) != other.at(row, column)) {
+                return false;
+            }
+            column += 1;
+        }
+        row += 1;
+    }
+    return true;
+}

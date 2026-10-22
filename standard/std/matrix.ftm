@@ -1,0 +1,257 @@
+// Matrices of reals: element access, arithmetic, transpose and identity.
+//
+//     m Matrix = matrix.identity(3usize);
+//     product Matrix = matrix.mul(&a, &b)?!;
+//     value f64 = product.at(0usize, 1usize)?!;
+//
+// # Shape
+//
+// A matrix is its row count, its column count and one `Array<f64>` in row-major
+// order. The dimensions are checked at the operations that need them, and an
+// index past an edge raises rather than reading the next row's first element.
+//
+// # What is not here
+//
+// Inversion, decompositions and solvers. A determinant and an inverse need
+// pivoting and a tolerance to be honest about floating point, and a module that
+// offered `inverse` without them would be wrong on the matrices that need it
+// most; they are named here as missing rather than approximated.
+
+import std.array;
+from std.array import Array;
+import std.math;
+import std.string;
+from std.string import String;
+import std.util;
+
+// A dense matrix of reals.
+export type Matrix {
+    // The number of rows.
+    _rows usize;
+    // The number of columns.
+    _columns usize;
+    // The elements, row by row.
+    _values Array<f64>;
+}
+
+// Creates an empty matrix with no storage.
+export fn __init__(this &Matrix) void {
+    this._rows = 0usize;
+    this._columns = 0usize;
+    (&this._values)->__init__();
+}
+
+// Copies a matrix.
+export fn __init__(this &Matrix, other &const Matrix) void {
+    this._rows = other._rows;
+    this._columns = other._columns;
+    (&this._values)->__init__(other._values);
+}
+
+// Takes a matrix's storage.
+export fn __init__(this &Matrix, other &&Matrix) void {
+    this._rows = other._rows;
+    this._columns = other._columns;
+    (&this._values)->__init__();
+    this._values = util.move(other._values);
+}
+
+// Copies a matrix into this one.
+export fn __assign__(this &Matrix, other &const Matrix) void {
+    this._rows = other._rows;
+    this._columns = other._columns;
+    this._values = other._values;
+}
+
+// Takes a matrix's storage.
+export fn __assign__(this &Matrix, other &&Matrix) void {
+    this._rows = other._rows;
+    this._columns = other._columns;
+    this._values = util.move(other._values);
+}
+
+// Releases the storage.
+export fn __drop__(this &Matrix) void {
+    (&this._values)->__drop__();
+}
+
+// Creates a rows-by-columns matrix with every element `filler`.
+export fn matrix(rows usize, columns usize, filler f64) Matrix {
+    values Array<f64> = Array<f64>();
+    count usize = rows * columns;
+    index usize = 0;
+    while (index < count) {
+        values.push(filler);
+        index += 1;
+    }
+    built Matrix = Matrix();
+    built._rows = rows;
+    built._columns = columns;
+    built._values = util.move(values);
+    return built;
+}
+
+// Creates a zero matrix.
+export fn zeros(rows usize, columns usize) Matrix {
+    return matrix(rows, columns, 0.0);
+}
+
+// Creates a matrix with ones on the diagonal.
+export fn identity(size usize) Matrix {
+    result Matrix = zeros(size, size);
+    index usize = 0;
+    while (index < size) {
+        result._values[index * size + index] = 1.0;
+        index += 1;
+    }
+    return result;
+}
+
+// The number of rows.
+export fn rows(this &const Matrix) usize {
+    return this._rows;
+}
+
+// The number of columns.
+export fn columns(this &const Matrix) usize {
+    return this._columns;
+}
+
+// The element at `row`, `column`, or a raise when either is past an edge.
+export fn at(this &const Matrix, row usize, column usize) f64 except {
+    if (row >= this._rows || column >= this._columns) {
+        raise "ValueError": "the matrix has no such element";
+    }
+    return this._values[row * this._columns + column];
+}
+
+// Sets the element at `row`, `column`.
+export fn set(this &Matrix, row usize, column usize, value f64) void except {
+    if (row >= this._rows || column >= this._columns) {
+        raise "ValueError": "the matrix has no such element";
+    }
+    this._values[row * this._columns + column] = value;
+}
+
+// Element-wise addition; the shapes must match.
+export fn add(this &const Matrix, second &const Matrix) Matrix except {
+    shape_check(this, second)?!;
+    result Matrix = zeros(this._rows, this._columns);
+    index usize = 0;
+    while (index < result._values.length()) {
+        result._values[index] = this._values[index] + second._values[index];
+        index += 1;
+    }
+    return result;
+}
+
+// Element-wise subtraction; the shapes must match.
+export fn sub(this &const Matrix, second &const Matrix) Matrix except {
+    shape_check(this, second)?!;
+    result Matrix = zeros(this._rows, this._columns);
+    index usize = 0;
+    while (index < result._values.length()) {
+        result._values[index] = this._values[index] - second._values[index];
+        index += 1;
+    }
+    return result;
+}
+
+// Multiplies every element by `factor`.
+export fn scale(this &const Matrix, factor f64) Matrix {
+    result Matrix = zeros(this._rows, this._columns);
+    index usize = 0;
+    while (index < result._values.length()) {
+        result._values[index] = this._values[index] * factor;
+        index += 1;
+    }
+    return result;
+}
+
+// Matrix multiplication; the inner dimensions must agree.
+export fn mul(this &const Matrix, second &const Matrix) Matrix except {
+    if (this._columns != second._rows) {
+        raise "ValueError": "the inner dimensions do not agree";
+    }
+    result Matrix = zeros(this._rows, second._columns);
+    row usize = 0;
+    while (row < this._rows) {
+        column usize = 0;
+        while (column < second._columns) {
+            sum f64 = 0.0;
+            inner usize = 0;
+            while (inner < this._columns) {
+                sum = sum + this._values[row * this._columns + inner]
+                    * second._values[inner * second._columns + column];
+                inner += 1;
+            }
+            result._values[row * second._columns + column] = sum;
+            column += 1;
+        }
+        row += 1;
+    }
+    return result;
+}
+
+// The transpose.
+export fn transpose(this &const Matrix) Matrix {
+    result Matrix = zeros(this._columns, this._rows);
+    row usize = 0;
+    while (row < this._rows) {
+        column usize = 0;
+        while (column < this._columns) {
+            result._values[column * this._rows + row] = this._values[row * this._columns + column];
+            column += 1;
+        }
+        row += 1;
+    }
+    return result;
+}
+
+// Checks that two matrices have the same shape.
+fn shape_check(first &const Matrix, second &const Matrix) void except {
+    if (first._rows != second._rows || first._columns != second._columns) {
+        raise "ValueError": "the matrices have different shapes";
+    }
+}
+
+// Whether two matrices are equal element by element.
+export fn __eq__(this &const Matrix, other &const Matrix) bool {
+    if (this._rows != other._rows || this._columns != other._columns) {
+        return false;
+    }
+    index usize = 0;
+    while (index < this._values.length()) {
+        if (this._values[index] != other._values[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Whether two matrices differ.
+export fn __ne__(this &const Matrix, other &const Matrix) bool {
+    return !(this == other);
+}
+
+// `[a b; c d]`, row by row.
+export fn __str__(this &const Matrix) String {
+    text String = String();
+    row usize = 0;
+    while (row < this._rows) {
+        if (row > 0) {
+            text.push("; ");
+        }
+        column usize = 0;
+        while (column < this._columns) {
+            if (column > 0) {
+                text.push(" ");
+            }
+            text.push(str(this._values[row * this._columns + column]));
+            column += 1;
+        }
+        row += 1;
+    }
+    return text;
+}

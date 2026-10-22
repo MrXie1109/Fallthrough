@@ -1,0 +1,169 @@
+// A ring buffer: a fixed-size queue that reuses its slots.
+//
+//     ring Ring<int> = Ring<int>(4usize);
+//     ring.push(1);
+//     maybe int? = ring.pop();
+//
+// The capacity is chosen at construction and never grows. A push into a full
+// ring fails and leaves the ring alone -- it does not overwrite the oldest value
+// -- so a producer that must not drop data sees the failure instead of losing
+// an element silently.
+//
+// # Storage
+//
+// The slots are raw memory with a head and a length, so a type with no default
+// constructor is constructed exactly when its value is pushed and dropped when
+// it is popped. `(head + index) % capacity` is the slot of logical element
+// `index`.
+
+import std.optional;
+import std.util;
+
+// A fixed-size first-in, first-out buffer.
+export
+template <T type>
+type Ring {
+    // The slots, of which `_cap` exist and `_len` are constructed.
+    _storage *T;
+    // How many slots there are.
+    _cap usize;
+    // Where the oldest element is.
+    _head usize;
+    // How many elements are stored.
+    _len usize;
+}
+
+// Creates a ring with room for `capacity` elements.
+export
+template <T type>
+fn __init__(this &Ring<T>, capacity usize) void {
+    this._storage = nullptr;
+    this._cap = capacity;
+    this._head = 0;
+    this._len = 0;
+    if (capacity > 0usize) {
+        this._storage = util.allocate(sizeof(T) * capacity) as *T;
+    }
+}
+
+// Releases every stored element and the slots.
+export
+template <T type>
+fn __drop__(this &Ring<T>) void {
+    this.clear();
+    if (this._storage != nullptr) {
+        util.free(this._storage as *byte);
+        this._storage = nullptr;
+    }
+}
+
+// The element at logical position `index`.
+template <T type>
+fn slot(this &Ring<T>, index usize) *T {
+    return this._storage + ((this._head + index) % this._cap);
+}
+
+// The element at logical position `index`, read only.
+template <T type>
+fn slot(this &const Ring<T>, index usize) *const T {
+    return this._storage + ((this._head + index) % this._cap);
+}
+
+// How many elements are stored.
+export
+template <T type>
+fn length(this &const Ring<T>) usize {
+    return this._len;
+}
+
+// How many elements the ring can hold.
+export
+template <T type>
+fn capacity(this &const Ring<T>) usize {
+    return this._cap;
+}
+
+// Whether the ring is empty.
+export
+template <T type>
+fn empty(this &const Ring<T>) bool {
+    return this._len == 0usize;
+}
+
+// Whether the ring is full.
+export
+template <T type>
+fn full(this &const Ring<T>) bool {
+    return this._len == this._cap;
+}
+
+// Appends `value`, returning whether there was room.
+export
+template <T type>
+fn push(this &Ring<T>, value T) bool {
+    if (this._len == this._cap) {
+        return false;
+    }
+    slot *T = this.slot(this._len);
+    slot->__init__(value);
+    this._len += 1;
+    return true;
+}
+
+// Removes and returns the oldest element, or an absent optional when empty.
+export
+template <T type>
+fn pop(this &Ring<T>) ?T {
+    if (this._len == 0usize) {
+        return optional.none<T>();
+    }
+    slot *T = this.slot(0usize);
+    value T = *slot;
+    slot->__drop__();
+    this._head = (this._head + 1usize) % this._cap;
+    this._len -= 1;
+    return optional.some(value);
+}
+
+// The oldest element, or an absent optional when empty.
+export
+template <T type>
+fn front(this &const Ring<T>) ?T {
+    if (this._len == 0usize) {
+        return optional.none<T>();
+    }
+    return optional.some<T>(*this.slot(0usize));
+}
+
+// The newest element, or an absent optional when empty.
+export
+template <T type>
+fn back(this &const Ring<T>) ?T {
+    if (this._len == 0usize) {
+        return optional.none<T>();
+    }
+    return optional.some<T>(*this.slot(this._len - 1usize));
+}
+
+// The element at logical position `index`, or an absent optional.
+export
+template <T type>
+fn get(this &const Ring<T>, index usize) ?T {
+    if (index >= this._len) {
+        return optional.none<T>();
+    }
+    return optional.some<T>(*this.slot(index));
+}
+
+// Removes every element.
+export
+template <T type>
+fn clear(this &Ring<T>) void {
+    index usize = 0;
+    while (index < this._len) {
+        this.slot(index)->__drop__();
+        index += 1;
+    }
+    this._head = 0;
+    this._len = 0;
+}

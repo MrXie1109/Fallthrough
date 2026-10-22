@@ -1,0 +1,118 @@
+// A range of integers, walked as an iterator.
+//
+//     total int = 0;
+//     for (value i64 : range.up_to(5)) {
+//         total += value;
+//     }
+//
+// `IntRange` is both the container and its own position: `begin()` is a copy
+// pointing at the start, `end()` a copy pointing at the stop, `__inc__` adds the
+// step, and `__deref__` is the current value. Because a copy is a position, the
+// range can be walked more than once.
+//
+// The stop is exclusive, the way an iterator's `end()` is: `up_to(5)` yields
+// 0 1 2 3 4. A negative step counts down, and a step of zero is refused at the
+// call: a range that never reaches its end is a loop that never ends.
+
+import std.util;
+
+// A run of integers from `_start` toward `_stop`, exclusive, by `_step`.
+export type IntRange {
+    // The next value, or the stop when the walk is over.
+    _current i64;
+    // Where the walk stops, exclusive.
+    _stop i64;
+    // How much each step adds; never zero.
+    _step i64;
+}
+
+// Creates the range `low, low + step, ...` up to but not including `high`.
+export fn step_range(low i64, high i64, step i64) IntRange except {
+    if (step == 0i64) {
+        raise "ValueError": "a range needs a non-zero step";
+    }
+    return IntRange(low, high, step);
+}
+
+// Creates the range `low` up to but not including `high`, by one.
+export fn up_to(low i64, high i64) IntRange {
+    return IntRange(low, high, 1i64);
+}
+
+// Creates the range 0 up to but not including `high`.
+export fn to(high i64) IntRange {
+    return IntRange(0i64, high, 1i64);
+}
+
+// Creates the range counting down from `low` to but not including `high`.
+export fn down_to(low i64, high i64) IntRange {
+    return IntRange(low, high, -1i64);
+}
+
+// Builds a range.
+export fn __init__(this &IntRange, low i64, high i64, step i64) void {
+    this._current = low;
+    this._stop = high;
+    this._step = step;
+}
+
+// The first position: the range itself.
+export fn begin(this &const IntRange) IntRange {
+    return IntRange(this._current, this._stop, this._step);
+}
+
+// The end position: a range whose current value is the stop.
+export fn end(this &const IntRange) IntRange {
+    return IntRange(this._stop, this._stop, this._step);
+}
+
+// The current value.
+export fn __deref__(this &IntRange) &i64 {
+    return &this._current;
+}
+
+// Steps to the next value.
+export fn __inc__(this &IntRange) void {
+    this._current += this._step;
+}
+
+// Whether two positions are the same position.
+//
+// A range whose step does not land exactly on the stop still has to end, so a
+// position past the stop counts as the end position: `0, 3, 6, 9` walking to 10
+// stops after 9, and `12` is the same position as `end()`.
+export fn __eq__(this &const IntRange, other &const IntRange) bool {
+    this_done bool = this.past_end();
+    other_done bool = other.past_end();
+    if (this_done || other_done) {
+        return this_done == other_done;
+    }
+    return this._current == other._current;
+}
+
+// Whether two positions differ.
+export fn __ne__(this &const IntRange, other &const IntRange) bool {
+    return !(this == other);
+}
+
+// Whether this position is at or past the stop.
+fn past_end(this &const IntRange) bool {
+    if (this._step > 0i64) {
+        return this._current >= this._stop;
+    }
+    return this._current <= this._stop;
+}
+
+// How many steps the range has.
+export fn length(this &const IntRange) usize {
+    if (this._step > 0i64) {
+        if (this._current >= this._stop) {
+            return 0;
+        }
+        return ((this._stop - this._current + this._step - 1i64) / this._step) as usize;
+    }
+    if (this._current <= this._stop) {
+        return 0;
+    }
+    return ((this._current - this._stop + (0i64 - this._step) - 1i64) / (0i64 - this._step)) as usize;
+}

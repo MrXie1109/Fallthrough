@@ -1,0 +1,74 @@
+// The operating system, as Darwin provides it.
+//
+// The calls are the POSIX ones from `os_sys.ftm`; the one value that differs is
+// `CLOCK_MONOTONIC`, which Darwin numbers 6 where Linux uses 1. Reading the
+// wrong clock id returns -1 from `clock_gettime`, and the monotonic clock read
+// as zero -- so the constant is the reason this file exists.
+
+@extern_C fn getpid() int;
+@extern_C fn exit(code int) void;
+@extern_C fn getenv(name *const char) *const char;
+@extern_C fn setenv(name *const char, value *const char, overwrite int) int;
+@extern_C fn getcwd(buffer *char, size usize) *char;
+@extern_C fn chdir(path *const char) int;
+@extern_C fn clock_gettime(clock int, timespec *byte) int;
+@extern_C fn usleep(microseconds u32) int;
+
+// Darwin's `CLOCK_MONOTONIC`.
+CLOCK_MONOTONIC const int = 6;
+
+// The process's identifier.
+export fn pid() int {
+    return getpid();
+}
+
+// Ends the process with `code` as its exit status.
+export fn exit_process(code int) void {
+    exit(code);
+}
+
+// Returns the value of `name`, or `nullptr` when it is not set.
+export fn env_raw(name *const char) *const char {
+    return getenv(name);
+}
+
+// Sets `name` in the environment of this process.
+export fn set_env(name *const char, value *const char) bool {
+    return setenv(name, value, 1) == 0;
+}
+
+// Writes the current working directory into `buffer`, returning whether it fit.
+export fn cwd_into(buffer *char, size usize) bool {
+    return getcwd(buffer, size) != nullptr;
+}
+
+// Changes the current working directory, returning whether it worked.
+export fn chdir_to(path *const char) bool {
+    return chdir(path) == 0;
+}
+
+// The number of nanoseconds on the monotonic clock.
+export fn monotonic_ns() u64 {
+    stamp [16]byte @align(8);
+    if (clock_gettime(CLOCK_MONOTONIC, &stamp[0]) != 0) {
+        return 0;
+    }
+    seconds *u64 = &stamp[0] as *u64;
+    nanoseconds *u64 = &stamp[8] as *u64;
+    return *seconds * 1000000000u64 + *nanoseconds;
+}
+
+// Suspends the calling thread for `milliseconds`.
+export fn sleep_ms(milliseconds usize) void {
+    usleep((milliseconds * 1000) as u32);
+}
+
+// Where a temporary file may go when no environment variable says.
+export fn fallback_temp_dir() *const char {
+    return "/tmp";
+}
+
+// The environment variable that names the user's home directory.
+export fn home_variable() *const char {
+    return "HOME";
+}

@@ -1,0 +1,156 @@
+// The standard library beyond `Array` and `String`: memory, the ordered and
+// hashed containers, the deque and the heap, the numbers, I/O, the
+// synchronisation primitives, and paths.
+//
+// This program is the tour in `docs/library.md` made runnable. Every line that
+// prints is a check: a container that lost an element, a device that read the
+// wrong text, or a lock that did not lock shows up as the wrong words rather
+// than as a silent success.
+
+import C;
+import std;
+
+fn main() int except {
+    // --- the numbers -------------------------------------------------------
+    C.printf("numbers: %d %d %d %d %d\n", std.min(3, 5), std.max(3, 5), std.clamp(12, 0, 10), std.abs(-7), std.square(4));
+    C.printf("real: %.1f %.1f\n", std.sqrt(2.0), std.floor(3.7));
+
+    // --- Box, Rc, Arc ------------------------------------------------------
+    boxed Box<int> = 7;
+    boxed.get() = 9;
+    C.printf("box: %d\n", boxed.get());
+
+    strong Rc<String> = String("shared");
+    weak RcWeak<String> = strong.downgrade();
+    other Rc<String> = strong;
+    C.printf("rc: %s %d %d\n", other.get().data(), strong.strong_count(), weak.strong_count());
+    // One strong reference is still alive, so the weak one still answers.
+    C.printf("rc upgraded: %s\n", weak.upgrade().get().data());
+
+    counter Arc<int> = 5;
+    counted Arc<int> = counter;
+    C.printf("arc: %d %d\n", counted.get(), counter.strong_count());
+
+    // --- ordered containers ------------------------------------------------
+    ages TMap<String, int>;
+    ages.insert(String("Ada"), 36);
+    ages.insert(String("Grace"), 85);
+    ages.insert(String("Alan"), 41);
+    // `[]` names a value that must be there; `find` is the form that asks.
+    C.printf("map index: %d\n", ages[String("Ada")]);
+    C.printf("map: %d %d\n", *ages.find(String("Ada")), ages.length());
+
+    digits TSet<int>;
+    digits.insert(3);
+    digits.insert(1);
+    digits.insert(3);
+    C.printf("set: %d %d\n", digits.length(), *digits.begin());
+
+    // --- hashed containers --------------------------------------------------
+    scores HMap<String, int>;
+    scores.insert(String("red"), 1);
+    scores.insert(String("green"), 2);
+    scores.insert(String("red"), 3);
+    C.printf("hash map: %d %d %d\n", scores.length(), scores[String("red")], scores.count(String("red")));
+
+    names HSet<String>;
+    names.insert(String("one"));
+    names.insert(String("one"));
+    names.insert(String("two"));
+    C.printf("hash set: %d\n", names.length());
+
+    // --- deque, queue, stack ------------------------------------------------
+    queue Deque<int>;
+    queue.push_back(2);
+    queue.push_back(3);
+    queue.push_front(1);
+    C.printf("deque: %d %d %d\n", queue.front(), queue.back(), queue.pop_front());
+
+    fifo Queue<int>;
+    fifo.push(1);
+    fifo.push(2);
+    C.printf("queue: %d %d\n", fifo.pop(), fifo.length());
+
+    lifo Stack<int>;
+    lifo.push(1);
+    lifo.push(2);
+    C.printf("stack: %d %d\n", lifo.pop(), lifo.top());
+
+    // --- ordering -----------------------------------------------------------
+    // The array's own algorithms: the order is a type, so descending is a
+    // different comparator rather than a second function.
+    numbers Array<int>;
+    numbers.push(3);
+    numbers.push(1);
+    numbers.push(2);
+    std.sort(numbers.begin(), numbers.end());
+    C.printf("sorted %d %d %d\n", numbers[0], numbers[1], numbers[2]);
+    descending_order Greater<int>;
+    std.sort_by(numbers.begin(), numbers.end(), descending_order);
+    C.printf("descending %d %d %d\n", numbers[0], numbers[1], numbers[2]);
+    C.printf("found %ld\n", std.index_of(numbers.begin(), numbers.end(), 2));
+
+    // --- heaps --------------------------------------------------------------
+    smallest Heap<int>;
+    smallest.push(5);
+    smallest.push(1);
+    smallest.push(3);
+    C.printf("heap: %d %d\n", smallest.top(), smallest.pop());
+
+    largest PriorityQueue<int, Greater<int>>;
+    largest.push(5);
+    largest.push(1);
+    largest.push(3);
+    C.printf("priority queue: %d %d\n", largest.top(), largest.pop());
+
+    // --- synchronisation ----------------------------------------------------
+    mutex Mutex;
+    {
+        _guard Lock = &mutex;
+        // The lock is held for the block, and released when it ends.
+    }
+    total Atomic<int> = 0;
+    total.fetch_add(2);
+    total.fetch_add(3);
+    C.printf("atomic: %d\n", total.load());
+
+    // --- paths --------------------------------------------------------------
+    path Path = "/home/user/notes.txt";
+    C.printf("path: %s %s %s\n", path.directory().text(), path.file_name().data(), path.extension().data());
+    joined Path = Path("/home/user").join(Path("notes.txt"));
+    C.printf("joined: %s\n", joined.text());
+
+    // --- devices ------------------------------------------------------------
+    // A device opens a path, writes, and closes; a reader then asks for the
+    // same text back. The file lives beside the program's working directory,
+    // so the tour does not need a writable home.
+    written File;
+    written.open("fallc-library-tour.txt", OpenMode.WRITE)?!;
+    written.print("first line", '\n')?!;
+    written.write("second line\n")?!;
+    written.close()?!;
+
+    read_back File;
+    read_back.open("fallc-library-tour.txt", OpenMode.READ)?!;
+    line String;
+    lines int = 0;
+    while (read_back.getline(&line)?!) {
+        C.printf("line %d: %s\n", lines, line.data());
+        lines += 1;
+    }
+    // The end of the file is a question about the next character, and asking it
+    // twice must give the same answer.
+    C.printf("eof: %d %d\n", read_back.eof()?!, read_back.eof()?!);
+    read_back.close()?!;
+
+    // A device that was never opened is not valid, and says so rather than
+    // failing when it is used.
+    empty File;
+    C.printf("device: %d %d\n", empty.valid(), empty.readable());
+
+    // The tour wrote a file to read back; it is a tour, not a program, so it
+    // leaves nothing behind.
+    Path("fallc-library-tour.txt").remove();
+
+    return 0;
+}

@@ -1,0 +1,146 @@
+// CSV: comma-separated rows, with quotes.
+//
+//     rows Array<Array<String>> = csv.parse(&text)?!;
+//     text2 String = csv.write(&rows)?!;
+//
+// # The rule
+//
+// One row per line, fields separated by commas. A field may be quoted; inside
+// quotes a comma, a newline and a quote stand for themselves, and a doubled
+// quote is one quote. That is the rule a spreadsheet exports and a database
+// accepts, and it is small enough to state completely:
+//
+// * a quoted field starts with `"` and ends with the next `"` that is not
+//   followed by another `"`;
+// * every other field ends at the next comma or line break.
+//
+// # Errors
+//
+// `parse` raises `ValueError` on text that breaks the rule: a quote in the
+// middle of an unquoted field, or a quoted field that never closes. `write`
+// never fails; it quotes a field exactly when it has to.
+
+import std.array;
+from std.array import Array;
+import std.string;
+from std.string import String;
+import std.util;
+
+// Parsecs CSV text into rows of fields.
+export fn parse_rows(text &const String) Array<Array<String>> except {
+    rows Array<Array<String>> = Array<Array<String>>();
+    row Array<String> = Array<String>();
+    field String = String();
+    quoted bool = false;
+    index usize = 0;
+    while (index < text.length()) {
+        character char = text[index];
+        if (quoted) {
+            if (character == '"' as char) {
+                if (index + 1 < text.length() && text[index + 1] == '"' as char) {
+                    field.push('"' as char);
+                    index += 2;
+                    continue;
+                }
+                quoted = false;
+                index += 1;
+                continue;
+            }
+            field.push(character);
+            index += 1;
+            continue;
+        }
+        if (character == '"' as char) {
+            if (!field.empty()) {
+                raise "ValueError": "a quote in the middle of an unquoted field";
+            }
+            quoted = true;
+            index += 1;
+            continue;
+        }
+        if (character == ',' as char) {
+            row.push(field);
+            field = String();
+            index += 1;
+            continue;
+        }
+        if (character == '\n' as char) {
+            row.push(field);
+            rows.push(util.move(row));
+            row = Array<String>();
+            field = String();
+            index += 1;
+            continue;
+        }
+        if (character == '\r' as char) {
+            // A carriage return is the other half of a line break; the newline
+            // after it is what ends the row.
+            index += 1;
+            continue;
+        }
+        field.push(character);
+        index += 1;
+    }
+    if (quoted) {
+        raise "ValueError": "a quoted field is not closed";
+    }
+    // The last row has no line break after it; an empty trailing line was
+    // already dropped by the loop, because it never started a field.
+    if (!field.empty() || !row.empty()) {
+        row.push(field);
+        rows.push(util.move(row));
+    }
+    return rows;
+}
+
+// Writes rows as CSV text.
+export fn write_rows(rows &const Array<Array<String>>) String {
+    text String = String();
+    row_index usize = 0;
+    while (row_index < rows.length()) {
+        if (row_index > 0) {
+            text.push('\n');
+        }
+        fields &const Array<String> = &rows[row_index];
+        field_index usize = 0;
+        while (field_index < fields.length()) {
+            if (field_index > 0) {
+                text.push(',');
+            }
+            write_field(&text, fields[field_index]);
+            field_index += 1;
+        }
+        row_index += 1;
+    }
+    return text;
+}
+
+// Appends one field, quoting it when the rule requires.
+fn write_field(text &String, field &const String) void {
+    needs_quotes bool = false;
+    index usize = 0;
+    while (index < field.length()) {
+        character char = field[index];
+        if (character == ',' as char || character == '"' as char
+            || character == '\n' as char || character == '\r' as char)
+        {
+            needs_quotes = true;
+        }
+        index += 1;
+    }
+    if (!needs_quotes) {
+        text.push(field);
+        return;
+    }
+    text.push('"');
+    index = 0;
+    while (index < field.length()) {
+        character char = field[index];
+        if (character == '"' as char) {
+            text.push('"');
+        }
+        text.push(character);
+        index += 1;
+    }
+    text.push('"');
+}

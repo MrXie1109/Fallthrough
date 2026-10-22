@@ -1,0 +1,14 @@
+fn main() int {
+    n const int = 5;
+    c byte = 65;
+    p *byte = &c;
+    *p = 66;
+    b bool = true;
+    v int = b as int;
+    i int = 0;
+    i++;
+    ++i;
+    i--;
+    total int = (i = 10, i + n + v + c as int);
+    return total;
+}

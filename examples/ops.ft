@@ -1,0 +1,25 @@
+fn main() int {
+    a int = 10;
+    b int = 3;
+    x int = a / b;
+    y int = a % b;
+    z int = a << 2;
+    w int = a & 6;
+    c bool = a > b;
+    d bool = a == b;
+    e bool = a > 0 && b > 0;
+    f bool = a < 0 || b > 0;
+    h int = -a + ~b;
+    a += 5;
+    a -= 1;
+    if (e) {
+        a = a + 1;
+    }
+    if (d) {
+        a = a + 100;
+    }
+    if (f) {
+        a = a + 2;
+    }
+    return x + y + z + w + h + a;
+}

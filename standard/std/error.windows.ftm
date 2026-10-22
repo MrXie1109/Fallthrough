@@ -1,0 +1,34 @@
+// The system's error number, on Windows.
+//
+// The C runtime keeps its own error number -- `_errno` is the accessor Windows
+// uses where POSIX has `__errno_location` -- and that is the number a failed
+// `fopen` sets. The Win32 error is a separate number; `last_win32_error` asks
+// for it, for the calls that set it instead.
+
+import C;
+
+link kernel32 dynamic from default;
+
+@extern_C fn _errno() *int;
+@extern_C fn strerror(code int) *const char;
+@extern_C fn GetLastError() u32;
+
+// The C runtime's error number for this thread.
+export fn last_error() int {
+    return *_errno();
+}
+
+// Clears the C runtime's error number.
+export fn clear_error() void {
+    *_errno() = 0;
+}
+
+// The C runtime's text for `code`.
+export fn error_text(code int) *const char {
+    return strerror(code);
+}
+
+// The Win32 error number of the last call that set one.
+export fn last_win32_error() u32 {
+    return GetLastError();
+}

@@ -1,0 +1,65 @@
+// Starting and waiting for programs, POSIX.
+//
+// `fork` then `execvp` in the child is the portable POSIX way to start a
+// program with an argument vector; `waitpid` is how the parent learns its exit
+// status. Linux and macOS share these calls, so one file serves both.
+
+@extern_C fn fork() i32;
+@extern_C fn execvp(file *const char, argv *const *const char) i32;
+@extern_C fn waitpid(pid i32, status *i32, options i32) i32;
+@extern_C fn kill(pid i32, signal i32) i32;
+@extern_C fn _exit(code i32) void;
+
+// The option for "wait until the child changes state".
+WAIT const i32 = 0;
+
+// Starts `program` with `argv` and returns the child's process id.
+export fn spawn(program *const char, argv *const *const char) i32 except {
+    child i32 = fork();
+    if (child < 0) {
+        raise "ProcessError": "fork failed";
+    }
+    if (child == 0) {
+        execvp(program, argv);
+        // A returned `execvp` means the program could not be started; the child
+        // must leave with a status the parent can see, not fall through into the
+        // parent's code.
+        _exit(127);
+    }
+    return child;
+}
+
+// Waits for `pid` and returns the status `waitpid` reported.
+//
+// The raw status is returned: the caller is the one that knows how to read the
+// exit code and the signal out of it, and that decoding is platform-shaped.
+export fn wait(pid i32) i32 except {
+    status i32 = 0;
+    if (waitpid(pid, &status, WAIT) < 0) {
+        raise "ProcessError": "waitpid failed";
+    }
+    return status;
+}
+
+// Whether a raw status means "exited normally".
+export fn exited_normally(status i32) bool {
+    return ((status & 0x7f) == 0);
+}
+
+// The exit code of a status that exited normally.
+export fn exit_code(status i32) i32 {
+    return ((status >> 8) & 0xff);
+}
+
+// The signal that ended the child, or zero.
+export fn terminating_signal(status i32) i32 {
+    if ((status & 0x7f) == 0) {
+        return 0;
+    }
+    return (status & 0x7f);
+}
+
+// Asks `pid` to stop; the signal is part of the call.
+export fn send_signal(pid i32, signal i32) bool {
+    return kill(pid, signal) == 0;
+}

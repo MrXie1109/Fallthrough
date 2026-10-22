@@ -1,0 +1,16 @@
+[package]
+name = "fallc-parser"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The Fallthrough parser: token stream to abstract syntax tree."
+
+[dependencies]
+fallc-ast.workspace = true
+fallc-diag.workspace = true
+fallc-lexer.workspace = true
+fallc-span.workspace = true
+
+[lints]
+workspace = true

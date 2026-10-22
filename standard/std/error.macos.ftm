@@ -1,0 +1,24 @@
+// The system's error number, as Darwin spells it.
+//
+// The calls are the POSIX ones; Darwin names the thread's error pointer
+// `__error` rather than `__errno_location`.
+
+import C;
+
+@extern_C fn __error() *int;
+@extern_C fn strerror(code int) *const char;
+
+// The error number of the last C call that failed on this thread.
+export fn last_error() int {
+    return *__error();
+}
+
+// Clears the error number, so a stale one is not read as this call's answer.
+export fn clear_error() void {
+    *__error() = 0;
+}
+
+// The system's text for `code`.
+export fn error_text(code int) *const char {
+    return strerror(code);
+}

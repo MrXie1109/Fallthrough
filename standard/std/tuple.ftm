@@ -1,0 +1,165 @@
+// Tuples: a fixed, ordered group of values with names for the positions.
+//
+// A tuple is a small type with one field per element: `Pair<int, String>` has
+// `first` and `second`, and `Triple<A, B, C>` adds `third`. The fields are
+// public, so a program reads and writes the positions directly; the
+// constructors and the copy/move control exist because the elements may own
+// storage -- a `Pair<String, int>` copies its text when it is copied, rather
+// than sharing the string's buffer and freeing it twice.
+//
+//     point Pair<int, int> = Pair<int, int>(3, 4);
+//     std.print("{} {}\n", point.first, point.second)?!;
+//
+// # Why not a built-in
+//
+// A tuple is a type family, which the language already has: the fields, the
+// constructors, the copy and the comparison are what `template <..> type` and
+// its methods express. Nothing about a tuple needs the compiler, so it lives in
+// the library where its element-wise rules can be read.
+
+import std.util;
+
+// Two values, named by position.
+export
+template <A type, B type>
+type Pair {
+    // The first value.
+    first A;
+    // The second value.
+    second B;
+}
+
+// Creates a pair from its values.
+export
+template <A type, B type>
+fn __init__(this &Pair<A, B>, first A, second B) void {
+    (&this.first)->__init__(first);
+    (&this.second)->__init__(second);
+}
+
+// Copies another pair, element by element.
+export
+template <A type, B type>
+fn __init__(this &Pair<A, B>, other &const Pair<A, B>) void {
+    (&this.first)->__init__(other.first);
+    (&this.second)->__init__(other.second);
+}
+
+// Takes another pair's elements.
+export
+template <A type, B type>
+fn __init__(this &Pair<A, B>, other &&Pair<A, B>) void {
+    (&this.first)->__init__(util.move(other.first));
+    (&this.second)->__init__(util.move(other.second));
+}
+
+// Copies another pair into this one.
+export
+template <A type, B type>
+fn __assign__(this &Pair<A, B>, other &const Pair<A, B>) void {
+    this.first = other.first;
+    this.second = other.second;
+}
+
+// Moves another pair's elements into this one.
+export
+template <A type, B type>
+fn __assign__(this &Pair<A, B>, other &&Pair<A, B>) void {
+    this.first = util.move(other.first);
+    this.second = util.move(other.second);
+}
+
+// Releases both elements.
+export
+template <A type, B type>
+fn __drop__(this &Pair<A, B>) void {
+    (&this.first)->__drop__();
+    (&this.second)->__drop__();
+}
+
+// Whether two pairs hold equal elements.
+export
+template <A type, B type>
+fn __eq__(this &const Pair<A, B>, other &const Pair<A, B>) bool {
+    return this.first == other.first && this.second == other.second;
+}
+
+// Whether two pairs differ.
+export
+template <A type, B type>
+fn __ne__(this &const Pair<A, B>, other &const Pair<A, B>) bool {
+    return !(this == other);
+}
+
+// Three values, named by position.
+export
+template <A type, B type, C type>
+type Triple {
+    // The first value.
+    first A;
+    // The second value.
+    second B;
+    // The third value.
+    third C;
+}
+
+// Creates a triple from its values.
+export
+template <A type, B type, C type>
+fn __init__(this &Triple<A, B, C>, first A, second B, third C) void {
+    (&this.first)->__init__(first);
+    (&this.second)->__init__(second);
+    (&this.third)->__init__(third);
+}
+
+// Copies another triple, element by element.
+export
+template <A type, B type, C type>
+fn __init__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
+    (&this.first)->__init__(other.first);
+    (&this.second)->__init__(other.second);
+    (&this.third)->__init__(other.third);
+}
+
+// Takes another triple's elements.
+export
+template <A type, B type, C type>
+fn __init__(this &Triple<A, B, C>, other &&Triple<A, B, C>) void {
+    (&this.first)->__init__(util.move(other.first));
+    (&this.second)->__init__(util.move(other.second));
+    (&this.third)->__init__(util.move(other.third));
+}
+
+// Copies another triple into this one.
+export
+template <A type, B type, C type>
+fn __assign__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
+    this.first = other.first;
+    this.second = other.second;
+    this.third = other.third;
+}
+
+// Moves another triple's elements into this one.
+export
+template <A type, B type, C type>
+fn __assign__(this &Triple<A, B, C>, other &&Triple<A, B, C>) void {
+    this.first = util.move(other.first);
+    this.second = util.move(other.second);
+    this.third = util.move(other.third);
+}
+
+// Releases all three elements.
+export
+template <A type, B type, C type>
+fn __drop__(this &Triple<A, B, C>) void {
+    (&this.first)->__drop__();
+    (&this.second)->__drop__();
+    (&this.third)->__drop__();
+}
+
+// Whether two triples hold equal elements.
+export
+template <A type, B type, C type>
+fn __eq__(this &const Triple<A, B, C>, other &const Triple<A, B, C>) bool {
+    return this.first == other.first && this.second == other.second && this.third == other.third;
+}
