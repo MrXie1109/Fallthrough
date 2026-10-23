@@ -1,0 +1,10 @@
+{
+  "name": "tree-sitter-fallthrough",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Fallthrough language",
+  "main": "bindings/node",
+  "keywords": ["tree-sitter", "fallthrough", "parser"],
+  "license": "MIT",
+  "author": "MrXie1109",
+  "tree-sitter": [{ "scope": "source.fallthrough", "file-types": ["ft", "ftm"] }]
+}
