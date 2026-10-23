@@ -3,8 +3,24 @@ name = "Fallthrough"
 version = "0.1.0"
 schema_version = 1
 authors = ["MrXie1109"]
-description = "Fallthrough: diagnostics from fallc --lsp, plus the language's keywords and comments."
+description = "Fallthrough: syntax highlighting, and diagnostics from fallc --lsp."
 repository = "https://github.com/MrXie1109/Fallthrough"
+
+languages = ["languages/fallthrough"]
+capabilities = []
+
+[lib]
+kind = "Rust"
+version = "0.7.0"
+
+# The grammar lives in this repository. Zed builds it from `repository` at
+# `rev`; while developing, `path` names a directory inside the checkout instead
+# and `rev` is left empty. The parser is generated and committed, so a build
+# only has to compile `src/parser.c`.
+[grammars.fallthrough]
+repository = "https://github.com/MrXie1109/Fallthrough"
+rev = ""
+path = "editors/tree-sitter-fallthrough"
 
 # The language server ships inside the compiler, so the extension starts it
 # rather than bundling one: `src/lib.rs` decides which `fallc` to run.
