@@ -1,6 +1,23 @@
 name = "Fallthrough"
+
+# The grammar this language is highlighted with. Without it Zed knows the file
+# is Fallthrough but has nothing to parse it with: no highlighting, and no error
+# either, because an absent grammar is not a failure.
+grammar = "fallthrough"
+
 path_suffixes = ["ft", "ftm"]
 line_comments = ["// "]
-block_comment = ["/*", "*/"]
+block_comment = { start = "/*", prefix = " * ", end = "*/", tab_size = 0 }
 tab_size = 4
 hard_tabs = false
+
+brackets = [
+    { start = "{", end = "}", close = true, newline = true },
+    { start = "[", end = "]", close = true, newline = true },
+    { start = "(", end = ")", close = true, newline = true },
+    { start = "\"", end = "\"", close = true, newline = false, not_in = ["comment", "string"] },
+    { start = "'", end = "'", close = true, newline = false, not_in = ["comment", "string"] },
+]
+
+[overrides.string]
+completion_query_characters = ["-"]
