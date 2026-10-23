@@ -1,0 +1,6 @@
+# Zed's build products: the compiled extension, and the grammar checkout it
+# makes inside the extension directory while installing a dev extension.
+extension.wasm
+grammars/
+target/
+Cargo.lock

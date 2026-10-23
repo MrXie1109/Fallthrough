@@ -13,13 +13,14 @@ capabilities = []
 kind = "Rust"
 version = "0.7.0"
 
-# The grammar lives in this repository. Zed builds it from `repository` at
-# `rev`; while developing, `path` names a directory inside the checkout instead
-# and `rev` is left empty. The parser is generated and committed, so a build
-# only has to compile `src/parser.c`.
+# The grammar lives in this repository, in a subdirectory: Zed clones
+# `repository`, checks out `rev`, and builds the parser at `path` inside it.
+# `rev` must be a real commit -- an empty one is passed to `git checkout`, which
+# rejects it -- and the parser is generated and committed, so the build only has
+# to compile `src/parser.c`.
 [grammars.fallthrough]
 repository = "https://github.com/MrXie1109/Fallthrough"
-rev = ""
+rev = "3a62e6921c9651340257d5295fe882ee4e1fdbf9"
 path = "editors/tree-sitter-fallthrough"
 
 # The language server ships inside the compiler, so the extension starts it
