@@ -1,0 +1,13 @@
+id = "fallthrough"
+name = "Fallthrough"
+version = "0.1.0"
+schema_version = 1
+authors = ["MrXie1109"]
+description = "Fallthrough: diagnostics from fallc --lsp, plus the language's keywords and comments."
+repository = "https://github.com/MrXie1109/Fallthrough"
+
+# The language server ships inside the compiler, so the extension starts it
+# rather than bundling one: `src/lib.rs` decides which `fallc` to run.
+[language_servers.fallc]
+name = "Fallthrough (fallc)"
+languages = ["Fallthrough"]

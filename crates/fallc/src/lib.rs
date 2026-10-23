@@ -11,6 +11,7 @@
 //!   owns the source map and the diagnostics collected across all stages.
 //! * [`pipeline`] — runs the stages in order and stops at the first fatal one.
 //! * [`emit`] — renders stage output for the user.
+//! * [`lsp`] — the language server `fallc --lsp` starts for editors.
 //!
 //! # Stage order
 //!
@@ -30,6 +31,7 @@
 
 pub mod cli;
 pub mod emit;
+pub mod lsp;
 pub mod modules;
 pub mod pipeline;
 pub mod session;

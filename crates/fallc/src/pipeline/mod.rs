@@ -139,6 +139,26 @@ impl Outcome {
     }
 }
 
+/// Type-checks one file and produces no output.
+///
+/// The language server needs the diagnostics and the spans they point at, but
+/// nothing else a compile produces: no object, no link, no cache entry. This is
+/// `--check` without the reporting, so a caller can read
+/// [`Session::diagnostics`] itself.
+pub fn check_file(session: &mut Session, path: &Path) -> Outcome {
+    compile::compile_inputs(
+        session,
+        std::slice::from_ref(&path.to_path_buf()),
+        &[],
+        false,
+        true,
+        fallc_ir::BuildMode::Debug,
+        fallc_ir::OptLevel::None,
+        false,
+        None,
+    )
+}
+
 /// Runs `fallc` according to `options`.
 pub fn run(options: &Options) -> std::process::ExitCode {
     match &options.command {
@@ -153,6 +173,8 @@ pub fn run(options: &Options) -> std::process::ExitCode {
             print!("{}", crate::cli::USAGE);
             std::process::ExitCode::SUCCESS
         }
+        // The language server owns stdin and stdout for the whole run.
+        Command::LanguageServer => std::process::ExitCode::from(crate::lsp::run()),
         Command::Compile {
             inputs,
             emit,
