@@ -66,10 +66,11 @@ or, for the extension's own lookup:
 
 ## Grammars
 
-Zed highlights with Tree-sitter, and a grammar is a separate package with its
-own repository and version. This extension does not ship one yet, so Zed shows
-Fallthrough files without syntax highlighting until it does; diagnostics work
-regardless. The grammar repository will be published beside the language.
+Zed highlights with Tree-sitter. The grammar lives in
+[`editors/tree-sitter-fallthrough`](../tree-sitter-fallthrough): its queries
+(`highlights.scm`, `brackets.scm`, `indents.scm`, `outline.scm`,
+`textobjects.scm`) sit beside `config.toml` here, and the compiled parser is
+`grammars/fallthrough.wasm`.
 
 ## Developing the extension
 
