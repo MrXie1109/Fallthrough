@@ -1,8 +1,8 @@
 // TOML: a small configuration format, parsed into entries.
 //
-//     document TomlDocument = toml.parse(&text)?!;
-//     port TomlValue = document.get(&String("server"), &String("port")).value()?!;
-//     n i64 = port.as_int()?!;
+//     document TomlDocument = toml.parse(&text)??;
+//     port TomlValue = document.get(&String("server"), &String("port")).value()??;
+//     n i64 = port.as_int()??;
 //
 // # The subset
 //
@@ -278,10 +278,10 @@ export fn parse_toml(text &const String) TomlDocument except {
             break;
         }
         if (parser.at('[')) {
-            parser.parse_table()?!;
+            parser.parse_table()??;
             continue;
         }
-        parser.parse_entry()?!;
+        parser.parse_entry()??;
     }
     return document;
 }
@@ -304,14 +304,14 @@ fn parse_table(this &Parser) void except {
 
 // Reads a `key = value` line.
 fn parse_entry(this &Parser) void except {
-    key String = this.parse_key()?!;
+    key String = this.parse_key()??;
     this.skip_horizontal();
     if (!this.at('=')) {
         raise "ValueError": "a key must be followed by `=`";
     }
     this._index += 1;
     this.skip_horizontal();
-    value TomlValue = this.parse_value()?!;
+    value TomlValue = this.parse_value()??;
     entry TomlEntry = TomlEntry();
     entry._table = this._table;
     entry._key = key;
@@ -326,7 +326,7 @@ fn parse_entry(this &Parser) void except {
 // Reads a bare or quoted key.
 fn parse_key(this &Parser) String except {
     if (this.at('"')) {
-        return this.parse_string()?!;
+        return this.parse_string()??;
     }
     start usize = this._index;
     while (this._index < this._text.length()) {
@@ -351,21 +351,21 @@ fn parse_key(this &Parser) String except {
 // Reads a value.
 fn parse_value(this &Parser) TomlValue except {
     if (this.at('"')) {
-        value_text String = this.parse_string()?!;
+        value_text String = this.parse_string()??;
         value TomlValue = TomlValue();
         value._kind = TomlKind.STRING as int;
         value._text = util.move(value_text);
         return value;
     }
     if (this.at('t')) {
-        this.expect_word("true")?!;
+        this.expect_word("true")??;
         value TomlValue = TomlValue();
         value._kind = TomlKind.BOOLEAN as int;
         value._boolean = true;
         return value;
     }
     if (this.at('f')) {
-        this.expect_word("false")?!;
+        this.expect_word("false")??;
         value TomlValue = TomlValue();
         value._kind = TomlKind.BOOLEAN as int;
         value._boolean = false;
@@ -393,10 +393,10 @@ fn parse_value(this &Parser) TomlValue except {
     value TomlValue = TomlValue();
     if (real) {
         value._kind = TomlKind.REAL as int;
-        value._real = number_text as f64?!;
+        value._real = number_text as f64??;
     } else {
         value._kind = TomlKind.INTEGER as int;
-        value._integer = (number_text as int?!) as i64;
+        value._integer = (number_text as int??) as i64;
     }
     return value;
 }

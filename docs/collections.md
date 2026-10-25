@@ -304,12 +304,12 @@ Reading text as a number goes through `as`: `String` provides `__as__` conversio
 `int`, `usize` and `f64`. The **whole** text must be that number: `"12x"`, `""` and
 `"1 2"` raise `ValueError`, and the integer conversions refuse a value that does not
 fit instead of wrapping. A conversion may fail, so the call site follows the ordinary
-exception rules (`?!` to pass it on, or `try`/`except` to handle it):
+exception rules (`??` to pass it on, or `try`/`except` to handle it):
 
 ```ft
-n int = String("-42") as int?!;            // -42
-size usize = String("100") as usize?!;     // 100
-real f64 = String("2.5e2") as f64?!;       // 250.0
+n int = String("-42") as int??;            // -42
+size usize = String("100") as usize??;     // 100
+real f64 = String("2.5e2") as f64??;       // 250.0
 ```
 
 `std.in.input(n)` uses the same conversion, so a failed input raises `ValueError`.

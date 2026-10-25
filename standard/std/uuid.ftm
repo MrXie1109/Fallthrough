@@ -1,8 +1,8 @@
 // UUIDs: generating version 4, parsing and printing.
 //
-//     identifier Uuid = uuid.v4()?!;
+//     identifier Uuid = uuid.v4()??;
 //     text String = identifier.to_string();
-//     same bool = identifier == uuid.parse(&text)?!;
+//     same bool = identifier == uuid.parse(&text)??;
 //
 // # Storage
 //
@@ -32,7 +32,7 @@ export type Uuid {
 // Creates a version 4 (random) UUID from the system's entropy.
 export fn v4() Uuid except {
     generator Random = Random();
-    if (!generator.seed_from_entropy()?!) {
+    if (!generator.seed_from_entropy()??) {
         raise "UuidError": "the entropy source could not be read";
     }
     first_word u32 = generator();
@@ -102,7 +102,7 @@ export fn parse_uuid(text &const String) Uuid except {
             index += 1;
             continue;
         }
-        digits u64 = hex_digit(character)?! as u64;
+        digits u64 = hex_digit(character)?? as u64;
         if (count < 16usize) {
             high = (high << 4) | digits;
         } else {

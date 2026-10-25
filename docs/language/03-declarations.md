@@ -301,7 +301,7 @@ requirement may carry a result constraint:
 11.1.4 A method call in a requirement may carry type arguments (`it.push(int)`). The
 argument type **must** be a type.
 
-11.1.5 `?!` written after a call in a requirement means that the operation **may
+11.1.5 `??` written after a call in a requirement means that the operation **may
 raise**.
 
 11.1.6 There is no inheritance clause between traits; a hierarchy is expressed by
@@ -427,7 +427,7 @@ same signatures.
 
 12.2.2 The method name is the member name called in the requirement; the parameter types
 are the types explicitly written in the requirement; the result type is given by `-> T`;
-`?!` means that the method may raise.
+`??` means that the method may raise.
 
 12.2.3 A requirement that cannot state its result type is only a check, not a
 method-table entry; calling it through an interface is not a construct permitted by this

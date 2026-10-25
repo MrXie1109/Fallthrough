@@ -1,7 +1,7 @@
 // Starting another program, and waiting for it.
 //
-//     program Process = std.spawn(&String("/bin/sh"), &arguments)?!;
-//     code int = program.wait()?!;
+//     program Process = std.spawn(&String("/bin/sh"), &arguments)??;
+//     code int = program.wait()??;
 //
 // # What is portable and what is not
 //
@@ -45,7 +45,7 @@ export fn spawn(program &const String, arguments &const Array<String>) Process e
         index += 1;
     }
     slots[count + 1] = nullptr;
-    pid i32 = process_sys.spawn(program.data(), slots)?!;
+    pid i32 = process_sys.spawn(program.data(), slots)??;
     util.free(slots as *byte);
     started Process = .{ pid };
     return started;
@@ -57,7 +57,7 @@ export fn spawn(program &const String, arguments &const Array<String>) Process e
 export fn wait(this &Process) int except {
     // The two platforms hand back different things: a raw `waitpid` status on
     // POSIX, an exit code on Windows. Each is decoded where it is understood.
-    raw i32 = process_sys.wait(this._pid)?!;
+    raw i32 = process_sys.wait(this._pid)??;
     // The process is reaped, so this handle no longer names a running program:
     // leaving the pid here made `running()` answer true after `wait`.
     this._pid = 0;

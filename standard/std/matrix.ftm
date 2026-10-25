@@ -1,8 +1,8 @@
 // Matrices of reals: element access, arithmetic, transpose and identity.
 //
 //     m Matrix = matrix.identity(3usize);
-//     product Matrix = matrix.mul(&a, &b)?!;
-//     value f64 = product.at(0usize, 1usize)?!;
+//     product Matrix = matrix.mul(&a, &b)??;
+//     value f64 = product.at(0usize, 1usize)??;
 //
 // # Shape
 //
@@ -135,7 +135,7 @@ export fn set(this &Matrix, row usize, column usize, value f64) void except {
 
 // Element-wise addition; the shapes must match.
 export fn add(this &const Matrix, second &const Matrix) Matrix except {
-    shape_check(this, second)?!;
+    shape_check(this, second)??;
     result Matrix = zeros(this._rows, this._columns);
     index usize = 0;
     while (index < result._values.length()) {
@@ -147,7 +147,7 @@ export fn add(this &const Matrix, second &const Matrix) Matrix except {
 
 // Element-wise subtraction; the shapes must match.
 export fn sub(this &const Matrix, second &const Matrix) Matrix except {
-    shape_check(this, second)?!;
+    shape_check(this, second)??;
     result Matrix = zeros(this._rows, this._columns);
     index usize = 0;
     while (index < result._values.length()) {

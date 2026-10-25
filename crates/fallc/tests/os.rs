@@ -60,7 +60,7 @@ import C;
 fn main() int except {
     C.printf("pid positive %d\n", (os.pid() > 0) as int);
     C.printf("platform %s arch %s\n", os.platform(), os.arch());
-    here Path = os.cwd()?!;
+    here Path = os.cwd()??;
     C.printf("cwd nonempty %d\n", (!here.empty()) as int);
     C.printf("temp nonempty %d\n", (!os.temp_dir().empty()) as int);
     C.printf("home nonempty %d\n", (!os.home().empty()) as int);
@@ -88,11 +88,11 @@ import C;
 fn main() int except {
     os.set_env("FALLC_OS_TEST", "hello");
     C.printf("has %d\n", os.has_env("FALLC_OS_TEST") as int);
-    value String = os.getenv("FALLC_OS_TEST")?!;
+    value String = os.getenv("FALLC_OS_TEST")??;
     C.printf("value %s\n", value.data());
     C.printf("missing %d\n", os.has_env("FALLC_OS_TEST_NOT_SET") as int);
     try {
-        absent String = os.getenv("FALLC_OS_TEST_NOT_SET")?!;
+        absent String = os.getenv("FALLC_OS_TEST_NOT_SET")??;
         C.printf("unexpected %s\n", absent.data());
     } except {
         C.printf("raised %s\n", std.exception().name().data());

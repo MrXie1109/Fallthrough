@@ -4,7 +4,7 @@
 // returns is then either its value or an exception -- not a global flag -- so a
 // caller that ignores the annotation does not compile: the checker requires a
 // call to a may-raise function to be inside a `try` with an `except`, or to be
-// followed by `?!` to pass the exception further out.
+// followed by `??` to pass the exception further out.
 
 import std;
 import C;
@@ -23,11 +23,11 @@ fn parse(n int) int except {
 
 // Passes on whatever `parse` raises, adding a line of its own on the way.
 //
-// `call()?!` is an expression, so the value survives: `v` keeps it. The `try`
-// here deliberately does *not* catch the propagated exception -- `?!` means
+// `call()??` is an expression, so the value survives: `v` keeps it. The `try`
+// here deliberately does *not* catch the propagated exception -- `??` means
 // "leave this function", not "handle it here".
 fn measured(n int) int except {
-    v int = parse(n)?!;
+    v int = parse(n)??;
     C.printf("  parse(%d) gave %d\n", n, v);
     return v + 1;
 }

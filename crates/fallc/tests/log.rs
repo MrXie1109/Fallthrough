@@ -60,14 +60,14 @@ fn the_level_filters_the_lines_and_the_format_fills_them() {
 import std.log;
 
 fn main() int except {
-    log.info("hello {}", 1)?!;
-    log.debug("hidden")?!;
+    log.info("hello {}", 1)??;
+    log.debug("hidden")??;
     log.set_level(log.Level.DEBUG);
-    log.debug("visible {}", 2)?!;
+    log.debug("visible {}", 2)??;
     log.set_level(log.Level.WARN);
-    log.info("hidden again")?!;
-    log.warn("careful {}", 3)?!;
-    log.error("bad")?!;
+    log.info("hidden again")??;
+    log.warn("careful {}", 3)??;
+    log.error("bad")??;
     return 0;
 }
 "#;
@@ -87,8 +87,8 @@ import std.log;
 
 fn main() int except {
     log.set_level(log.Level.OFF);
-    log.error("nothing")?!;
-    std.print("{} {}\n", log.enabled(log.Level.ERROR) as int, log.level() as int)?!;
+    log.error("nothing")??;
+    std.print("{} {}\n", log.enabled(log.Level.ERROR) as int, log.level() as int)??;
     return 0;
 }
 "#;

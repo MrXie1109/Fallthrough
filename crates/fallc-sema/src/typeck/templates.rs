@@ -262,7 +262,7 @@ impl TypeChecker {
             }
             // A call of a template or a pack obeys the same rule as any other
             // call: a callee declared `except` may raise, and the call site is
-            // where that is either caught, passed on with `?!`, or reported.
+            // where that is either caught, passed on with `??`, or reported.
             // This used to be skipped here, so a template that raises
             // unconditionally could be called with nothing handling it.
             if signature.throws {
@@ -340,7 +340,7 @@ impl TypeChecker {
         }
         // The duty to handle a call that may raise is the call site's, and it
         // is judged here for every call: the declaration says `except`, so the
-        // caller either catches it, writes `?!` to pass it on, or hears about
+        // caller either catches it, writes `??` to pass it on, or hears about
         // it. Without this a template's `except` was invisible at every call.
         if result.is_some() && signature.throws {
             self.note_raising_site(
@@ -976,7 +976,7 @@ impl TypeChecker {
         } else {
             None
         };
-        // `raise` and `?!` are allowed exactly where the function says it may
+        // `raise` and `??` are allowed exactly where the function says it may
         // raise; a free template's instantiation is a function, so its `except`
         // is what the body is checked under. Without this push every `raise`
         // inside a free template was reported as S0082, however the template

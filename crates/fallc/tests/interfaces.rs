@@ -396,7 +396,7 @@ fn stop(this &Engine) int {
 }
 
 interface IEngine(it T) {
-    it.start()?! -> int,
+    it.start()?? -> int,
     it.stop() -> int,
 }
 
@@ -434,7 +434,7 @@ fn start(this &Engine) int except {
 }
 
 interface IEngine(it T) {
-    it.start()?! -> int,
+    it.start()?? -> int,
 }
 
 fn main() int {
@@ -467,11 +467,11 @@ fn start(this &Engine) int except {
 }
 
 interface IEngine(it T) {
-    it.start()?! -> int,
+    it.start()?? -> int,
 }
 
 fn run(it IEngine) int except {
-    return it.start() ?!;
+    return it.start() ??;
 }
 
 fn main() int {
@@ -502,7 +502,7 @@ fn value(this &const A) int {
 }
 
 interface IValue(it T) {
-    it.value()?! -> int,
+    it.value()?? -> int,
 }
 
 fn main() int {
@@ -918,7 +918,7 @@ fn bump(it &ICount) int {
 fn main() int except {
     c Counter = .{0};
     it ICount = c;
-    std.out.print(bump(&it), "\n")?!;
+    std.out.print(bump(&it), "\n")??;
     return 0;
 }
 "#;

@@ -6,7 +6,7 @@
 // `ValueError` on text that is not that encoding.
 //
 //     hex String = hex_encode(&bytes);        // "4142"
-//     back Bytes = hex_decode(&hex)?!;         // the same bytes
+//     back Bytes = hex_decode(&hex)??;         // the same bytes
 //
 // # Not a codec
 //
@@ -48,8 +48,8 @@ export fn hex_decode(text &const String) Bytes except {
     result Bytes = Bytes();
     index usize = 0;
     while (index < text.length()) {
-        high u8 = hex_value(text[index])?!;
-        low u8 = hex_value(text[index + 1])?!;
+        high u8 = hex_value(text[index])??;
+        low u8 = hex_value(text[index + 1])??;
         result.push((high * 16u8 + low) as byte);
         index += 2;
     }
@@ -130,7 +130,7 @@ export fn base64_decode(text &const String) Bytes except {
         if (character == '=' as char) {
             break;
         }
-        value u32 = base64_value(character)?!;
+        value u32 = base64_value(character)??;
         accumulator = (accumulator << 6u32) | value;
         bits += 6u32;
         if (bits >= 8u32) {
@@ -214,8 +214,8 @@ export fn percent_decode(text &const String) Bytes except {
             if (index + 2 >= text.length()) {
                 raise "ValueError": "a percent escape is incomplete";
             }
-            high u8 = hex_value(text[index + 1])?!;
-            low u8 = hex_value(text[index + 2])?!;
+            high u8 = hex_value(text[index + 1])??;
+            low u8 = hex_value(text[index + 2])??;
             result.push((high * 16u8 + low) as byte);
             index += 3;
         } else {

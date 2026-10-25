@@ -293,7 +293,7 @@ fn a_function_that_may_raise_returns_an_aggregate() {
     // The exception travels *inside* the result, so an `except` function's
     // result is a struct whose value field is the aggregate. Returning that
     // struct is what carries both halves; refusing the combination left a
-    // `?!` function unable to return an array at all.
+    // `??` function unable to return an array at all.
     let source = r#"import std;
 
 fn row(v int) [4]int except {

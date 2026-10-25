@@ -308,6 +308,11 @@ impl Lexer {
         if let Some(kind) = self.scan_raw_string(cursor) {
             return Some(kind);
         }
+        // `f"..."` is an interpolated string. It is tried before identifiers
+        // for the same reason `r"..."` is: the `f` is a prefix, not a name.
+        if let Some(kind) = self.scan_fstring(cursor) {
+            return Some(kind);
+        }
         // A byte-string literal must be tried before identifiers, or the `b`
         // is consumed as a name and the quote is left to be scanned as an
         // ordinary string. Longest-match ordering applies to prefixes as well
@@ -551,6 +556,44 @@ impl Lexer {
     /// escape rules have one home. `"""` opens the multi-line form, which may
     /// span lines and ends on three quotes; a single-quoted literal ends at the
     /// closing quote or at the end of the line.
+    /// Scans an interpolated string, `f"..."`.
+    ///
+    /// The body is read to the closing quote like an ordinary string -- escapes
+    /// still apply, and a `{` inside is found by the parser, which splits the
+    /// text and the expressions. Keeping the body a plain string here means the
+    /// lexer stays context-free: what a placeholder contains is an expression,
+    /// and only the parser knows how to read one.
+    fn scan_fstring(&mut self, cursor: &mut Cursor<'_>) -> Option<TokenKind> {
+        if cursor.peek() != Some(b'f') || cursor.peek_at(1) != Some(b'"') {
+            return None;
+        }
+        let start = cursor.offset();
+        cursor.bump();
+        // An escaped quote inside the text does not end the literal, so the
+        // scan walks escapes rather than looking for the next `"`.
+        cursor.bump();
+        loop {
+            if cursor.is_at_end() {
+                self.report_unterminated(self.literal_span(cursor, start), "interpolated string");
+                break;
+            }
+            match cursor.peek() {
+                Some(b'"') => {
+                    cursor.bump();
+                    break;
+                }
+                Some(b'\\') => {
+                    cursor.bump();
+                    cursor.bump();
+                }
+                _ => {
+                    cursor.bump();
+                }
+            }
+        }
+        Some(TokenKind::FString)
+    }
+
     fn scan_string(&mut self, cursor: &mut Cursor<'_>) -> Option<TokenKind> {
         if cursor.peek() != Some(b'"') {
             return None;

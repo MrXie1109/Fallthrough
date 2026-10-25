@@ -60,12 +60,12 @@ fn main() int except {
     data.push(33 as byte);
     data.push(10 as byte);
     empty_now bool = data.empty();
-    std.print("{} {} {}\n", data.length(), empty_now as int, data[0])?!;
+    std.print("{} {} {}\n", data.length(), empty_now as int, data[0])??;
     data.resize(5, 0 as byte);
-    std.print("{} {}\n", data.length(), data[4])?!;
+    std.print("{} {}\n", data.length(), data[4])??;
     data.clear();
     cleared bool = data.empty();
-    std.print("{}\n", cleared as int)?!;
+    std.print("{}\n", cleared as int)??;
     return 0;
 }
 "#;
@@ -85,13 +85,13 @@ fn main() int except {
     as_bytes Bytes = text as Bytes;
     as_bytes.push(33 as byte);
     back String = as_bytes as String;
-    std.print("{}\n", back)?!;
+    std.print("{}\n", back)??;
     original Bytes = Bytes("hello");
     same Bytes = Bytes("hello");
-    std.print("{} {}\n", (original == same) as int, (original == as_bytes) as int)?!;
+    std.print("{} {}\n", (original == same) as int, (original == as_bytes) as int)??;
     copy Bytes = original;
     copy.push(64 as byte);
-    std.print("{} {}\n", original.length(), copy.length())?!;
+    std.print("{} {}\n", original.length(), copy.length())??;
     return 0;
 }
 "#;
@@ -109,9 +109,9 @@ fn a_byte_sequence_can_be_walked() {
 fn main() int except {
     data Bytes = Bytes("AB");
     for (value &const u8 : data) {
-        std.print("{:x} ", value)?!;
+        std.print("{:x} ", value)??;
     }
-    std.print("\n")?!;
+    std.print("\n")??;
     return 0;
 }
 "#;
@@ -133,13 +133,13 @@ fn main() int except {
     data.push(33 as byte);
     data.push(10 as byte);
     empty_now bool = data.empty();
-    std.print("bytes {} {} {}\n", data.length(), empty_now as int, data[0])?!;
+    std.print("bytes {} {} {}\n", data.length(), empty_now as int, data[0])??;
     values Array<int> = Array<int>();
     values.push(7);
     values.push(8);
-    std.print("array {} {} {}\n", values.length(), empty_now as int, values[1])?!;
+    std.print("array {} {} {}\n", values.length(), empty_now as int, values[1])??;
     text String = String("hi");
-    std.print("text {} {} {}\n", text.length(), empty_now as int, text[0])?!;
+    std.print("text {} {} {}\n", text.length(), empty_now as int, text[0])??;
     return 0;
 }
 "#;

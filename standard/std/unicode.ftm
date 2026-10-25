@@ -1,7 +1,7 @@
 // UTF-8: code points to bytes and back.
 //
-//     bytes String = unicode.encode(0x00e9)?!;   // "é" as two bytes
-//     points Array<u32> = unicode.decode(&text)?!;
+//     bytes String = unicode.encode(0x00e9)??;   // "é" as two bytes
+//     points Array<u32> = unicode.decode(&text)??;
 //     n usize = unicode.count(&text);            // code points, not bytes
 //
 // A `String` is a sequence of bytes. UTF-8 is the rule that says which bytes
@@ -96,7 +96,7 @@ export fn decode(text &const String) Array<u32> except {
         if (length == 0usize) {
             raise "ValueError": "the text is not valid UTF-8";
         }
-        points.push(code_point_at(text, index, length)?!);
+        points.push(code_point_at(text, index, length)??);
         index += length;
     }
     return points;
@@ -108,7 +108,7 @@ export fn next_code_point(text &const String, index usize) Pair<u32, usize> exce
     if (length == 0usize) {
         raise "ValueError": "the text is not valid UTF-8";
     }
-    return Pair<u32, usize>(code_point_at(text, index, length)?!, length);
+    return Pair<u32, usize>(code_point_at(text, index, length)??, length);
 }
 
 // How many bytes the sequence starting at `index` takes, or zero when the bytes

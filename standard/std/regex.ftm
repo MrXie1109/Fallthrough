@@ -1,7 +1,7 @@
 // Regular expressions: a small backtracking matcher.
 //
-//     expression Regex = regex.compile(&String("^a[0-9]+z$"))?!;
-//     found Match = expression.find(&text).value()?!;
+//     expression Regex = regex.compile(&String("^a[0-9]+z$"))??;
+//     found Match = expression.find(&text).value()??;
 //
 // # The syntax
 //
@@ -82,7 +82,7 @@ export fn compile(pattern &const String) Regex except {
         if (character == '\\' as char || character == '[' as char) {
             // The escapes and classes are validated by the matcher's atom
             // scanner; that keeps one place that understands their length.
-            index = atom_end(pattern, index)?!;
+            index = atom_end(pattern, index)??;
         } else {
             index += 1;
         }
@@ -229,13 +229,13 @@ fn match_sequence(
         }
         return optional.none<usize>();
     }
-    stop usize = atom_end(pattern, pattern_index)?!;
+    stop usize = atom_end(pattern, pattern_index)??;
     // An anchor is an atom that consumes nothing; matching it is a check.
     if (character == '^' as char) {
         if (text_index != 0usize) {
             return optional.none<usize>();
         }
-        return match_sequence(pattern, stop, text, text_index, must_end)?!;
+        return match_sequence(pattern, stop, text, text_index, must_end)??;
     }
     quantifier char = ' ' as char;
     if (stop < pattern.length()) {
@@ -252,19 +252,19 @@ fn match_sequence(
         if (!atom_matches(pattern, pattern_index, stop, text[text_index])) {
             return optional.none<usize>();
         }
-        return match_sequence(pattern, stop, text, text_index + 1usize, must_end)?!;
+        return match_sequence(pattern, stop, text, text_index + 1usize, must_end)??;
     }
     if (quantifier == '?' as char) {
         // Try the atom once, then zero times.
         if (text_index < text.length()
             && atom_matches(pattern, pattern_index, stop, text[text_index]))
         {
-            matched_once ?usize = match_sequence(pattern, stop, text, text_index + 1usize, must_end)?!;
+            matched_once ?usize = match_sequence(pattern, stop, text, text_index + 1usize, must_end)??;
             if (matched_once.present()) {
                 return matched_once;
             }
         }
-        return match_sequence(pattern, stop, text, text_index, must_end)?!;
+        return match_sequence(pattern, stop, text, text_index, must_end)??;
     }
     // `*` and `+`: consume greedily, then back off one at a time.
     count usize = 0usize;
@@ -277,7 +277,7 @@ fn match_sequence(
         return optional.none<usize>();
     }
     while (true) {
-        rest ?usize = match_sequence(pattern, stop, text, text_index + count, must_end)?!;
+        rest ?usize = match_sequence(pattern, stop, text, text_index + count, must_end)??;
         if (rest.present()) {
             return rest;
         }
@@ -293,9 +293,9 @@ export fn find(this &const Regex, text &const String) ?Match except {
     anchored bool = this._pattern.length() > 0usize && this._pattern[0] == '^' as char;
     start usize = 0usize;
     while (start <= text.length()) {
-        found ?usize = match_sequence(this._pattern, 0usize, text, start, false)?!;
+        found ?usize = match_sequence(this._pattern, 0usize, text, start, false)??;
         if (found.present()) {
-            end_index usize = found.value()?!;
+            end_index usize = found.value()??;
             return optional.some<Match>(.{ start, end_index });
         }
         if (anchored) {
@@ -308,7 +308,7 @@ export fn find(this &const Regex, text &const String) ?Match except {
 
 // Whether `text` contains a match.
 export fn is_match(this &const Regex, text &const String) bool except {
-    found ?Match = this.find(text)?!;
+    found ?Match = this.find(text)??;
     return found.present();
 }
 

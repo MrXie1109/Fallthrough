@@ -61,7 +61,7 @@
 | `division-by-zero` | 除数为编译期已知的零 | `S0147` |
 | `use-after-move` | 移动后读取该值 | `S0148` |
 | `unreachable` | 永远执行不到的语句 | `S0141` |
-| `useless-raise-mark` | 挂在不会抛出的调用上的 `?!` | `S0083` |
+| `useless-raise-mark` | 挂在不会抛出的调用上的 `??` | `S0083` |
 | `deprecated` | 使用带 `@deprecated` 的声明 | `S0160` |
 
 5.1 实现**必须**提供按组开关警告的方式：

@@ -46,7 +46,7 @@ pub use node::{
     NamedArgument,
     ItemId, ItemKind, LinkItem, LinkKind, LinkLocation, LoopStmt, NamedType, NodeId, PackRef, Param,
     RaiseStmt, ReturnStmt, Stmt, StmtId, StmtKind, SwitchArm, SwitchStmt, TemplateArgumentSyntax,
-    PropagateExpr, StaticAssert, TemplateDefault, TemplateParam, TemplateParamKind, Throws, TryStmt,
+    AbortExpr, PropagateExpr, StaticAssert, TemplateDefault, TemplateParam, TemplateParamKind, Throws, TryStmt,
     TypeDecl,
     TypeDeclKind,
     TraitDecl, TraitParam, TraitRequirement, TraitResult, TraitValue, TypeMember, TypeOfType, TypeSyntax,

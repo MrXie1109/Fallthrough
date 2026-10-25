@@ -293,13 +293,13 @@ fn one_mistake_is_reported_once() {
 #[test]
 fn a_repeated_check_does_not_repeat_the_diagnostic() {
     // A binding's initialiser is looked at while its constructor is chosen and
-    // again when it is checked, and a `?!` outside a throwing function is
+    // again when it is checked, and a `??` outside a throwing function is
     // refused by both -- which printed the same error twice.
-    let source = "type R {\n    v int;\n}\nfn __init__(this &R, n int) void except {\n    raise \"X\";\n}\nfn f() int {\n    a R = 1?!;\n    return 0;\n}\n";
+    let source = "type R {\n    v int;\n}\nfn __init__(this &R, n int) void except {\n    raise \"X\";\n}\nfn f() int {\n    a R = 1??;\n    return 0;\n}\n";
     let (outcome, output) = compile_text("test.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{output}");
     assert_eq!(
-        output.matches("`?!` is only allowed").count(),
+        output.matches("`??` is only allowed").count(),
         1,
         "{output}"
     );

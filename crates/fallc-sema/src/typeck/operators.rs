@@ -220,7 +220,49 @@ impl TypeChecker {
         // pointer. Anything else -- a declared type with no `__str__` -- would
         // reach code generation as a request nothing can answer, which is an
         // internal error rather than a diagnostic the program can act on.
-        if !Self::renderable(&rendered) {
+        // The defaults, in the order the standard library states them:
+        //
+        // * `str(x)` with no `__str__` is `repr(x)`, so a type that declares
+        //   only `__repr__` still has a `str`;
+        // * `repr(x)` with no `__repr__` is the compiler's own rendering, which
+        //   writes `<Type object at 0x...>` for a declared type -- the same
+        //   answer every language gives when nothing better is available.
+        //
+        // So a declared type is never "unwritable": it has a `repr`, and
+        // therefore a `str`, whatever it declares.
+        if method == fallc_ast::special::SpecialMethod::Str
+            && !Self::renderable(&rendered)
+        {
+            let repr = self.resolve_nullary_method(
+                resolutions,
+                &rendered,
+                fallc_ast::special::SpecialMethod::Repr,
+            );
+            let result = repr.and_then(|symbol| {
+                let receiver_name = rendered.nominal_name()?.to_owned();
+                let qualified = Self::special_method_qualified(
+                    &receiver_name,
+                    fallc_ast::special::SpecialMethod::Repr.name(),
+                );
+                let signature = self
+                    .definitions_named(resolutions, &qualified)
+                    .into_iter()
+                    .find_map(|def| def.signature.clone())?;
+                self.text_calls.insert(span, Some(symbol));
+                self.note_throwing_call(span, &signature, ast, None);
+                Some(self.signature_result_type(&signature))
+            });
+            match result {
+                Some(result) => return Some(result),
+                // No `__repr__` either: the compiler writes the value itself,
+                // which is the default `repr`, and `str` is that text.
+                None => {
+                    self.text_calls.insert(span, None);
+                    return self.standard_string_type();
+                }
+            }
+        }
+        if !Self::renderable(&rendered) && method == fallc_ast::special::SpecialMethod::Str {
             self.diagnostics.push(
                 Diagnostic::error(format!(
                     "a value of type `{}` cannot be written down: declare `__{}__` for it",

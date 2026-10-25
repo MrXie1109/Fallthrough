@@ -88,7 +88,7 @@ impl Style {
 pub const WARNING_GROUPS: &[(&str, &str)] = &[
     (
         "useless-raise-mark",
-        "`?!` on a call that cannot raise anything",
+        "`??` on a call that cannot raise anything",
     ),
     ("unreachable", "a statement the program can never reach"),
     ("unused", "a binding that is never read"),

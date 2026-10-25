@@ -484,9 +484,9 @@ handle.
 ### Opening
 
 ```ft
-f    File = File("notes.txt", OpenMode.WRITE)?!;   // "wb", truncates
-src  File = File("notes.txt", OpenMode.READ)?!;    // "rb"
-both File = File("notes.txt", OpenMode.RW)?!;      // "r+b", the file must exist
+f    File = File("notes.txt", OpenMode.WRITE)??;   // "wb", truncates
+src  File = File("notes.txt", OpenMode.READ)??;    // "rb"
+both File = File("notes.txt", OpenMode.RW)??;      // "r+b", the file must exist
 ```
 
 `OpenMode` is C's three modes. `File()` is an invalid handle with no stream; `open(path,
@@ -673,17 +673,17 @@ Three things ([`std/concurrent.ftm`](../../../standard/std/concurrent.ftm)):
 import std.concurrent;
 
 channel Channel<int> = Channel<int>();
-producer_thread = Thread(producer, &context as *byte)?!;
-value int = channel.recv()?!;
+producer_thread = Thread(producer, &context as *byte)??;
+value int = channel.recv()??;
 
 promise Promise<int> = Promise<int>();
 future Future<int> = promise.future();
-result int = future.get()?!;
+result int = future.get()??;
 
 pool ThreadPool = ThreadPool(4usize);
-pool.start()?!;
+pool.start()??;
 pool.submit(task, &state as *byte);
-pool.shutdown()?!;
+pool.shutdown()??;
 ```
 
 A job is a `*fn(*byte) u32`; the caller owns the argument and keeps it alive
@@ -703,11 +703,11 @@ import std.time;
 start Instant = time.now();
 // ... work ...
 took Duration = time.since(&start);
-std.print("{} {} {}\n", took.nanos(), took.millis(), took)?!;  // 0.005s
+std.print("{} {} {}\n", took.nanos(), took.millis(), took)??;  // 0.005s
 
 d Duration = time.from_millis(1500);   // from_nanos / from_seconds too
 stamp SystemTime = time.unix_now();
-std.print("{}\n", stamp.to_utc())?!;   // 2026-10-20 16:54:58
+std.print("{}\n", stamp.to_utc())??;   // 2026-10-20 16:54:58
 ```
 
 `Duration` supports `+`/`-`/comparison and renders as `1.500s`;
@@ -751,7 +751,7 @@ says so instead of quietly handling a part.
   `$CHECK_EQ`, `$CHECK_EQ_REAL`, `$CHECK_EQ_TEXT` and `$FAIL` macros; a macro
   passes the condition text and `$__builtin_FILE`/`$__builtin_LINE` to an
   assertion function, and a failure raises `TestError` with the location. The
-  macros end in `?!`, so they belong in an `except` function (a test `main`).
+  macros end in `??`, so they belong in an `except` function (a test `main`).
 - **debug** ([`std/debug.ftm`](../../../standard/std/debug.ftm)):
   `$ASSERT_DEBUG`, `$DEBUG_UNREACHABLE`, `print_trace(&String)` (writes stderr,
   with no dependency on the io layer) and `breakpoint()` (`abort`). The macro is
@@ -773,8 +773,8 @@ says so instead of quietly handling a part.
   the specification and checked against the standard vectors (`"abc"`, the empty
   message, RFC 4231). It is explicitly not a cryptography library: no
   constant-time comparisons and no key management, and SHA-1/MD5 are absent.
-- **uuid** ([`std/uuid.ftm`](../../../standard/std/uuid.ftm)): `v4()?!` (version and
-  RFC 4122 variant bits set), `to_string()`/`__str__`, `parse_uuid(&text)?!`,
+- **uuid** ([`std/uuid.ftm`](../../../standard/std/uuid.ftm)): `v4()??` (version and
+  RFC 4122 variant bits set), `to_string()`/`__str__`, `parse_uuid(&text)??`,
   `version()`, `variant()` and `==`/`!=`; two `u64` fields, so copying, comparing
   and returning one needs no ownership.
 - **rand_dist** ([`std/rand_dist.ftm`](../../../standard/std/rand_dist.ftm)): the
@@ -843,11 +843,11 @@ says so instead of quietly handling a part.
 not outlive its document ([`std/json.ftm`](../../../standard/std/json.ftm)):
 
 ```ft
-document JsonDocument = std.parse(&text)?!;
+document JsonDocument = std.parse(&text)??;
 root JsonValue = document.root();
 key String = String("name");
-name String = root.member(&key).value()?!.as_text()?!;
-written String = std.serialize(&root)?!;
+name String = root.member(&key).value()??.as_text()??;
+written String = std.serialize(&root)??;
 ```
 
 `kind()` returns `NULL_VALUE`/`BOOLEAN`/`NUMBER`/`TEXT`/`ARRAY`/`OBJECT`; an
@@ -864,7 +864,7 @@ text that can travel; both sides are `Bytes`, because the bytes need not be text
 
 ```ft
 hex String = std.hex_encode(&data);        // "4142"
-back Bytes = std.hex_decode(&hex)?!;        // a ValueError on bad text
+back Bytes = std.hex_decode(&hex)??;        // a ValueError on bad text
 b64 String = std.base64_encode(&data);      // "QUI="
 pct String = std.percent_encode(&text);     // URL: alnum -_.~ stay, the rest is %XX
 ```
@@ -926,9 +926,9 @@ nothing ([`std/log.ftm`](../../../standard/std/log.ftm)):
 import std;
 import std.log;
 
-log.info("starting with {} items", count)?!;   // [INFO] starting with 3 items
+log.info("starting with {} items", count)??;   // [INFO] starting with 3 items
 log.set_level(log.Level.DEBUG);
-log.debug("value = {}", value)?!;
+log.debug("value = {}", value)??;
 log.set_level(log.Level.OFF);                  // silence everything
 ```
 

@@ -59,9 +59,9 @@ import std.allocators;
 fn main() int except {
     heap DefaultAllocator = DefaultAllocator();
     block *byte = heap.alloc(16usize);
-    std.print("{}\n", (block != nullptr) as int)?!;
+    std.print("{}\n", (block != nullptr) as int)??;
     heap.free(block);
-    std.print("freed\n")?!;
+    std.print("freed\n")??;
     return 0;
 }
 "#;
@@ -78,9 +78,9 @@ fn main() int except {
     arena Arena = Arena(64usize);
     first *byte = arena.alloc(8usize);
     second *byte = arena.alloc(8usize);
-    std.print("{} {} {}\n", arena.available(), (first != second) as int, (first != nullptr) as int)?!;
+    std.print("{} {} {}\n", arena.available(), (first != second) as int, (first != nullptr) as int)??;
     arena.reset();
-    std.print("{}\n", arena.available())?!;
+    std.print("{}\n", arena.available())??;
     return 0;
 }
 "#;

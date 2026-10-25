@@ -181,6 +181,14 @@ pub enum TokenKind {
     /// An ordinary string gains a terminator so it can be handed to C; `b`
     /// suppresses that, for a string whose length is the point.
     ByteString,
+    /// An interpolated string: `f"..."`.
+    ///
+    /// The text between the quotes holds placeholders, `{expr}`, whose values
+    /// are the arguments of the format call the literal becomes. It is its own
+    /// token because the difference is not in the bytes but in how they are
+    /// read: every `{` opens an expression, and the text between them is
+    /// format text.
+    FString,
     /// A raw string literal: `r"..."` or `r#tag"..."tag#`.
     ///
     /// Nothing in it is an escape, so `r"C:\dir"` is the four characters
@@ -222,6 +230,7 @@ impl TokenKind {
             TokenKind::Char => "character literal",
             TokenKind::ByteString => "byte-string literal",
             TokenKind::RawString => "raw string literal",
+            TokenKind::FString => "interpolated string literal",
             TokenKind::Float => "floating-point literal",
             TokenKind::Int => "integer literal",
             TokenKind::Keyword(k) => k.spelling(),
@@ -259,6 +268,7 @@ impl TokenKind {
         matches!(
             self,
             TokenKind::String
+                | TokenKind::FString
                 | TokenKind::ByteString
                 | TokenKind::RawString
                 | TokenKind::Int

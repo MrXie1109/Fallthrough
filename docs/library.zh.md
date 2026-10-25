@@ -465,9 +465,9 @@ std.out.writable()   // true
 ### 打开
 
 ```ft
-f    File = File("notes.txt", OpenMode.WRITE)?!;   // "wb"，截断
-src  File = File("notes.txt", OpenMode.READ)?!;    // "rb"
-both File = File("notes.txt", OpenMode.RW)?!;      // "r+b"，文件必须存在
+f    File = File("notes.txt", OpenMode.WRITE)??;   // "wb"，截断
+src  File = File("notes.txt", OpenMode.READ)??;    // "rb"
+both File = File("notes.txt", OpenMode.RW)??;      // "r+b"，文件必须存在
 ```
 
 `OpenMode` 就是 C 的那三种。`File()` 是没有流的无效句柄，`open(path, mode)` 之后才有流；构造时给路径等价于「默认构造 + `open`」。打不开抛 `IOError`。
@@ -589,7 +589,7 @@ fn work(argument *byte) u32 {
     return 0;            // 线程的退出值；`join` 目前不收集它
 }
 
-t Thread = Thread(work, nullptr)?!;         // 从函数指针构造，可以带一个参数
+t Thread = Thread(work, nullptr)??;         // 从函数指针构造，可以带一个参数
 t.join();
 ```
 
@@ -661,17 +661,17 @@ bar.wait();                 // 等到 2 方都到
 import std.concurrent;
 
 channel Channel<int> = Channel<int>();
-producer_thread = Thread(producer, &context as *byte)?!;
-value int = channel.recv()?!;
+producer_thread = Thread(producer, &context as *byte)??;
+value int = channel.recv()??;
 
 promise Promise<int> = Promise<int>();
 future Future<int> = promise.future();
-result int = future.get()?!;
+result int = future.get()??;
 
 pool ThreadPool = ThreadPool(4usize);
-pool.start()?!;
+pool.start()??;
 pool.submit(task, &state as *byte);
-pool.shutdown()?!;
+pool.shutdown()??;
 ```
 
 任务函数是 `*fn(*byte) u32`，参数由调用者分配并保证活到任务跑完；线程入口与
@@ -690,11 +690,11 @@ import std.time;
 start Instant = time.now();
 // ... 工作 ...
 took Duration = time.since(&start);
-std.print("{} {} {}\n", took.nanos(), took.millis(), took)?!;  // 0.005s
+std.print("{} {} {}\n", took.nanos(), took.millis(), took)??;  // 0.005s
 
 d Duration = time.from_millis(1500);   // from_nanos / from_seconds 同理
 stamp SystemTime = time.unix_now();
-std.print("{}\n", stamp.to_utc())?!;   // 2026-10-20 16:54:58
+std.print("{}\n", stamp.to_utc())??;   // 2026-10-20 16:54:58
 ```
 
 `Duration` 支持 `+`/`-`/比较与文本（`1.500s`）；`SystemTime.to_utc()` 给
@@ -731,7 +731,7 @@ UDP 是独立工作，本模块明确不做，而不是悄悄只处理一部分�
 - **test**（[`std/test.ftm`](../../standard/std/test.ftm)）：`$CHECK`、`$CHECK_EQ`、
   `$CHECK_EQ_REAL`、`$CHECK_EQ_TEXT`、`$FAIL` 宏；宏把条件文本与
   `$__builtin_FILE`/`$__builtin_LINE` 传给断言函数，失败抛 `TestError` 并带位置。
-  断言宏以 `?!` 结尾，因此用在 `except` 函数（测试 `main`）里。
+  断言宏以 `??` 结尾，因此用在 `except` 函数（测试 `main`）里。
 - **debug**（[`std/debug.ftm`](../../standard/std/debug.ftm)）：`$ASSERT_DEBUG`、
   `$DEBUG_UNREACHABLE`、`print_trace(&String)`（写 stderr，不依赖 io 层）、
   `breakpoint()`（`abort`）。注意宏名是 `ASSERT_DEBUG`：`DEBUG_ASSERT` 这个名字
@@ -748,8 +748,8 @@ UDP 是独立工作，本模块明确不做，而不是悄悄只处理一部分�
 - **crypto**（[`std/crypto.ftm`](../../standard/std/crypto.ftm)）：`sha256`/`sha256_hex`、
   `hmac_sha256`/`hmac_sha256_hex`、`hex`；按规范实现并用标准向量（`"abc"`、空串、
   RFC 4231）验证。明确不是密码学库：没有常量时间比较、密钥管理；SHA-1/MD5 不提供。
-- **uuid**（[`std/uuid.ftm`](../../standard/std/uuid.ftm)）：`v4()?!` 随机 UUID（版本位与
-  RFC 4122 变体位已设置）、`to_string()`/`__str__`、`parse_uuid(&text)?!`、`version()`、
+- **uuid**（[`std/uuid.ftm`](../../standard/std/uuid.ftm)）：`v4()??` 随机 UUID（版本位与
+  RFC 4122 变体位已设置）、`to_string()`/`__str__`、`parse_uuid(&text)??`、`version()`、
   `variant()`、`==`/`!=`；两个 `u64` 存储，复制/比较/返回都不涉及所有权。
 - **rand_dist**（[`std/rand_dist.ftm`](../../standard/std/rand_dist.ftm)）：在
   `std.random.Random` 之上的分布函数名——`sample_uniform`/`sample_uniform_real`/
@@ -803,11 +803,11 @@ UDP 是独立工作，本模块明确不做，而不是悄悄只处理一部分�
 文档活得久（[`std/json.ftm`](../../standard/std/json.ftm)）：
 
 ```ft
-document JsonDocument = std.parse(&text)?!;
+document JsonDocument = std.parse(&text)??;
 root JsonValue = document.root();
 key String = String("name");
-name String = root.member(&key).value()?!.as_text()?!;
-written String = std.serialize(&root)?!;
+name String = root.member(&key).value()??.as_text()??;
+written String = std.serialize(&root)??;
 ```
 
 `kind()` 返回 `NULL_VALUE`/`BOOLEAN`/`NUMBER`/`TEXT`/`ARRAY`/`OBJECT`；数组用
@@ -822,7 +822,7 @@ written String = std.serialize(&root)?!;
 
 ```ft
 hex String = std.hex_encode(&data);        // "4142"
-back Bytes = std.hex_decode(&hex)?!;        // 解码失败抛 ValueError
+back Bytes = std.hex_decode(&hex)??;        // 解码失败抛 ValueError
 b64 String = std.base64_encode(&data);      // "QUI="
 pct String = std.percent_encode(&text);     // URL：字母数字 -_.~ 保留，其余 %XX
 ```
@@ -878,9 +878,9 @@ rows usize = grid.rows();
 import std;
 import std.log;
 
-log.info("starting with {} items", count)?!;   // [INFO] starting with 3 items
+log.info("starting with {} items", count)??;   // [INFO] starting with 3 items
 log.set_level(log.Level.DEBUG);
-log.debug("value = {}", value)?!;
+log.debug("value = {}", value)??;
 log.set_level(log.Level.OFF);                  // 全关
 ```
 

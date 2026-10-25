@@ -7,7 +7,7 @@
 //
 //     data Bytes = "hello";          // copy the bytes of a literal
 //     data.push(0u8);
-//     std.print("{:x}\n", data[0])?!;
+//     std.print("{:x}\n", data[0])??;
 //
 // # A wrapper, not a second array
 //

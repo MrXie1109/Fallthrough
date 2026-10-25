@@ -1170,7 +1170,7 @@ impl<'ctx> Lowerer<'ctx> {
                 if self.init_calls.contains_key(&initialiser_span(ast, *expr)) =>
             {
                 let symbol = self.init_calls[&initialiser_span(ast, *expr)].clone();
-                // `T x = arg?!;` puts the propagation marker on the initialiser,
+                // `T x = arg??;` puts the propagation marker on the initialiser,
                 // because a construction has no call to write it on. The
                 // argument is what the constructor takes, so the marker is not
                 // lowered -- only the value under it.

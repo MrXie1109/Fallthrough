@@ -126,7 +126,7 @@ pub fn eval_call(
 /// Evaluates one expression with a set of parameter values in scope.
 ///
 /// Used where a function's *annotation* has to be decided at a call site: the
-/// condition of `?!(cond)` names the callee's parameters, and the call's
+/// condition of `??(cond)` names the callee's parameters, and the call's
 /// arguments say what they are. Evaluating it here means the rule is applied by
 /// the same evaluator that folds every other constant, rather than by a second
 /// one that could disagree.
@@ -180,9 +180,9 @@ struct State<'a> {
     depth: u32,
     /// Whether a raise was reached, which means there is no value to fold.
     ///
-    /// A `raise` and a `?!` are control flow, not arithmetic: the rest of the
+    /// A `raise` and a `??` are control flow, not arithmetic: the rest of the
     /// body does not run, and a function that raised has no answer to give.
-    /// Ignoring that folded `spare int = failing()?!;` to the value the body
+    /// Ignoring that folded `spare int = failing()??;` to the value the body
     /// would have returned had the call succeeded -- a value the program never
     /// sees, and the call itself was then dropped as a folded constant.
     raised: bool,
@@ -305,7 +305,7 @@ impl State<'_> {
                 fallc_ast::literal::decode_char_code_point(&literal.text).map(i64::from)
             }
             ExprKind::Name(name) => self.lookup_value(name),
-            // `?!` is the raise itself, seen at the call: whatever the callee
+            // `??` is the raise itself, seen at the call: whatever the callee
             // returned, the exception it carried is what leaves the function.
             ExprKind::Propagate(_) => {
                 self.raised = true;

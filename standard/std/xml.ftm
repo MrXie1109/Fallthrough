@@ -1,10 +1,10 @@
 // XML: elements, attributes and text, as a document of nodes.
 //
-//     document XmlDocument = xml.parse(&text)?!;
+//     document XmlDocument = xml.parse(&text)??;
 //     root XmlValue = document.root();
 //     name String = root.name();
-//     child XmlValue = root.child(0)?!;
-//     written String = xml.serialize(&root)?!;
+//     child XmlValue = root.child(0)??;
+//     written String = xml.serialize(&root)??;
 //
 // # Shapes
 //
@@ -250,12 +250,12 @@ fn __init__(this &Parser, text &const String, document *XmlDocument) void {
 export fn parse_xml(text &const String) XmlDocument except {
     document XmlDocument = XmlDocument();
     parser Parser = Parser(text, &document);
-    parser.skip_miscellaneous()?!;
+    parser.skip_miscellaneous()??;
     if (!parser.at('<')) {
         raise "ValueError": "XML must start with an element";
     }
-    root_index u32 = parser.parse_element()?!;
-    parser.skip_miscellaneous()?!;
+    root_index u32 = parser.parse_element()??;
+    parser.skip_miscellaneous()??;
     if (parser._index != parser._text.length()) {
         raise "ValueError": "trailing text after the root element";
     }
@@ -269,9 +269,9 @@ fn skip_miscellaneous(this &Parser) void except {
         this.skip_space();
         if (this.starts_with("<?") || this.starts_with("<!--")) {
             if (this.starts_with("<?") ) {
-                this.skip_until("?>")?!;
+                this.skip_until("?>")??;
             } else {
-                this.skip_until("-->")?!;
+                this.skip_until("-->")??;
             }
             continue;
         }
@@ -315,18 +315,18 @@ fn starts_with(this &Parser, word *const char) bool {
 
 // Reads one element, returning its node index.
 fn parse_element(this &Parser) u32 except {
-    this.expect('<')?!;
+    this.expect('<')??;
     index u32 = this._document->add_node();
     node *XmlNode = &this._document->_nodes[index as usize];
-    node._name = this.parse_name()?!;
-    this.parse_attributes(node)?!;
+    node._name = this.parse_name()??;
+    this.parse_attributes(node)??;
     this.skip_space();
     if (this.at('/')) {
         this._index += 1;
-        this.expect('>')?!;
+        this.expect('>')??;
         return index;
     }
-    this.expect('>')?!;
+    this.expect('>')??;
     // Children and text, until this element's end tag.
     while (true) {
         if (this._index >= this._text.length()) {
@@ -334,25 +334,25 @@ fn parse_element(this &Parser) u32 except {
         }
         if (this.starts_with("</")) {
             this._index += 2;
-            closing String = this.parse_name()?!;
+            closing String = this.parse_name()??;
             if (!(closing == node._name)) {
                 raise "ValueError": "a closing tag does not match its element";
             }
             this.skip_space();
-            this.expect('>')?!;
+            this.expect('>')??;
             node._text = trim_spaces(&node._text);
             return index;
         }
         if (this.starts_with("<!--")) {
-            this.skip_until("-->")?!;
+            this.skip_until("-->")??;
             continue;
         }
         if (this.at('<')) {
-            child u32 = this.parse_element()?!;
+            child u32 = this.parse_element()??;
             node._children.push(child);
             continue;
         }
-        character String = this.parse_text_run()?!;
+        character String = this.parse_text_run()??;
         node._text.push(&character);
     }
 }
@@ -364,9 +364,9 @@ fn parse_attributes(this &Parser, node *XmlNode) void except {
         if (this.at('>') || this.at('/')) {
             return;
         }
-        attribute_name String = this.parse_name()?!;
+        attribute_name String = this.parse_name()??;
         this.skip_space();
-        this.expect('=')?!;
+        this.expect('=')??;
         this.skip_space();
         character char = this._text[this._index];
         if (character != '"' as char && character != '\'' as char) {
@@ -384,7 +384,7 @@ fn parse_attributes(this &Parser, node *XmlNode) void except {
         this._index += 1;
         attribute XmlAttribute = XmlAttribute();
         attribute._name = util.move(attribute_name);
-        attribute._value = decode_entities(&raw)?!;
+        attribute._value = decode_entities(&raw)??;
         node._attributes.push(util.move(attribute));
     }
 }
@@ -418,7 +418,7 @@ fn parse_text_run(this &Parser) String except {
         this._index += 1;
     }
     raw String = this._text.substring(start, this._index - start);
-    return decode_entities(&raw)?!;
+    return decode_entities(&raw)??;
 }
 
 // Decodes the entities a text or attribute value may contain.
@@ -441,7 +441,7 @@ fn decode_entities(raw &const String) String except {
             raise "ValueError": "an entity is not closed";
         }
         entity String = raw.substring(index + 1, end - index - 1);
-        result.push(decode_entity(&entity)?!);
+        result.push(decode_entity(&entity)??);
         index = end + 1;
     }
     return result;
@@ -469,7 +469,7 @@ fn decode_entity(entity &const String) String except {
         if (entity[1] == 'x' as char) {
             index usize = 2;
             while (index < entity.length()) {
-                value = value * 16u32 + hex_digit(entity[index])?!;
+                value = value * 16u32 + hex_digit(entity[index])??;
                 index += 1;
             }
         } else {
@@ -479,7 +479,7 @@ fn decode_entity(entity &const String) String except {
                 index += 1;
             }
         }
-        return unicode.encode(value)?!;
+        return unicode.encode(value)??;
     }
     raise "ValueError": "unknown XML entity";
 }
@@ -558,7 +558,7 @@ fn c_length(word *const char) usize {
 // Writes an element and its children as XML text.
 export fn serialize(value &const XmlValue) String except {
     result String = String();
-    write_element(&result, value)?!;
+    write_element(&result, value)??;
     return result;
 }
 
@@ -585,7 +585,7 @@ fn write_element(out &String, value &const XmlValue) void except {
     index = 0;
     while (index < node._children.length()) {
         child_value XmlValue = XmlValue(value._document, node._children[index]);
-        write_element(out, &child_value)?!;
+        write_element(out, &child_value)??;
         index += 1;
     }
     out.push("</");

@@ -1,6 +1,6 @@
 // Colour and text styles for a terminal.
 //
-//     std.print("{}{}warning{}\n", term.bold(), term.yellow(), term.reset())?!;
+//     std.print("{}{}warning{}\n", term.bold(), term.yellow(), term.reset())??;
 //
 // The escape sequences are ANSI SGR, which every terminal on the platforms here
 // understands. The *policy* -- whether to emit them at all -- is
@@ -113,7 +113,7 @@ export fn supports_color() bool {
     term_text String = String("TERM");
     setting String = String();
     try {
-        setting = os.getenv(term_text.data())?!;
+        setting = os.getenv(term_text.data())??;
     } except {
         // An environment that cannot be read is not a reason to refuse colour;
         // the terminal check below still answers.

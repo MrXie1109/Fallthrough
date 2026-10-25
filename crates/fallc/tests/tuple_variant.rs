@@ -57,12 +57,12 @@ fn a_pair_copies_its_elements() {
 
 fn main() int except {
     point Pair<int, int> = Pair<int, int>(3, 4);
-    std.print("{} {}\n", point.first, point.second)?!;
+    std.print("{} {}\n", point.first, point.second)??;
     text Pair<String, int> = Pair<String, int>(String("hi"), 7);
     copied Pair<String, int> = text;
     copied.first.push('!');
-    std.print("{} {} {}\n", text.first, copied.first, copied.second)?!;
-    std.print("eq {}\n", (point == Pair<int, int>(3, 4)) as int)?!;
+    std.print("{} {} {}\n", text.first, copied.first, copied.second)??;
+    std.print("eq {}\n", (point == Pair<int, int>(3, 4)) as int)??;
     return 0;
 }
 "#;
@@ -76,9 +76,9 @@ fn a_triple_has_three_positions() {
 
 fn main() int except {
     three Triple<int, char, String> = Triple<int, char, String>(1, 'x', String("end"));
-    std.print("{} {} {}\n", three.first, three.third, three.second)?!;
+    std.print("{} {} {}\n", three.first, three.third, three.second)??;
     moved Triple<int, char, String> = std.move(three);
-    std.print("{} {}\n", moved.first, moved.third)?!;
+    std.print("{} {}\n", moved.first, moved.third)??;
     return 0;
 }
 "#;
@@ -92,17 +92,17 @@ fn a_variant_says_which_alternative_it_holds() {
 
 fn main() int except {
     value Variant2<int, String> = Variant2<int, String>(5);
-    std.print("{} {}\n", value.is_first() as int, value.first()?!)?!;
+    std.print("{} {}\n", value.is_first() as int, value.first()??)??;
     value.set_second(String("now text"));
-    std.print("{} {}\n", value.is_second() as int, value.second()?!)?!;
+    std.print("{} {}\n", value.is_second() as int, value.second()??)??;
     try {
-        std.print("never {}\n", value.first()?!)?!;
+        std.print("never {}\n", value.first()??)??;
     } except {
         e &const std.Exception = std.exception();
-        std.print("caught {}\n", e.name())?!;
+        std.print("caught {}\n", e.name())??;
     }
     copied Variant2<int, String> = value;
-    std.print("{} {}\n", copied.is_second() as int, copied.second()?!)?!;
+    std.print("{} {}\n", copied.is_second() as int, copied.second()??)??;
     return 0;
 }
 "#;

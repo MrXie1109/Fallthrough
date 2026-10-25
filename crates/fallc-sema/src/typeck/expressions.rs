@@ -518,9 +518,9 @@ impl TypeChecker {
             fallc_ast::ExprKind::SizeofPack(node) => {
                 self.type_of_sizeof_pack(node, node_span(ast, expr))
             }
-            // `call()?!` -- the call's value, unless it raises, in which case
+            // `call()??` -- the call's value, unless it raises, in which case
             // the exception leaves this function.
-            // `?!(expr)` -- analyse the expression and answer whether it may
+            // `??(expr)` -- analyse the expression and answer whether it may
             // raise. The answer is a constant, so this stands wherever one is
             // required.
             // A type is not a value. `type(expr)` is meaningful only where a
@@ -578,47 +578,58 @@ impl TypeChecker {
                 self.constant_values.insert(node_span(ast, expr), value);
                 Some(Type::BOOL)
             }
+            // `expr!!` is `try { expr } except { std.panic(); }`: the raise is
+            // handled here, by stopping the program, so the function does not
+            // have to say it may raise and nothing is passed on. The protected
+            // depth is what tells the calls inside that a handler encloses
+            // them.
+            fallc_ast::ExprKind::Abort(node) => {
+                self.protected_depth += 1;
+                let found = self.infer_expr(ast, resolutions, types, node.value);
+                self.protected_depth -= 1;
+                found
+            }
             fallc_ast::ExprKind::Propagate(node) => {
                 let span = node_span(ast, expr);
-                // A restriction writes `?!` to say that the *method* may raise,
+                // A restriction writes `?` to say that the *method* may raise,
                 // not to pass an exception on: there is no function here whose
                 // exceptions could leave, and the call is never emitted.
                 if !self.in_trait_requirement {
-                    self.require_throw_allowed(span, "`?!`");
+                    self.require_throw_allowed(span, "`?`");
                 }
                 self.propagating_depth += 1;
                 let found = self.infer_expr(ast, resolutions, types, node.value);
                 self.propagating_depth -= 1;
-                // A `?!` on something that cannot raise does nothing. In a
+                // A `?` on something that cannot raise does nothing. In a
                 // program that is worth a warning -- inside a template the same
-                // `?!` may be about a call that raises for some instantiations
+                // `?` may be about a call that raises for some instantiations
                 // and not for others, and a rule that made it an error would
                 // forbid the generic spelling the marker exists for.
                 //
-                // A restriction is the other way round: `?!` is how the
+                // A restriction is the other way round: `?` is how the
                 // declaration says the method may raise, so a method that never
                 // raises does not satisfy it.
                 let raises = self.throwing_calls.contains(&ast.expr(node.value).span);
                 if self.in_trait_requirement && found.is_some() && !raises {
                     self.diagnostics.push(
                         Diagnostic::error(
-                            "this call cannot raise, and the restriction marks it with `?!`",
+                            "this call cannot raise, and the restriction marks it with `?`",
                         )
                         .with_code(DiagnosticCode::sema(178))
                         .with_span(span)
                         .with_note(
-                            "`?!` in a restriction says the method returns through the \
+                            "`?` in a restriction says the method returns through the \
                              exception path; drop it if the method never raises",
                         ),
                     );
                 } else if found.is_some() && !raises {
                     self.diagnostics.push(
-                        Diagnostic::warning("this call cannot raise, so `?!` does nothing")
+                        Diagnostic::warning("this call cannot raise, so `?` does nothing")
                             .with_code(DiagnosticCode::sema(83))
                             .with_warning("useless-raise-mark")
                             .with_span(span)
                             .with_note(
-                                "`?!` passes on the exception a call may raise, and this one \
+                                "`?` passes on the exception a call may raise, and this one \
                                  raises nothing: drop the mark, or silence this line with \
                                  `// no warning` if the call is generic elsewhere",
                             ),

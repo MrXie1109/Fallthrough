@@ -240,6 +240,10 @@
         "named": true
       },
       {
+        "type": "qualified_type",
+        "named": true
+      },
+      {
         "type": "reference_type",
         "named": true
       },
@@ -515,7 +519,51 @@
         "required": true,
         "types": [
           {
-            "type": "expression",
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "field_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "literal",
+            "named": true
+          },
+          {
+            "type": "macro_invocation",
+            "named": true
+          },
+          {
+            "type": "method_call_expression",
+            "named": true
+          },
+          {
+            "type": "nullptr",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "qualified_type",
+            "named": true
+          },
+          {
+            "type": "template_call",
+            "named": true
+          },
+          {
+            "type": "this",
             "named": true
           }
         ]
@@ -1040,6 +1088,10 @@
           "named": true
         },
         {
+          "type": "assignment_expression",
+          "named": true
+        },
+        {
           "type": "binary_expression",
           "named": true
         },
@@ -1049,6 +1101,10 @@
         },
         {
           "type": "cast_expression",
+          "named": true
+        },
+        {
+          "type": "compound_assignment_expression",
           "named": true
         },
         {
@@ -1214,7 +1270,47 @@
         "required": true,
         "types": [
           {
-            "type": "expression",
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "field_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "literal",
+            "named": true
+          },
+          {
+            "type": "macro_invocation",
+            "named": true
+          },
+          {
+            "type": "method_call_expression",
+            "named": true
+          },
+          {
+            "type": "nullptr",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "template_call",
+            "named": true
+          },
+          {
+            "type": "this",
             "named": true
           }
         ]
@@ -1417,10 +1513,6 @@
           "named": true
         },
         {
-          "type": "qualified_name",
-          "named": true
-        },
-        {
           "type": "string_literal",
           "named": true
         },
@@ -1530,7 +1622,47 @@
         "required": true,
         "types": [
           {
-            "type": "expression",
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "field_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "literal",
+            "named": true
+          },
+          {
+            "type": "macro_invocation",
+            "named": true
+          },
+          {
+            "type": "method_call_expression",
+            "named": true
+          },
+          {
+            "type": "nullptr",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "template_call",
+            "named": true
+          },
+          {
+            "type": "this",
             "named": true
           }
         ]
@@ -1731,7 +1863,47 @@
         "required": true,
         "types": [
           {
-            "type": "expression",
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "field_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "literal",
+            "named": true
+          },
+          {
+            "type": "macro_invocation",
+            "named": true
+          },
+          {
+            "type": "method_call_expression",
+            "named": true
+          },
+          {
+            "type": "nullptr",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "template_call",
+            "named": true
+          },
+          {
+            "type": "this",
             "named": true
           }
         ]
@@ -1975,7 +2147,7 @@
     }
   },
   {
-    "type": "qualified_name",
+    "type": "qualified_type",
     "named": true,
     "fields": {},
     "children": {
@@ -2339,10 +2511,6 @@
         },
         {
           "type": "integer_literal",
-          "named": true
-        },
-        {
-          "type": "qualified_name",
           "named": true
         },
         {

@@ -624,7 +624,7 @@ impl<'ctx> Lowerer<'ctx> {
         let out_of_line = self.aggregate_is_by_address(&signature.returns);
         if out_of_line && signature.throws {
             return Err(CodegenError::waiting_for_spec(
-                "an imported `?!` function returning an aggregate that is passed out of line",
+                "an imported `??` function returning an aggregate that is passed out of line",
                 span,
             ));
         }
@@ -636,7 +636,7 @@ impl<'ctx> Lowerer<'ctx> {
                     .into(),
             );
         }
-        // A `?!` function in another module returns `{ ok, value, error }` like
+        // A `??` function in another module returns `{ ok, value, error }` like
         // this module's own, so the declaration built here has to say the same.
         let return_llvm = if signature.throws {
             match self.throwing_result_type(value_llvm) {

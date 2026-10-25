@@ -7,7 +7,7 @@
 //
 //     value Variant2<int, String> = Variant2<int, String>(3);
 //     if (value.is_first()) {
-//         std.print("{}\n", value.first()?!)?!;
+//         std.print("{}\n", value.first()??)??;
 //     }
 //
 // # Storage

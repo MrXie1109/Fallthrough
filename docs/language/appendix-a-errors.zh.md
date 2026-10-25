@@ -186,7 +186,7 @@
 | `S0082` | error | a `raise` operand must be a string, but this is `{}` |
 | `S0082` | error | {what} is only allowed in a function marked `except` |
 | `S0083` | error | a call to `{label}` may raise, and nothing here handles it |
-| `S0083` | warning | this call cannot raise, so `?!` does nothing |
+| `S0083` | warning | this call cannot raise, so `??` does nothing |
 | `S0084` | error | `type(expr)` cannot be used here |
 | `S0085` | error | `{}` contains itself by value, so it has no size |
 | `S0130` | error | `{trait_name}` asks about a type, but this argument is a value |
@@ -243,7 +243,7 @@
 | `S0177` | error | `{}` does not satisfy `{base}`: it has no method `{}` with this signature |
 | `S0178` | error | `{target_base}` cannot be made from `{source_base}`: it declares no method `{}` |
 | `S0178` | error | `{target_base}` cannot be made from `{source_base}`: method `{}` has a different signature |
-| `S0178` | error | this call cannot raise, and the restriction marks it with `?!` |
+| `S0178` | error | this call cannot raise, and the restriction marks it with `??` |
 | `S0179` | error | （实现内部文本） |
 | `S0180` | error | `{name}` omits `{parameter}`, whose default belongs to a template's parameter |
 | `S0181` | error | `main` returns `int` or nothing |
@@ -260,4 +260,4 @@
 警告编号与命令行的分组开关的对应关系见 [10 诊断 §5](10-diagnostics.zh.md#警告组)。
 一个警告组可以包含多个编号；反过来，一个编号只属于一个组（`useless-raise-mark`
 的 `S0083` 是唯一同时可能出现在错误与警告上下文中的编号，它在错误上下文里表示
-调用点未处理异常，在警告上下文里表示多余的 `?!`）。
+调用点未处理异常，在警告上下文里表示多余的 `??`）。

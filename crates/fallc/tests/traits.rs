@@ -669,10 +669,10 @@ fn a_requirement_argument_is_a_type_that_has_to_match() {
 
 #[test]
 fn a_restriction_says_whether_the_operation_may_raise() {
-    // `?!` is how a restriction says the operation returns through the
+    // `??` is how a restriction says the operation returns through the
     // exception path. Both directions are a mismatch, because whether a call
     // may raise is part of the call's type.
-    let raising = format!("{ARGUMENTS_AND_RAISES}\ntraits R(it T) {{ it.save(int)?! -> void, }}");
+    let raising = format!("{ARGUMENTS_AND_RAISES}\ntraits R(it T) {{ it.save(int)?? -> void, }}");
     let (outcome, output) = does(&raising, "R(File)");
     assert_eq!(outcome, Outcome::Success, "{output}");
     assert!(main_returns(&output, 1), "{output}");
@@ -682,7 +682,7 @@ fn a_restriction_says_whether_the_operation_may_raise() {
     assert_eq!(outcome, Outcome::Success, "{output}");
     assert!(main_returns(&output, 0), "{output}");
 
-    let marked = format!("{ARGUMENTS_AND_RAISES}\ntraits R(it T) {{ it.save(int)?! -> void, }}");
+    let marked = format!("{ARGUMENTS_AND_RAISES}\ntraits R(it T) {{ it.save(int)?? -> void, }}");
     let (outcome, output) = does(&marked, "R(Buffer)");
     assert_eq!(outcome, Outcome::Success, "{output}");
     assert!(main_returns(&output, 0), "{output}");

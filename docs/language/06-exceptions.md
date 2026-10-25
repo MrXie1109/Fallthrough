@@ -151,32 +151,43 @@ unmatched exception leaves the function as 5.7 says.
 conversions and assignment are covered too):
 
 1. it is inside a `try` block with an `except`;
-2. `?!` is written after the expression that may raise, handing the exception to the
+2. `??` is written after the expression that may raise, handing the exception to the
    caller of this function.
 
-6.2 `?!` is a postfix expression: `x?!` is equivalent to
+6.2 `??` is a postfix expression: `x??` is equivalent to
 `try { x } except { raise; }`.
 
-6.3 `?!` affects only the current call site; an enclosing `try` in the same function may
+6.3 `??` affects only the current call site; an enclosing `try` in the same function may
 still catch the exception.
 
 6.4 When an expression that may raise is left unhandled, the implementation **must**
 report a diagnostic.
 
-6.5 `?!` on an expression that cannot raise is a warning (`S0083`), not an error: within
+6.5 `??` on an expression that cannot raise is a warning (`S0083`), not an error: within
 a template instantiation, the same mark may be used for both raising and non-raising
 expressions.
 
+6.6 `!!` is the other postfix: `x!!` is equivalent to
+`try { x } except { std.panic(); }`. The exception is handled by stopping the program, so
+`!!` needs no `except` on the enclosing function and nothing leaves it. It is for the
+failure a program has decided is not worth handling.
+
+6.7 `??` and `!!` are the only two postfix marks. There is no `?!`: one question mark is
+the conditional's (see 7.x, `cond ? then : otherwise`) and belongs to the two-mark form.
+
+A single `?` is the conditional operator, and `?:` is how it reads: `cond ? then : else`.
+Because `??` is the propagation mark and `?` alone the conditional, neither needs to be
+told from the other by looking ahead.
 ## Implicit call sites
 
 7.1 The following constructs call member functions and are therefore also call sites:
 construction, assignment, operators, subscripts, type conversion, `__bool__` in a
 condition, `__call__`, `str()`, `repr()`.
 
-7.2 `?!` on an initializer protects the entire initialization, including a construction
+7.2 `??` on an initializer protects the entire initialization, including a construction
 call that the implementation inserts for the initialization.
 
-7.3 `?!` on an assignment belongs only to the right-hand expression; when the assignment
+7.3 `??` on an assignment belongs only to the right-hand expression; when the assignment
 operator itself may raise, the assignment is an unhandled call site.
 
 7.4 The call site of any other implicit call is the position of that expression; when

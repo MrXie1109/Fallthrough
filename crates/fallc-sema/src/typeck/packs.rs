@@ -344,6 +344,11 @@ impl Expander<'_> {
                     value: self.expr(node.value),
                 },
             ),
+            fallc_ast::ExprKind::Abort(node) => fallc_ast::ExprKind::Abort(
+                fallc_ast::AbortExpr {
+                    value: self.expr(node.value),
+                },
+            ),
             fallc_ast::ExprKind::TypeOf(inner) => {
                 fallc_ast::ExprKind::TypeOf(self.expr(*inner))
             }

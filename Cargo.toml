@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -20,13 +20,13 @@ repository = "https://example.invalid/fallthrough"
 description = "The Fallthrough compiler toolchain."
 
 [workspace.dependencies]
-fallc-span = { path = "crates/fallc-span", version = "0.1.0" }
-fallc-diag = { path = "crates/fallc-diag", version = "0.1.0" }
-fallc-lexer = { path = "crates/fallc-lexer", version = "0.1.0" }
-fallc-ast = { path = "crates/fallc-ast", version = "0.1.0" }
-fallc-parser = { path = "crates/fallc-parser", version = "0.1.0" }
-fallc-sema = { path = "crates/fallc-sema", version = "0.1.0" }
-fallc-ir = { path = "crates/fallc-ir", version = "0.1.0" }
+fallc-span = { path = "crates/fallc-span", version = "0.1.2" }
+fallc-diag = { path = "crates/fallc-diag", version = "0.1.2" }
+fallc-lexer = { path = "crates/fallc-lexer", version = "0.1.2" }
+fallc-ast = { path = "crates/fallc-ast", version = "0.1.2" }
+fallc-parser = { path = "crates/fallc-parser", version = "0.1.2" }
+fallc-sema = { path = "crates/fallc-sema", version = "0.1.2" }
+fallc-ir = { path = "crates/fallc-ir", version = "0.1.2" }
 # The Unicode identifier classes. `unicode-ident` is the crate the compiler
 # already depends on transitively, and it answers exactly the UAX #31 question
 # an identifier raises -- `XID_Start` and `XID_Continue` -- rather than the

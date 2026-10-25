@@ -57,25 +57,25 @@ fn a_document_is_parsed_and_read() {
 
 fn main() int except {
     body String = String("{\"name\": \"ada\", \"age\": 36, \"tags\": [1, 2, 3], \"ok\": true, \"none\": null}");
-    document JsonDocument = std.parse(&body)?!;
+    document JsonDocument = std.parse(&body)??;
     root JsonValue = document.root();
     ok_key String = String("ok");
-    std.print("{} {} {}\n", root.kind() as int, root.length(), root.member(&ok_key).value()?!.as_bool() as int)?!;
+    std.print("{} {} {}\n", root.kind() as int, root.length(), root.member(&ok_key).value()??.as_bool() as int)??;
     name_key String = String("name");
-    std.print("{}\n", root.member(&name_key).value()?!.as_text()?!)?!;
+    std.print("{}\n", root.member(&name_key).value()??.as_text()??)??;
     tags_key String = String("tags");
-    tags JsonValue = root.member(&tags_key).value()?!;
+    tags JsonValue = root.member(&tags_key).value()??;
     sum int = 0;
     index usize = 0;
     while (index < tags.length()) {
-        element JsonValue = tags.at(index)?!;
-        sum += element.as_number()?! as int;
+        element JsonValue = tags.at(index)??;
+        sum += element.as_number()?? as int;
         index += 1;
     }
     none_key String = String("none");
-    std.print("{} {}\n", sum, root.member(&none_key).value()?!.is_null() as int)?!;
+    std.print("{} {}\n", sum, root.member(&none_key).value()??.is_null() as int)??;
     missing_key String = String("missing");
-    std.print("{}\n", root.member(&missing_key).present() as int)?!;
+    std.print("{}\n", root.member(&missing_key).present() as int)??;
     return 0;
 }
 "#;
@@ -92,10 +92,10 @@ fn a_document_writes_back_the_same_json() {
 
 fn main() int except {
     body String = String("{\"name\":\"ada\",\"age\":36,\"tags\":[1,2,3],\"ok\":true,\"none\":null}");
-    document JsonDocument = std.parse(&body)?!;
+    document JsonDocument = std.parse(&body)??;
     root JsonValue = document.root();
-    written String = std.serialize(&root)?!;
-    std.print("{}\n", written)?!;
+    written String = std.serialize(&root)??;
+    std.print("{}\n", written)??;
     return 0;
 }
 "#;
@@ -112,20 +112,20 @@ fn malformed_json_and_wrong_accessors_raise() {
 
 fn main() int except {
     good String = String("[1, 2]");
-    document JsonDocument = std.parse(&good)?!;
+    document JsonDocument = std.parse(&good)??;
     root JsonValue = document.root();
     try {
-        std.print("never {}\n", root.as_text()?!)?!;
+        std.print("never {}\n", root.as_text()??)??;
     } except {
         e &const std.Exception = std.exception();
-        std.print("{}\n", e.name())?!;
+        std.print("{}\n", e.name())??;
     }
     bad String = String("[1,");
     try {
-        std.parse(&bad)?!;
+        std.parse(&bad)??;
     } except {
         e2 &const std.Exception = std.exception();
-        std.print("{}\n", e2.name())?!;
+        std.print("{}\n", e2.name())??;
     }
     return 0;
 }

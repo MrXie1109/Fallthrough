@@ -8,7 +8,7 @@
 // than sharing the string's buffer and freeing it twice.
 //
 //     point Pair<int, int> = Pair<int, int>(3, 4);
-//     std.print("{} {}\n", point.first, point.second)?!;
+//     std.print("{} {}\n", point.first, point.second)??;
 //
 // # Why not a built-in
 //

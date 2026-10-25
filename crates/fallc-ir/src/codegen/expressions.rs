@@ -254,9 +254,19 @@ impl<'ctx> Lowerer<'ctx> {
             }
             // A fold or a pack count is a constant: the checker combined or
             // counted the pack's elements, and what is left is the number.
-            // `call()?!` -- the call knows it is propagating from the record
+            // `call()?` -- the call knows it is propagating from the record
             // the checker made, so this only has to produce its value.
             ExprKind::Propagate(node) => self.lower_expr(ast, types, builder, node.value),
+            // `call()!!` -- the value, or the program stops. The call is
+            // lowered inside a handler of our own: if it raised, the exception
+            // is thrown away and the panic runs, so nothing leaves the
+            // function and no `except` is needed around it.
+            ExprKind::Abort(node) => {
+                self.abort_lowering += 1;
+                let value = self.lower_expr(ast, types, builder, node.value);
+                self.abort_lowering -= 1;
+                value
+            }
             // A query is a constant the checker recorded; nothing is left of
             // the expression it asked about.
             ExprKind::ThrowQuery(_) => {
@@ -266,7 +276,7 @@ impl<'ctx> Lowerer<'ctx> {
                     .copied()
                     .ok_or_else(|| {
                         CodegenError::Emit(
-                            "internal error: a `?!` query has no answer".to_owned(),
+                            "internal error: a `??` query has no answer".to_owned(),
                         )
                     })?;
                 Ok(Some(

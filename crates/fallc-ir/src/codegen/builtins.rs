@@ -631,7 +631,7 @@ impl<'ctx> Lowerer<'ctx> {
 
         // A conversion that may raise carries its answer in a tagged result:
         // the value is what the cast produces, and an error is the exception
-        // the caller's `?!` passes on. Lowering it as a plain value handed the
+        // the caller's `??` passes on. Lowering it as a plain value handed the
         // caller the result struct where a number was wanted.
         if method.signature.throws {
             let call_site = builder

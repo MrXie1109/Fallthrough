@@ -309,5 +309,5 @@ export fn rename(this &const Path, to &const Path) bool {
 // `File(p.text(), OpenMode.READ)`, and an empty or unopenable path raises the
 // same `IOError` the constructor does.
 export fn file(this &const Path, mode OpenMode) File except {
-    return File(this.text(), mode)?!;
+    return File(this.text(), mode)??;
 }

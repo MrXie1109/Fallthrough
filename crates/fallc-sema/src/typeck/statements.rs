@@ -969,19 +969,19 @@ impl TypeChecker {
                 // inside `init_overload_for`, which must not let the copy
                 // constructor claim a temporary the caller just made.
                 //
-                // # `?!` on the initialiser
+                // # `??` on the initialiser
                 //
                 // A construction written as an initialiser has no call to put
-                // `?!` on, so the marker goes on the initialiser itself:
-                // `copy String = this?!;` passes on a raise from the
+                // `??` on, so the marker goes on the initialiser itself:
+                // `copy String = this??;` passes on a raise from the
                 // constructor, which is the only thing there that can raise. It
-                // is not `?!` on `this`, which cannot raise anything.
+                // is not `??` on `this`, which cannot raise anything.
                 let mut argument = *expr;
                 let mut propagates = false;
                 if let fallc_ast::ExprKind::Propagate(inner) = &ast.expr(*expr).kind {
                     argument = inner.value;
                     propagates = true;
-                    self.require_throw_allowed(ast.expr(*expr).span, "`?!`");
+                    self.require_throw_allowed(ast.expr(*expr).span, "`??`");
                 }
                 if propagates {
                     self.propagating_depth += 1;
@@ -1019,10 +1019,10 @@ impl TypeChecker {
                     propagates = true;
                 }
                 // The constructor search re-infers the argument. `x auto =
-                // make()?!;` puts the marker on the initialiser, so the inner
+                // make()??;` puts the marker on the initialiser, so the inner
                 // call is inferred again here without it -- and, before this,
                 // "may raise and nothing handles it" was reported for a call the
-                // `?!` had already protected. The marker covers this second
+                // `??` had already protected. The marker covers this second
                 // inference too.
                 if propagates {
                     self.propagating_depth += 1;
@@ -1169,7 +1169,23 @@ impl TypeChecker {
         };
         match node.value {
             Some(value) => {
-                let _ = self.check_expr(ast, resolutions, types, value, &expected);
+                // `return expr;` is an initialisation position, exactly as `T x
+                // = expr;` and an argument are: when the value is not already
+                // the return type, the type's `__init__`/`__im_init__` may make
+                // it. Without this, a type whose `__im_init__` converts from a
+                // literal -- `return 300.0;` in a function returning `Celsius`
+                // -- was a type mismatch even though `Celsius c = 300.0;`
+                // worked.
+                let constructed = if expected.is_indirection()
+                    || expected.is_unspecified()
+                {
+                    None
+                } else {
+                    self.init_overload_for(&expected, value, ast, resolutions, types)
+                };
+                if constructed.is_none() {
+                    let _ = self.check_expr(ast, resolutions, types, value, &expected);
+                }
                 // A pointer-typed return wants the value, exactly as a
                 // pointer-typed binding does: `return *p;` in a function
                 // returning `*T` is the pointee, and code generation read it as
@@ -1198,8 +1214,8 @@ impl TypeChecker {
 
     /// Records a call that may raise, and reports one that nobody guards.
     ///
-    /// A call may raise when its callee says so with `?!`. What makes it safe is
-    /// being inside a `try` body with an `except`, or carrying a `?!` of its own
+    /// A call may raise when its callee says so with `??`. What makes it safe is
+    /// being inside a `try` body with an `except`, or carrying a `??` of its own
     /// -- and the second is only available in a function that may raise.
     pub(super) fn note_throwing_call(
         &mut self,
@@ -1221,7 +1237,7 @@ impl TypeChecker {
         // is recorded either way; what the condition can lift is the *duty* to
         // protect it.
         self.throwing_calls.insert(span);
-        // A `try` that encloses this call is what `?!` re-raises into: the
+        // A `try` that encloses this call is what `??` re-raises into: the
         // marker means `try { call() } except { raise; }`, so its handler is
         // the innermost `except` above it, not the caller of the function.
         // This is checked before `propagating_depth`, because being inside a
@@ -1234,7 +1250,7 @@ impl TypeChecker {
             self.propagating_calls.insert(span);
             return;
         }
-        // `?!(cond)` claims the function raises only when `cond` holds. The
+        // `??(cond)` claims the function raises only when `cond` holds. The
         // condition names the callee's parameters, and the call's arguments are
         // what they are, so it can be *decided* here when those arguments are
         // constants -- `f(-1)` may raise, `f(3)` may not.
@@ -1247,7 +1263,7 @@ impl TypeChecker {
     /// Records that the operation at `span` may raise, for a callee that has no
     /// signature to consult.
     ///
-    /// The rules are [`Self::note_throwing_call`]'s without the `?!(cond)`
+    /// The rules are [`Self::note_throwing_call`]'s without the `??(cond)`
     /// question. Two callees have no signature to consult: a virtual call of an
     /// interface method, and a call of a lambda. `message` is the diagnostic's
     /// text, and it is the only thing the two do not share.
@@ -1269,7 +1285,7 @@ impl TypeChecker {
                 .with_code(DiagnosticCode::sema(83))
                 .with_span(span)
                 .with_note(
-                    "put it in a `try` with an `except`, write `?!` to pass this one on, or \
+                    "put it in a `try` with an `except`, write `??` to pass this one on, or \
                      wrap the whole region in `try { .. } except { raise; }`",
                 ),
         );
@@ -1284,13 +1300,13 @@ impl TypeChecker {
             .with_code(DiagnosticCode::sema(83))
             .with_span(span)
             .with_note(
-                "put it in a `try` with an `except`, write `?!` to pass this one on, or wrap \
+                "put it in a `try` with an `except`, write `??` to pass this one on, or wrap \
                  the whole region in `try { .. } except { raise; }`",
             ),
         );
     }
 
-    /// Returns `true` when a `?!(cond)` callee provably cannot raise here.
+    /// Returns `true` when a `??(cond)` callee provably cannot raise here.
     ///
     /// Only a condition in *this* tree can be looked at, and only constant
     /// arguments can decide it: `f(n < 0)` with a literal argument is a fact,
@@ -1352,7 +1368,7 @@ impl TypeChecker {
         }
         // A `try` that encloses the raise is what takes it: the exception
         // never leaves the function, so the function does not have to say it
-        // may raise. `?!` is the same case -- it re-raises at the marker, and
+        // may raise. `??` is the same case -- it re-raises at the marker, and
         // an enclosing `try` catches the re-raise.
         if self.protected_depth > 0 {
             return;

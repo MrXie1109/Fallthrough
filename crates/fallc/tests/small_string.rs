@@ -332,22 +332,22 @@ fn text_converts_to_a_number_or_it_raises() {
 
 fn attempt(label *const char, text &const String) void except {
     try {
-        C.printf("%s %d\n", label, text as int?!);
+        C.printf("%s %d\n", label, text as int??);
     } except {
         C.printf("%s bad\n", label);
     }
 }
 
 fn main() int except {
-    attempt("twelve", String("12"))?!;
-    attempt("negative", String("-7"))?!;
-    attempt("junk", String("12x"))?!;
-    attempt("empty", String(""))?!;
-    attempt("overflow", String("99999999999"))?!;
-    C.printf("size %lu\n", String("42") as usize?!);
-    C.printf("real %.1f\n", String("2.5e2") as f64?!);
+    attempt("twelve", String("12"))??;
+    attempt("negative", String("-7"))??;
+    attempt("junk", String("12x"))??;
+    attempt("empty", String(""))??;
+    attempt("overflow", String("99999999999"))??;
+    C.printf("size %lu\n", String("42") as usize??);
+    C.printf("real %.1f\n", String("2.5e2") as f64??);
     try {
-        C.printf("real junk %f\n", String("2.5x") as f64?!);
+        C.printf("real junk %f\n", String("2.5x") as f64??);
     } except {
         C.printf("real junk bad\n");
     }
@@ -370,14 +370,14 @@ fn a_reference_renders_as_its_referent() {
     let source = r#"import std;
 
 fn show(text &const String) void except {
-    std.out.print("ref ", text, "\n")?!;
+    std.out.print("ref ", text, "\n")??;
 }
 
 fn main() int except {
     text String = "abc";
-    std.out.print("value ", text, "\n")?!;
-    std.out.print("str ", str(text), "\n")?!;
-    show(text)?!;
+    std.out.print("value ", text, "\n")??;
+    std.out.print("str ", str(text), "\n")??;
+    show(text)??;
     return 0;
 }
 "#;
@@ -397,17 +397,17 @@ import C;
 
 fn main() int except {
     C.printf("%d %lu %f\n",
-        String("-42") as int?!,
-        String("100") as usize?!,
-        String("2.5e2") as f64?!);
+        String("-42") as int??,
+        String("100") as usize??,
+        String("2.5e2") as f64??);
     try {
-        C.printf("never %d\n", String("12x") as int?!);
+        C.printf("never %d\n", String("12x") as int??);
     } except {
         e &const std.Exception = std.exception();
         C.printf("%s: %s\n", e.name().data(), e.what().data());
     }
     try {
-        C.printf("never %lu\n", String("-1") as usize?!);
+        C.printf("never %lu\n", String("-1") as usize??);
     } except {
         e &const std.Exception = std.exception();
         C.printf("%s\n", e.name().data());

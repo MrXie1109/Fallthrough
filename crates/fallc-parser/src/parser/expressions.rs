@@ -97,17 +97,18 @@ impl Parser {
         loop {
             let token = stream.peek(0).clone();
 
-            // `cond ? then : otherwise`. The middle operand is a *full*
-            // expression -- everything up to the `:` belongs to it -- so it is
-            // parsed at the lowest precedence rather than at this operator's.
-            // The right side recurses at the same level, which is what makes
-            // the operator right-associative.
-            if token.kind == TokenKind::Punct(Punctuation::Question) {
-                // `?!` is the propagation marker, not the start of a
-                // conditional: the `!` that follows a `?` is never an operand.
-                if stream.peek_kind(1) == TokenKind::Punct(Punctuation::Bang) {
-                    break;
-                }
+            // `cond ? then : otherwise`, and `call()??` for the postfix that
+            // passes an exception on. One `?` is the conditional, two is the
+            // postfix: the second question mark is what tells them apart, and
+            // nothing has to be looked for past it.
+            //
+            // The middle operand is a *full* expression -- everything up to the
+            // `:` belongs to it -- so it is parsed at the lowest precedence
+            // rather than at this operator's. The right side recurses at the
+            // same level, which is what makes the operator right-associative.
+            if token.kind == TokenKind::Punct(Punctuation::Question)
+                && stream.peek_kind(1) != TokenKind::Punct(Punctuation::Question)
+            {
                 if crate::precedence::CONDITIONAL_PRECEDENCE < min_bp.right {
                     break;
                 }
@@ -485,6 +486,7 @@ impl Parser {
             | TokenKind::Float
             | TokenKind::Char
             | TokenKind::String
+            | TokenKind::FString
             | TokenKind::ByteString
             | TokenKind::RawString
             | TokenKind::Ident => stream.advance(),
@@ -591,6 +593,14 @@ impl Parser {
                 width: char_literal_width(&text),
             }),
 
+            // `f"..."` becomes a `std.format` call: the text between the
+            // quotes is the format, and each `{...}` is an argument, in the
+            // order it appears. The literal carries its own `f`, so the body
+            // is taken without it.
+            TokenKind::FString => {
+                let body = text.strip_prefix('f').unwrap_or(&text);
+                return Some(self.expand_fstring(stream, ast, body, span));
+            }
             TokenKind::String => ExprKind::StringLiteral(text),
             TokenKind::ByteString => ExprKind::ByteStringLiteral(text),
             TokenKind::RawString => ExprKind::RawStringLiteral(text),
@@ -877,19 +887,35 @@ impl Parser {
                 );
                 continue;
             }
-            // `call()?!` -- pass the call's exception on, and keep its value.
+            // `call()??` -- pass the call's exception on, and keep its value.
             //
             // Read in the postfix loop because it binds to the expression
             // before it, and because what it produces is a value: the call's
-            // own, when there is no exception.
+            // own, when there is no exception. Two question marks, because one
+            // is the conditional: `a ? b : c` and `a??` cannot be confused.
             if stream.at(TokenKind::Punct(Punctuation::Question))
-                && stream.peek_kind(1) == TokenKind::Punct(Punctuation::Bang)
+                && stream.peek_kind(1) == TokenKind::Punct(Punctuation::Question)
             {
                 let start = ast.expr(expr).span;
                 stream.advance();
                 let end = stream.advance().span;
                 expr = ast.builder().alloc_expr(
                     ExprKind::Propagate(fallc_ast::PropagateExpr { value: expr }),
+                    start.to(end),
+                );
+                continue;
+            }
+            // `call()!!` -- the value, or the program stops. `!!` is two
+            // bangs because one is `!=`'s first character and a single `!` is
+            // the logical not; the pair is unambiguous in postfix position.
+            if stream.at(TokenKind::Punct(Punctuation::Bang))
+                && stream.peek_kind(1) == TokenKind::Punct(Punctuation::Bang)
+            {
+                let start = ast.expr(expr).span;
+                stream.advance();
+                let end = stream.advance().span;
+                expr = ast.builder().alloc_expr(
+                    ExprKind::Abort(fallc_ast::AbortExpr { value: expr }),
                     start.to(end),
                 );
                 continue;
@@ -923,4 +949,171 @@ impl Parser {
 
     // ------------------------------------------------------------- recovery
 
+}
+
+impl Parser {
+    /// Builds `std.format("...", args...)` from the body of an `f"..."`.
+    ///
+    /// The body is already one token, so the placeholders it names have to be
+    /// read out of its text and then parsed as expressions. They are lexed
+    /// again here rather than being kept as tokens: the lexer produces one
+    /// interpolated-string token on purpose, so that what is inside a
+    /// placeholder is the parser's business and the lexer stays context-free.
+    ///
+    /// `{{` and `}}` are the escapes for literal braces, as in every language
+    /// that has this feature: a format string has to be able to say `{` without
+    /// naming a value.
+    fn expand_fstring(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+        body: &str,
+        span: fallc_span::Span,
+    ) -> fallc_ast::ExprId {
+        let (format, placeholders) = split_fstring(body);
+        // The format string is a literal of this tree, so its span is the
+        // literal's: a diagnostic about the format points at the whole thing.
+        let format_id = ast.builder().alloc_expr(
+            fallc_ast::ExprKind::StringLiteral(format),
+            span,
+        );
+        // The call is `std.format(...)`: the standard library's format, so an
+        // f-string means the same thing whatever the file imports. A program
+        // that writes an f-string needs `import std;`, exactly as one that
+        // calls `std.println` does.
+        // A span of its own, one byte in: two names must not share a span, or
+        // resolution records one binding and reads it for both.
+        let module_span = fallc_span::Span {
+            file: span.file,
+            lo: span.lo.saturating_add(1),
+            hi: span.lo.saturating_add(2),
+        };
+        let module = ast
+            .builder()
+            .alloc_expr(fallc_ast::ExprKind::Name("std".to_owned()), module_span);
+        let callee = ast.builder().alloc_expr(
+            fallc_ast::ExprKind::Field(fallc_ast::FieldExpr {
+                object: module,
+                field: "format".to_owned(),
+                through_pointer: false,
+            }),
+            span,
+        );
+        let mut args = vec![format_id];
+        for (source, _spec) in placeholders {
+            // Each placeholder is parsed with the same parser the rest of the
+            // file uses, from its own token stream.
+            let mut lexer = fallc_lexer::Lexer::new(fallc_lexer::LexerConfig {
+                preserve_trivia: false,
+                errors_are_warnings: false,
+            });
+            let lexed = lexer.tokenize(&source, fallc_span::FileId::SYNTHETIC);
+            let tokens = lexed.tokens;
+            let mut inner = TokenStream::new(tokens);
+            match self.parse_expr(&mut inner, ast) {
+                Some(expression) => args.push(expression),
+                None => {
+                    self.push_diagnostic(
+                        fallc_diag::Diagnostic::error(
+                            "this placeholder is not an expression",
+                        )
+                        .with_code(fallc_diag::DiagnosticCode::parser(1))
+                        .with_span(span),
+                    );
+                }
+            }
+        }
+        let _ = stream;
+        let call = ast.builder().alloc_expr(
+            fallc_ast::ExprKind::Call(fallc_ast::CallExpr {
+                callee,
+                args,
+                named: Vec::new(),
+                template_args: Vec::new(),
+                explicit_template_arguments: false,
+            }),
+            span,
+        );
+        // No marker of its own: an f-string expands to a plain call, and what
+        // happens when building the text fails is the caller's decision --
+        // `f".."?` passes the exception on, `f".."!!` stops the program, and
+        // writing neither asks the checker to report an unhandled raise.
+        call
+    }
+}
+
+/// Splits the body of an `f"..."` into the format text and its placeholders.
+///
+/// `{{` and `}}` become one brace in the format text. A `{expr}` yields the
+/// expression, and `{expr:spec}` yields both: the spec is kept as the
+/// placeholder's own, so `{n:#x}` becomes `{: #x}` in the format and `n` in the
+/// arguments. The scan stops at the first `}` that closes the placeholder, so a
+/// `:` inside it is the spec's unless it is inside brackets -- which is why the
+/// nesting depth is counted.
+fn split_fstring(body: &str) -> (String, Vec<(String, String)>) {
+    let mut format = String::new();
+    let mut placeholders = Vec::new();
+    let mut characters = body.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            // `{{` and `}}` are a literal brace. They are kept doubled in the
+            // format string: the placeholder scanner downstream treats a single
+            // `{` as the start of a placeholder, so collapsing them here would
+            // turn an escaped brace back into one.
+            '{' if characters.peek() == Some(&'{') => {
+                characters.next();
+                format.push_str("{{");
+            }
+            '}' if characters.peek() == Some(&'}') => {
+                characters.next();
+                format.push_str("}}");
+            }
+            '{' => {
+                let mut expression = String::new();
+                let mut spec = String::new();
+                let mut in_spec = false;
+                let mut depth = 1usize;
+                for inner in characters.by_ref() {
+                    match inner {
+                        '{' | '(' | '[' => {
+                            depth += 1;
+                            if in_spec {
+                                spec.push(inner);
+                            } else {
+                                expression.push(inner);
+                            }
+                        }
+                        '}' | ')' | ']' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                            if in_spec {
+                                spec.push(inner);
+                            } else {
+                                expression.push(inner);
+                            }
+                        }
+                        ':' if depth == 1 && !in_spec => {
+                            in_spec = true;
+                        }
+                        other => {
+                            if in_spec {
+                                spec.push(other);
+                            } else {
+                                expression.push(other);
+                            }
+                        }
+                    }
+                }
+                format.push('{');
+                format.push(':');
+                format.push_str(&spec);
+                format.push('}');
+                placeholders.push((expression, spec));
+            }
+            other => format.push(other),
+        }
+    }
+    (format, placeholders)
 }

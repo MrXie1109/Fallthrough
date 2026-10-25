@@ -58,20 +58,20 @@ fn encodings_round_trip_and_match_the_known_text() {
 fn main() int except {
     data Bytes = Bytes("AB");
     hex String = std.hex_encode(&data);
-    std.print("{} {}\n", hex, (std.hex_decode(&hex)?! as String))?!;
+    std.print("{} {}\n", hex, (std.hex_decode(&hex)?? as String))??;
     b64 String = std.base64_encode(&data);
-    std.print("{} {}\n", b64, (std.base64_decode(&b64)?! as String))?!;
+    std.print("{} {}\n", b64, (std.base64_decode(&b64)?? as String))??;
     greeting Bytes = Bytes("hello");
-    std.print("{}\n", std.base64_encode(&greeting))?!;
+    std.print("{}\n", std.base64_encode(&greeting))??;
     url String = String("a b/c");
     encoded String = std.percent_encode(&url);
-    std.print("{} {}\n", encoded, (std.percent_decode(&encoded)?! as String))?!;
+    std.print("{} {}\n", encoded, (std.percent_decode(&encoded)?? as String))??;
     try {
         bad String = String("x");
-        std.hex_decode(&bad)?!;
+        std.hex_decode(&bad)??;
     } except {
         e &const std.Exception = std.exception();
-        std.print("{}\n", e.name())?!;
+        std.print("{}\n", e.name())??;
     }
     return 0;
 }
@@ -88,18 +88,18 @@ fn utf8_encodes_decodes_and_is_validated() {
     let source = r#"import std;
 
 fn main() int except {
-    e String = std.encode(0x00e9u32)?!;
-    std.print("{} {} {} {}\n", e.length(), std.valid(&e) as int, std.count(&e), std.decode(&e)?![0])?!;
+    e String = std.encode(0x00e9u32)??;
+    std.print("{} {} {} {}\n", e.length(), std.valid(&e) as int, std.count(&e), std.decode(&e)??[0])??;
     hello String = String("héllo");
-    std.print("{} {}\n", hello.length(), std.count(&hello))?!;
+    std.print("{} {}\n", hello.length(), std.count(&hello))??;
     bad String = String("x");
     bad.push(0xff as char);
-    std.print("{}\n", std.valid(&bad) as int)?!;
+    std.print("{}\n", std.valid(&bad) as int)??;
     try {
-        std.decode(&bad)?!;
+        std.decode(&bad)??;
     } except {
         e2 &const std.Exception = std.exception();
-        std.print("{}\n", e2.name())?!;
+        std.print("{}\n", e2.name())??;
     }
     return 0;
 }
@@ -120,21 +120,21 @@ fn main() int except {
     parts.push(String("x"));
     parts.push(String("y"));
     sep String = String(", ");
-    std.print("{}\n", std.join(&parts, &sep))?!;
+    std.print("{}\n", std.join(&parts, &sep))??;
     ab String = String("ab");
-    std.print("{}\n", std.repeat(&ab, 3usize))?!;
+    std.print("{}\n", std.repeat(&ab, 3usize))??;
     dash String = String("-");
     plus String = String("+");
     base String = String("a-b-c");
-    std.print("{}\n", std.replace_all(&base, &dash, &plus))?!;
+    std.print("{}\n", std.replace_all(&base, &dash, &plus))??;
     seven String = String("7");
-    std.print("{} {}\n", std.pad_start(&seven, 3usize, '0' as char), std.pad_end(&seven, 3usize, '.' as char))?!;
+    std.print("{} {}\n", std.pad_start(&seven, 3usize, '0' as char), std.pad_end(&seven, 3usize, '.' as char))??;
     mixed String = String("aBc");
     shout String = String("HeLLo");
-    std.print("{} {}\n", std.upper(&mixed), std.lower(&shout))?!;
+    std.print("{} {}\n", std.upper(&mixed), std.lower(&shout))??;
     text String = String("a\nb\n");
     parts2 Array<String> = std.lines(&text);
-    std.print("{}\n", parts2.length())?!;
+    std.print("{}\n", parts2.length())??;
     return 0;
 }
 "#;
@@ -152,13 +152,13 @@ fn a_grid_is_rows_of_equal_length() {
 fn main() int except {
     grid Grid<int> = Grid<int>(2usize, 3usize, 0);
     grid.set(1, 2, 7);
-    std.print("{} {} {} {}\n", grid.rows(), grid.columns(), grid.length(), grid.at(1, 2))?!;
-    std.print("{}\n", grid.at(0, 0))?!;
+    std.print("{} {} {} {}\n", grid.rows(), grid.columns(), grid.length(), grid.at(1, 2))??;
+    std.print("{}\n", grid.at(0, 0))??;
     filled Grid<int> = Grid<int>(2usize, 2usize, 5);
     filled.fill(9);
-    std.print("{}\n", filled.at(1, 1))?!;
+    std.print("{}\n", filled.at(1, 1))??;
     copy Grid<int> = filled;
-    std.print("{} {}\n", (copy == filled) as int, copy.at(0, 1))?!;
+    std.print("{} {}\n", (copy == filled) as int, copy.at(0, 1))??;
     return 0;
 }
 "#;

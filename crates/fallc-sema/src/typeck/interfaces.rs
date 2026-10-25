@@ -562,7 +562,7 @@ impl TypeChecker {
             }
         }
         // A method that may raise is a throwing call like any other: the
-        // exception belongs to this call site, so a `try` here catches it, `?!`
+        // exception belongs to this call site, so a `try` here catches it, `??`
         // passes it on, and otherwise the function has to say it may raise.
         if method.throws {
             self.note_raising_site(

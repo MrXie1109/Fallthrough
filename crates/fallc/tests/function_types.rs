@@ -310,7 +310,7 @@ fn risky(n int) int except {
 }
 
 fn apply(f *fn(int) int except, v int) int except {
-    return f(v)?!;
+    return f(v)??;
 }
 
 fn main() int {

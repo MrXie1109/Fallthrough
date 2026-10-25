@@ -621,7 +621,7 @@ impl<'ctx> Lowerer<'ctx> {
     /// [`MAX_RETURN_BY_VALUE`], because the same instruction-selection limit
     /// applies to a large struct. Smaller records keep the value convention:
     /// they travel in registers on every target this backend emits for, and
-    /// every existing `?!` result struct and standard-library signature that
+    /// every existing `??` result struct and standard-library signature that
     /// carries one stays as it was.
     pub(super) fn aggregate_is_by_address(&self, ty: &Type) -> bool {
         let ty = ty.unqualified();
@@ -763,14 +763,14 @@ impl<'ctx> Lowerer<'ctx> {
             }
         };
         // An aggregate too big for LLVM's SSA selection is written through a
-        // hidden first parameter. A `?!` function does not use it: its result
+        // hidden first parameter. A `??` function does not use it: its result
         // struct carries the value inline, and the tag has to come back too, so
         // the hidden slot would leave the result nowhere. Returning the struct
         // by value is the shape that works.
         let out_of_line = !returns_nothing
             && function.throws.is_none()
             && self.aggregate_is_by_address(&return_type);
-        // A `?!` function returns its value *or* an exception, so the shape of
+        // A `??` function returns its value *or* an exception, so the shape of
         // its result is decided by the annotation and by nothing else.
         let return_llvm = if function.throws.is_some() {
             match self.throwing_result_type(value_llvm) {
@@ -924,12 +924,12 @@ impl<'ctx> Lowerer<'ctx> {
             }
         };
         // An aggregate too large for LLVM's SSA selection is written through a
-        // hidden first parameter instead of being returned. A `?!` function
+        // hidden first parameter instead of being returned. A `??` function
         // keeps its inline result struct instead, tag and value together.
         let out_of_line = !returns_nothing
             && function.throws.is_none()
             && self.aggregate_is_by_address(&return_type);
-        // A `?!` function returns `{ ok, value, error }` instead of its value.
+        // A `??` function returns `{ ok, value, error }` instead of its value.
         let return_llvm = if function.throws.is_some() {
             match self.throwing_result_type(value_llvm) {
                 Some(llvm) => Some(llvm),
@@ -1073,7 +1073,7 @@ impl<'ctx> Lowerer<'ctx> {
         // The escape paths run `finally` blocks, which are statements, so they
         // need the bindings the body was lowered with.
         self.current_bindings = bindings.clone();
-        // A `?!` function builds its result in one place, because there are
+        // A `??` function builds its result in one place, because there are
         // three ways to fill it -- `return`, `raise`, and an exception passing
         // through -- and they must agree on the layout.
         self.exc_result = None;
@@ -1272,7 +1272,7 @@ impl<'ctx> Lowerer<'ctx> {
             // through into whatever the linker placed next, which printed its
             // output forever. `ret void` is what actually ends the function.
             if self.exc_result.is_some() {
-                // A `?!` function's fallthrough is still a *result*: `ok` with
+                // A `??` function's fallthrough is still a *result*: `ok` with
                 // no value. A plain `ret void` has the wrong shape, and LLVM
                 // refuses the module rather than emitting it.
                 let _ = self.build_function_return(&builder, None);
@@ -1294,7 +1294,7 @@ impl<'ctx> Lowerer<'ctx> {
     /// of the parameter's type, with the same mangling every method call uses.
     /// A constructor that can raise is skipped: calling it at a function's
     /// entry would have to propagate, and a parameter copy has no call site to
-    /// carry the `?!` marker.
+    /// carry the `??` marker.
     fn parameter_copy_constructor(
         &mut self,
         ty: &fallc_sema::Type,

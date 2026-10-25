@@ -445,15 +445,27 @@ pub struct CastExpr {
     pub ty: TypeSyntax,
 }
 
-/// `call()?!` -- run the call and let whatever it raises keep going.
+/// `call()??` -- run the call and let whatever it raises keep going.
 ///
 /// It is the same as `try { call(); } except { raise; }`, and legal only where
 /// raising is allowed at all: the propagation has to end somewhere, and a
 /// function that cannot raise cannot be the place. It is an *expression* rather
-/// than a statement so that the value survives: `v int = inner(n)?!;`.
+/// than a statement so that the value survives: `v int = inner(n)??;`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PropagateExpr {
     /// The expression whose exception is passed on.
+    pub value: ExprId,
+}
+
+/// `call()!!` -- the value, or the program stops.
+///
+/// It is `try { call() } except { std.panic(); }` written as a postfix, for the
+/// failure a program has decided is not worth handling: a missing resource at
+/// start-up, a case that cannot happen. Unlike `?` it needs no `except` on the
+/// function, because nothing leaves it.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct AbortExpr {
+    /// The expression that must not raise.
     pub value: ExprId,
 }
 
@@ -612,9 +624,13 @@ pub enum ExprKind {
     /// one of the two branches is evaluated, which is why this is a node of its
     /// own rather than a call to some function.
     Conditional(ConditionalExpr),
-    /// `call()?!` -- the value, unless the call raises, in which case the
+    /// `call()?` -- the value, unless the call raises, in which case the
     /// exception leaves the enclosing function.
     Propagate(PropagateExpr),
+    /// `call()!!` -- the value, unless the call raises, in which case the
+    /// program stops: the panic is the whole answer, and there is no exception
+    /// left to pass on or to catch.
+    Abort(AbortExpr),
     /// `type(expr)` written where an expression is expected -- a *type*, not a
     /// value.
     ///

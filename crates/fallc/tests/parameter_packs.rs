@@ -66,7 +66,7 @@ fn count_and_sum(values ...Ts) int {
 }
 
 fn main() int except {
-    std.out.print(count_and_sum(1, 2, 3), " ", count_and_sum(7), " ", count_and_sum(), "\n")?!;
+    std.out.print(count_and_sum(1, 2, 3), " ", count_and_sum(7), " ", count_and_sum(), "\n")??;
     return 0;
 }
 "#;
@@ -83,22 +83,22 @@ type Sink { }
 fn __init__(this &Sink) void { }
 
 fn put(this &Sink, value int) void except {
-    std.out.print("i", value, " ")?!;
+    std.out.print("i", value, " ")??;
 }
 
 fn put(this &Sink, value f64) void except {
-    std.out.print("f", value, " ")?!;
+    std.out.print("f", value, " ")??;
 }
 
 template <Ts ...type>
 fn emit(sink &Sink, values ...Ts) void except {
-    (sink.put(values)?!, ...);
+    (sink.put(values)??, ...);
 }
 
 fn main() int except {
     s Sink;
-    emit(s, 1, 2.5, 3)?!;
-    std.out.print("\n")?!;
+    emit(s, 1, 2.5, 3)??;
+    std.out.print("\n")??;
     return 0;
 }
 "#;
@@ -123,7 +123,7 @@ fn forward(values ...Ts) int {
 }
 
 fn main() int except {
-    std.out.print(forward(1, 2, 3), " ", forward(9), "\n")?!;
+    std.out.print(forward(1, 2, 3), " ", forward(9), "\n")??;
     return 0;
 }
 "#;
@@ -156,7 +156,7 @@ fn the_output_device_writes_more_than_eight_arguments() {
     let source = r#"import std;
 
 fn main() int except {
-    std.out.print(1, " ", 2, " ", 3, " ", 4, " ", 5, " ", 6, " ", 7, " ", 8, " ", 9, " ", 10, "\n")?!;
+    std.out.print(1, " ", 2, " ", 3, " ", 4, " ", 5, " ", 6, " ", 7, " ", 8, " ", 9, " ", 10, "\n")??;
     return 0;
 }
 "#;
@@ -183,13 +183,13 @@ fn __init__(this &Dev<M>) void { }
 export
 template <Ts ...type>
 fn __call__(this &Dev<M>, values ...Ts) void except {
-    (std.out.print(values, " ")?!, ...);
+    (std.out.print(values, " ")??, ...);
 }
 
 fn main() int except {
     d Dev<Mode.A>;
-    d(1, 2, 3)?!;
-    std.out.print("\n")?!;
+    d(1, 2, 3)??;
+    std.out.print("\n")??;
     return 0;
 }
 "#;
@@ -290,11 +290,11 @@ fn a_pack_expansion_may_pass_a_print_with_a_literal() {
 
 template <Ts ...type>
 fn show(values ...Ts) void except {
-    (std.out.println("x =", values)?!, ...);
+    (std.out.println("x =", values)??, ...);
 }
 
 fn main() int except {
-    show(1, 2, 3)?!;
+    show(1, 2, 3)??;
     return 0;
 }
 "#;

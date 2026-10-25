@@ -1,6 +1,6 @@
 // Signal handlers.
 //
-//     installed Handler = std.install(2, &on_interrupt)?!;
+//     installed Handler = std.install(2, &on_interrupt)??;
 //
 // The C runtime's `signal` is the smallest portable way to say "call this
 // function when this signal arrives": it returns the previous handler, which the

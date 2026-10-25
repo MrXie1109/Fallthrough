@@ -1,7 +1,7 @@
 // CSV: comma-separated rows, with quotes.
 //
-//     rows Array<Array<String>> = csv.parse(&text)?!;
-//     text2 String = csv.write(&rows)?!;
+//     rows Array<Array<String>> = csv.parse(&text)??;
+//     text2 String = csv.write(&rows)??;
 //
 // # The rule
 //

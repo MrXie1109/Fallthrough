@@ -105,7 +105,7 @@ pub(super) fn external_signature(
         param_names: signature.param_names.clone(),
         returns: resolve(&signature.return_type, false),
         variadic: signature.variadic,
-        // A `?!` function's result carries the exception, so a caller in
+        // A `??` function's result carries the exception, so a caller in
         // another module has to build the same shape for the call.
         throws: signature.throws,
         symbol,

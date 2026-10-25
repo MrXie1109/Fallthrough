@@ -17,8 +17,8 @@ from std.io import File, OpenMode;
 // `/dev/urandom` and no closer answer -- and the caller then seeds from the
 // clock instead of leaving the generator at its default seed.
 export fn fill(buffer *byte, count usize) bool except {
-    source File = File("/dev/urandom", OpenMode.READ)?!;
-    got usize = source.read(buffer, count)?!;
-    source.close()?!;
+    source File = File("/dev/urandom", OpenMode.READ)??;
+    got usize = source.read(buffer, count)??;
+    source.close()??;
     return got == count;
 }

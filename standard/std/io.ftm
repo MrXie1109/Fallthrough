@@ -20,7 +20,7 @@
 // A file is opened from a path with one of C's three modes, or wrapped around a
 // C stream that is already open:
 //
-//     f std.File = std.File("notes.txt", std.OpenMode.WRITE)?!;
+//     f std.File = std.File("notes.txt", std.OpenMode.WRITE)??;
 //     log std.File = std.File(C.stderr, std.OpenMode.WRITE);
 //     src std.File = std.File(C.stdin, std.OpenMode.READ);
 //
@@ -118,7 +118,7 @@ export fn __init__(this &File, path *const char, mode OpenMode) void except {
     this._stream = nullptr;
     this._pushed = -1;
     this._mode = mode;
-    this.open(path, mode)?!;
+    this.open(path, mode)??;
 }
 
 // Opens a path as this file, replacing whatever stream it held.
@@ -126,7 +126,7 @@ export fn __init__(this &File, path *const char, mode OpenMode) void except {
 // Reopening a file that already has a stream closes that stream first, so `open`
 // on a file in use is how a program moves it to another path.
 export fn open(this &File, path *const char, mode OpenMode) void except {
-    this.close()?!;
+    this.close()??;
     this._mode = mode;
     if (mode == OpenMode.READ) {
         this._stream = C.fopen(path, "rb");
@@ -166,12 +166,12 @@ export fn writable(this &const File) bool {
 
 // Reads at most `count` characters, and returns how many were read.
 export fn read(this &File, buffer *char, count usize) usize except {
-    return this._read_bytes(buffer as *byte, count)?!;
+    return this._read_bytes(buffer as *byte, count)??;
 }
 
 // Reads at most `count` bytes, and returns how many were read.
 export fn read(this &File, buffer *byte, count usize) usize except {
-    return this._read_bytes(buffer, count)?!;
+    return this._read_bytes(buffer, count)??;
 }
 
 // Reads one character.
@@ -180,7 +180,7 @@ export fn read(this &File, buffer *byte, count usize) usize except {
 // to mean "nothing". A program that may reach the end asks `eof()` first, or
 // reads with `getline`, which answers how much it found.
 export fn get(this &File) char except {
-    code int = this._next_code()?!;
+    code int = this._next_code()??;
     if (code < 0) {
         raise "EOFError": "the input ended where a character was expected";
     }
@@ -192,7 +192,7 @@ export fn get(this &File) char except {
 // The form for a reader that may reach the end: `false` *is* the end, and there
 // is no exception to carry.
 export fn get(this &File, value &char) bool except {
-    code int = this._next_code()?!;
+    code int = this._next_code()??;
     if (code < 0) {
         return false;
     }
@@ -203,7 +203,7 @@ export fn get(this &File, value &char) bool except {
 // Looks at the next character without consuming it.
 export fn peek(this &File) char except {
     if (this._pushed < 0) {
-        this._pushed = this._next_code()?!;
+        this._pushed = this._next_code()??;
     }
     if (this._pushed < 0) {
         raise "EOFError": "the input ended where a character was expected";
@@ -224,7 +224,7 @@ export fn eof(this &File) bool except {
     if (this._stream == nullptr) {
         return true;
     }
-    this._pushed = this._next_code()?!;
+    this._pushed = this._next_code()??;
     return this._pushed < 0;
 }
 
@@ -239,7 +239,7 @@ export fn getline(this &File, into &String, until char = '\n') bool except {
     into.clear();
     read_any bool = false;
     while (true) {
-        code int = this._next_code()?!;
+        code int = this._next_code()??;
         if (code < 0) {
             break;
         }
@@ -254,7 +254,7 @@ export fn getline(this &File, into &String, until char = '\n') bool except {
 
 // Writes a `String`, and returns how many bytes were written.
 export fn write(this &File, text &const String) usize except {
-    return this._write_bytes(text.data() as *const byte, text.length())?!;
+    return this._write_bytes(text.data() as *const byte, text.length())??;
 }
 
 // Writes a C string, and returns how many bytes were written.
@@ -265,12 +265,12 @@ export fn write(this &File, text *const char) usize except {
     if (text == nullptr) {
         return 0;
     }
-    return this._write_bytes(text as *const byte, C.strlen(text))?!;
+    return this._write_bytes(text as *const byte, C.strlen(text))??;
 }
 
 // Writes `count` bytes, and returns how many were written.
 export fn write(this &File, buffer *const byte, count usize) usize except {
-    return this._write_bytes(buffer, count)?!;
+    return this._write_bytes(buffer, count)??;
 }
 
 // Writes one character.
@@ -389,7 +389,7 @@ template <Ts ...type>
 fn print(this &File, values ...Ts) void except {
     pieces auto = fmt.empty_pieces();
     (pieces.push(fmt.format_value(values)), ...);
-    this.write(fmt.rendered(&pieces)?!)?!;
+    this.write(fmt.rendered(&pieces)??)??;
 }
 
 // Writes its arguments, then a newline.
@@ -399,8 +399,8 @@ fn print(this &File, values ...Ts) void except {
 export
 template <Ts ...type>
 fn println(this &File, values ...Ts) void except {
-    this.print(values...)?!;
-    this.put('\n')?!;
+    this.print(values...)??;
+    this.put('\n')??;
 }
 
 // Reads one value per reference argument, skipping the whitespace before each.
@@ -412,18 +412,18 @@ fn println(this &File, values ...Ts) void except {
 export
 template <Ts ...type>
 fn input(this &File, values ...&Ts) void except {
-    (this.read_value(values)?!, ...);
+    (this.read_value(values)??, ...);
 }
 
 // Reads one value, skipping the whitespace before it.
 template <T type>
 fn read_value(this &File, value &T) void except {
     token String = String();
-    more bool = this.read_token(token)?!;
+    more bool = this.read_token(token)??;
     if (!more) {
         raise "EOFError": "the input ended where a value was expected";
     }
-    value.__input__(token)?!;
+    value.__input__(token)??;
 }
 
 // Reads the next word into `into`, skipping the whitespace around it.
@@ -435,7 +435,7 @@ fn read_token(this &File, into &String) bool except {
     into.clear();
     more bool = false;
     while (true) {
-        code int = this._next_code()?!;
+        code int = this._next_code()??;
         if (code < 0) {
             break;
         }
@@ -529,12 +529,12 @@ fn describe(message &const String) String {
 
 // Reads a word as an `int`.
 export fn __input__(this &int, token &const String) void except {
-    this = token as int?!;
+    this = token as int??;
 }
 
 // Reads a word as a `usize`.
 export fn __input__(this &usize, token &const String) void except {
-    this = token as usize?!;
+    this = token as usize??;
 }
 
 // Reads a word as a `char`, taking its first character.
@@ -552,7 +552,7 @@ export fn __input__(this &String, token &const String) void except {
 
 // Reads a word as a real number.
 export fn __input__(this &f64, token &const String) void except {
-    this = token as f64?!;
+    this = token as f64??;
 }
 
 // ---------------------------------------------------------------- the standard streams
@@ -591,14 +591,14 @@ export from std.fmt import Formattable;
 export
 template <Ts ...type>
 fn print(values ...Ts) void except {
-    out.print(values...)?!;
+    out.print(values...)??;
 }
 
 // Writes its arguments to the standard output, then a newline.
 export
 template <Ts ...type>
 fn println(values ...Ts) void except {
-    out.println(values...)?!;
+    out.println(values...)??;
 }
 
 // Reads one line from the standard input, without its terminator.
@@ -609,7 +609,7 @@ fn println(values ...Ts) void except {
 // the difference between "the line was empty" and "there was no line".
 export fn input() String except {
     line String;
-    if (!in.getline(&line)?!) {
+    if (!in.getline(&line)??) {
         raise "EOFError": "the input ended where a line was expected";
     }
     return line;

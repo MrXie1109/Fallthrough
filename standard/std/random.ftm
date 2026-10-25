@@ -136,7 +136,7 @@ export fn seed(this &Random, value u32) void {
 // leaving every run identical.
 export fn seed_from_entropy(this &Random) bool except {
     bytes [2496]byte;
-    if (!random_entropy.fill(&bytes[0], 2496)?! ) {
+    if (!random_entropy.fill(&bytes[0], 2496)?? ) {
         return false;
     }
     index usize = 0;
@@ -394,7 +394,7 @@ __setup__ {
     random = Random();
     seeded bool = false;
     try {
-        seeded = random.seed_from_entropy()?!;
+        seeded = random.seed_from_entropy()??;
     } except {
         seeded = false;
     }

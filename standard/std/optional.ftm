@@ -8,7 +8,7 @@
 //     find_name(people, "ada");      // `?Person`
 //     name ?String = ...;
 //     if (name) {
-//         std.print("found {}\n", name.value())?!;
+//         std.print("found {}\n", name.value())??;
 //     }
 //
 // # Absence is a value

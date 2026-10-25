@@ -94,7 +94,7 @@ fn main() int except {
     medium u16 = 1000u16;
     signed i32 = medium;
     std.print("{} {} {} {} {} {}\n",
-        wide, take(small), produce(), wide_unsigned, wide_signed, signed)?!;
+        wide, take(small), produce(), wide_unsigned, wide_signed, signed)??;
     return 0;
 }
 "#;
@@ -180,7 +180,7 @@ fn main() int except {
     narrow u8 = wide as u8;
     flag bool = true;
     number int = flag as int;
-    std.print("{} {} {} {}\n", unsigned, narrow, number, (300 as u8))?!;
+    std.print("{} {} {} {}\n", unsigned, narrow, number, (300 as u8))??;
     return 0;
 }
 "#;

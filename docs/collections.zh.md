@@ -285,12 +285,12 @@ String("a,b,,c").split(',', parts);    // ["a", "b", "", "c"]
 文本读成数字走 `as`：`String` 提供 `__as__` 转换，目标是 `int`、`usize`、`f64`。
 **整段文本都必须是这个数**：`"12x"`、`""`、`"1 2"` 会抛 `ValueError`；整数与
 `usize` 的转换拒绝超出范围的值，而不是悄悄回绕。转换可能失败，所以调用处按普通异常
-规则处理（`?!` 传出去，或 `try`/`except` 接住）：
+规则处理（`??` 传出去，或 `try`/`except` 接住）：
 
 ```ft
-n int = String("-42") as int?!;            // -42
-size usize = String("100") as usize?!;     // 100
-real f64 = String("2.5e2") as f64?!;       // 250.0
+n int = String("-42") as int??;            // -42
+size usize = String("100") as usize??;     // 100
+real f64 = String("2.5e2") as f64??;       // 250.0
 ```
 
 `std.in.input(n)` 也走这条转换，输入失败同样抛 `ValueError`。判断「这是不是数」而不是
@@ -342,7 +342,7 @@ text Pair<String, int> = Pair<String, int>(String("hi"), 7);
 ```ft
 value Variant2<int, String> = Variant2<int, String>(5);
 if (value.is_first()) {
-    std.print("{}\n", value.first()?!)?!;
+    std.print("{}\n", value.first()??)??;
 }
 value.set_second(String("text"));
 ```
@@ -354,9 +354,9 @@ value.set_second(String("text"));
 
 ```ft
 a Any = Any(42);
-std.print("{} {}\n", a.type_name(), a.to_int()?!)?!;   // int 42
+std.print("{} {}\n", a.type_name(), a.to_int()??)??;   // int 42
 b Any = Any(String("hi"));
-std.print("{}\n", b.to_text()?!)?!;                    // hi
+std.print("{}\n", b.to_text()??)??;                    // hi
 ```
 
 支持 `bool`/`int`/`f64`/`String`（以及字面量与 C 字符串）；`present()`/`if (a)`、

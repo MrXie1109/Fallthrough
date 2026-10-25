@@ -60,15 +60,15 @@ fn main() int except {
     bits.set(0);
     bits.set(3);
     bits.set(69);
-    std.print("{} {} {} {}\n", bits.length(), bits.count_ones(), bits.count_zeros(), bits.test(3) as int)?!;
+    std.print("{} {} {} {}\n", bits.length(), bits.count_ones(), bits.count_zeros(), bits.test(3) as int)??;
     bits.toggle(3);
-    std.print("{} {} {}\n", bits.test(3) as int, bits.count_ones(), bits.any() as int)?!;
+    std.print("{} {} {}\n", bits.test(3) as int, bits.count_ones(), bits.any() as int)??;
     other Bitset = Bitset(70usize);
     other.set(0);
     bits.intersect(&other);
-    std.print("{} {}\n", bits.test(0) as int, bits.test(69) as int)?!;
+    std.print("{} {}\n", bits.test(0) as int, bits.test(69) as int)??;
     bits.clear();
-    std.print("{}\n", bits.none() as int)?!;
+    std.print("{}\n", bits.none() as int)??;
     return 0;
 }
 "#;
@@ -87,14 +87,14 @@ fn main() int except {
     ring Ring<int> = Ring<int>(3usize);
     std.print("{} {} {} {}\n",
         ring.push(1) as int, ring.push(2) as int,
-        ring.push(3) as int, ring.push(4) as int)?!;
+        ring.push(3) as int, ring.push(4) as int)??;
     std.print("{} {} {} {} {}\n", ring.length(), ring.capacity(),
-        ring.full() as int, ring.front().value()?!, ring.back().value()?!)?!;
-    std.print("{} {}\n", ring.pop().value()?!, ring.pop().value()?!)?!;
+        ring.full() as int, ring.front().value()??, ring.back().value()??)??;
+    std.print("{} {}\n", ring.pop().value()??, ring.pop().value()??)??;
     ring.push(5);
-    std.print("{} {}\n", ring.pop().value()?!, ring.length())?!;
+    std.print("{} {}\n", ring.pop().value()??, ring.length())??;
     ring.clear();
-    std.print("{}\n", ring.empty() as int)?!;
+    std.print("{}\n", ring.empty() as int)??;
     return 0;
 }
 "#;
@@ -114,14 +114,14 @@ fn main() int except {
     list.push_back(2);
     list.push_back(3);
     list.push_front(1);
-    std.print("{} {} {}\n", list.length(), list.front().value()?!, list.back().value()?!)?!;
+    std.print("{} {} {}\n", list.length(), list.front().value()??, list.back().value()??)??;
     for (value &const int : list) {
-        std.print("{} ", value)?!;
+        std.print("{} ", value)??;
     }
-    std.print("\n")?!;
-    std.print("{} {} {}\n", list.pop_front().value()?!, list.pop_back().value()?!, list.length())?!;
+    std.print("\n")??;
+    std.print("{} {} {}\n", list.pop_front().value()??, list.pop_back().value()??, list.length())??;
     list.clear();
-    std.print("{}\n", list.empty() as int)?!;
+    std.print("{}\n", list.empty() as int)??;
     return 0;
 }
 "#;

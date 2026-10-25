@@ -102,11 +102,11 @@ fn exists_asks_the_filesystem_and_a_path_prints_as_its_text() {
 
 fn main() int except {
     C.printf("missing %d\n", Path("nothing-here.txt").exists() as int);
-    sink std.File = std.File("here.txt", std.OpenMode.WRITE)?!;
-    sink.write("x")?!;
-    sink.close()?!;
+    sink std.File = std.File("here.txt", std.OpenMode.WRITE)??;
+    sink.write("x")??;
+    sink.close()??;
     C.printf("present %d\n", Path("here.txt").exists() as int);
-    std.out.print("path: ", Path("here.txt"), "\n")?!;
+    std.out.print("path: ", Path("here.txt"), "\n")??;
     return 0;
 }
 "#;
@@ -126,15 +126,15 @@ fn a_path_opens_the_file_it_names() {
 
 fn main() int except {
     made Path = Path("written.txt");
-    f std.File = made.file(std.OpenMode.WRITE)?!;
-    f.write("from a path\n")?!;
-    f.close()?!;
+    f std.File = made.file(std.OpenMode.WRITE)??;
+    f.write("from a path\n")??;
+    f.close()??;
 
-    again std.File = made.file(std.OpenMode.READ)?!;
+    again std.File = made.file(std.OpenMode.READ)??;
     line std.String = std.String();
-    again.getline(line)?!;
+    again.getline(line)??;
     C.printf("%s", line.data());
-    again.close()?!;
+    again.close()??;
     return 0;
 }
 "#;
@@ -179,11 +179,11 @@ fn main() int except {
     C.printf("mkdir %d\n", dir.mkdir() as int);
     C.printf("directory %d\n", dir.is_directory() as int);
     inner Path = dir.join(Path("a.txt"));
-    f std.File = inner.file(std.OpenMode.WRITE)?!;
-    f.write("hello")?!;
-    f.close()?!;
+    f std.File = inner.file(std.OpenMode.WRITE)??;
+    f.write("hello")??;
+    f.close()??;
     C.printf("file %d size %d\n", inner.is_file() as int, inner.size() as int);
-    names Array<String> = dir.read_dir()?!;
+    names Array<String> = dir.read_dir()??;
     C.printf("names %d\n", names.length() as int);
     for (name &const String : names) {
         C.printf("%s\n", name.data());

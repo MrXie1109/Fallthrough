@@ -336,6 +336,29 @@ impl<'ctx> Lowerer<'ctx> {
             } else {
                 text.as_basic_value_enum()
             }
+        } else if let BasicValueEnum::StructValue(_) = value {
+            // The default `repr` of a declared type: its name and the address
+            // of the value. This is what a type gets when it declares neither
+            // `__str__` nor `__repr__`, and it is why a `str` of such a value is
+            // defined rather than an error.
+            let name_text = argument_ty
+                .nominal_name()
+                .map(str::to_owned)
+                .unwrap_or_else(|| argument_ty.spelling());
+            let bare = name_text
+                .rsplit_once('.')
+                .map_or(name_text.as_str(), |(_, last)| last)
+                .to_owned();
+            let type_name = self.text_constant_pointer(&bare);
+            // A struct value has no address of its own; it is stored so that
+            // one can be printed.
+            let slot = self.store_temporary(builder, value, "text.object")?;
+            let renderer = self.declare_renderer("__builtin_render_object", span)?;
+            builder
+                .build_call(renderer, &[slot.into(), type_name.into()], "render")
+                .map_err(|error| CodegenError::Emit(error.to_string()))?
+                .try_as_basic_value()
+                .unwrap_basic()
         } else {
             let (name, rendered) = match (&value, argument_ty.unqualified().clone()) {
                 (BasicValueEnum::IntValue(integer), shape) if shape.is_bool() => {
@@ -565,6 +588,14 @@ impl<'ctx> Lowerer<'ctx> {
         }
         let context = self.backend.context();
         let bytes = context.ptr_type(inkwell::AddressSpace::default());
+        // The default `repr` takes the value's address and the type's name:
+        // `<Name object at 0x...>`.
+        if name == "__builtin_render_object" {
+            let signature = bytes.fn_type(&[bytes.into(), bytes.into()], false);
+            let function = self.backend.module().add_function(name, signature, None);
+            self.define_renderer(name)?;
+            return Ok(function);
+        }
         // Which value type the renderer takes: one entry point per machine
         // kind, since C has no overloading for the backend to rely on. A
         // pointer is rendered as an address, so it takes one too.

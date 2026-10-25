@@ -65,7 +65,7 @@ fn main() int except {
     lock.unlock_shared();
     lock.lock();
     lock.unlock();
-    std.print("rw ok\n")?!;
+    std.print("rw ok\n")??;
     return 0;
 }
 "#;
@@ -80,12 +80,12 @@ import std.sync;
 
 fn main() int except {
     sem Semaphore = Semaphore(2u32);
-    std.print("{} ", sem.available())?!;
+    std.print("{} ", sem.available())??;
     sem.acquire();
     sem.acquire();
-    std.print("{} ", sem.available())?!;
+    std.print("{} ", sem.available())??;
     sem.release();
-    std.print("{}\n", sem.available())?!;
+    std.print("{}\n", sem.available())??;
     return 0;
 }
 "#;
@@ -109,7 +109,7 @@ fn main() int except {
     once.call(&action);
     once.call(&action);
     once.call(&action);
-    std.print("{}\n", calls)?!;
+    std.print("{}\n", calls)??;
     return 0;
 }
 "#;
@@ -143,10 +143,10 @@ fn main() int except {
     counter Atomic<int> = Atomic<int>(0);
     bar Barrier = Barrier(2u32);
     context Context = .{ &counter, &bar };
-    thread Thread = Thread(worker, &context as *byte)?!;
+    thread Thread = Thread(worker, &context as *byte)??;
     bar.wait();
-    thread.join()?!;
-    std.print("{}\n", counter.load())?!;
+    thread.join()??;
+    std.print("{}\n", counter.load())??;
     return 0;
 }
 "#;

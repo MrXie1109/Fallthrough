@@ -359,14 +359,14 @@ pub struct ReturnStmt {
 ///
 /// The same word is the query, `except(expr)`, which is a compile-time `bool`.
 ///
-/// The condition is also a claim -- `?!(cond)` says it may raise only when
+/// The condition is also a claim -- `??(cond)` says it may raise only when
 /// `cond` holds -- and it is evaluated by the checker, which is the only place
 /// that can answer whether a particular call needs protecting. Nothing about it
 /// reaches the emitted function: the annotation is about what may leave the
 /// body, not about the ABI.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Throws {
-    /// The condition, absent for a plain `?!`.
+    /// The condition, absent for a plain `??`.
     pub condition: Option<ExprId>,
     /// The annotation's own source range.
     pub span: Span,

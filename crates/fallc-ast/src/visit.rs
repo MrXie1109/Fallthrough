@@ -297,6 +297,7 @@ pub fn walk_expr_kind<V: Visitor + ?Sized>(ast: &Ast, kind: &ExprKind, visitor: 
         ExprKind::PackExpand(inner) => walk_expr(ast, *inner, visitor),
         ExprKind::CommaFold { pattern } => walk_expr(ast, *pattern, visitor),
         ExprKind::Propagate(node) => walk_expr(ast, node.value, visitor),
+        ExprKind::Abort(node) => walk_expr(ast, node.value, visitor),
         ExprKind::ThrowQuery(inner) => walk_expr(ast, *inner, visitor),
         // `type(expr)` names a type, but its operand is an expression and has
         // names to resolve and expressions to fold.

@@ -66,7 +66,7 @@ impl Parser {
         // `except(cond)` adds a claim -- it may raise only when `cond` holds --
         // and `cond` is a constant the checker decides. A keyword rather than
         // punctuation: the annotation is a statement about the function, and
-        // `?!` is kept for the two expression forms, which is where the work
+        // `??` is kept for the two expression forms, which is where the work
         // happens.
         let throws = if stream.at(TokenKind::Keyword(Keyword::Except)) {
             let start = stream.advance().span;

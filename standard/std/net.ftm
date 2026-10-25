@@ -1,8 +1,8 @@
 // TCP over IPv4: connect, listen, read and write.
 //
-//     stream TcpStream = net.connect(&String("127.0.0.1"), 8080)?!;
-//     net.write_all(&stream, &request)?!;
-//     answer String = net.read_text(&stream, 4096)?!;
+//     stream TcpStream = net.connect(&String("127.0.0.1"), 8080)??;
+//     net.write_all(&stream, &request)??;
+//     answer String = net.read_text(&stream, 4096)??;
 //
 // # Shape
 //
@@ -34,7 +34,7 @@ import std.internal.net_sys;
 // Starts the platform's socket layer once per process.
 export fn __setup__() void {
     try {
-        net_sys.startup()?!;
+        net_sys.startup()??;
     } except {
         // A process that never opens a socket does not need the layer; the
         // failure is reported by the first `connect` or `listen` instead.
@@ -66,15 +66,15 @@ fn parse_address(host &const String) Ipv4 except {
     if (host == String("localhost")) {
         return .{ 127 as u8, 0 as u8, 0 as u8, 1 as u8 };
     }
-    parts Array<String> = split(host, '.')?!;
+    parts Array<String> = split(host, '.')??;
     if (parts.length() != 4usize) {
         raise "NetworkError": "the address is not a dotted quad";
     }
     address Ipv4;
-    address.first = parse_byte(parts[0])?!;
-    address.second = parse_byte(parts[1])?!;
-    address.third = parse_byte(parts[2])?!;
-    address.fourth = parse_byte(parts[3])?!;
+    address.first = parse_byte(parts[0])??;
+    address.second = parse_byte(parts[1])??;
+    address.third = parse_byte(parts[2])??;
+    address.fourth = parse_byte(parts[3])??;
     return address;
 }
 
@@ -120,8 +120,8 @@ fn parse_byte(text &const String) u8 except {
 
 // Connects to `host`:`port`.
 export fn connect(host &const String, port u16) TcpStream except {
-    address Ipv4 = parse_address(host)?!;
-    handle i64 = net_sys.open_stream()?!;
+    address Ipv4 = parse_address(host)??;
+    handle i64 = net_sys.open_stream()??;
     if (!net_sys.connect_ipv4(handle, address.first, address.second, address.third, address.fourth, port)) {
         net_sys.close_socket(handle);
         raise "NetworkError": "the connection was refused";
@@ -133,8 +133,8 @@ export fn connect(host &const String, port u16) TcpStream except {
 // Listens on `host`:`port`; port zero asks the system for a free one, which
 // `local_port` reports.
 export fn listen(host &const String, port u16, backlog int) TcpListener except {
-    address Ipv4 = parse_address(host)?!;
-    handle i64 = net_sys.open_stream()?!;
+    address Ipv4 = parse_address(host)??;
+    handle i64 = net_sys.open_stream()??;
     if (!net_sys.listen_ipv4(
         handle,
         address.first,
@@ -153,7 +153,7 @@ export fn listen(host &const String, port u16, backlog int) TcpListener except {
 
 // The port a listener is bound to.
 export fn local_port(this &TcpListener) u16 except {
-    return net_sys.bound_port(this._handle)?!;
+    return net_sys.bound_port(this._handle)??;
 }
 
 // Waits for one connection.
@@ -200,7 +200,7 @@ export fn read_into(this &TcpStream, buffer &Bytes, maximum usize) usize except 
 // Reads up to `maximum` bytes into a fresh string.
 export fn read_text(this &TcpStream, maximum usize) String except {
     buffer Bytes = Bytes();
-    count usize = this.read_into(&buffer, maximum)?!;
+    count usize = this.read_into(&buffer, maximum)??;
     if (count == 0usize) {
         return String();
     }

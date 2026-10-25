@@ -62,7 +62,7 @@ fn an_optional_holds_a_value_or_nothing() {
 
 fn main() int except {
     present ?int = Optional<int>(3);
-    C.printf("%d %d\n", present.present() as int, present.value()?!);
+    C.printf("%d %d\n", present.present() as int, present.value()??);
     absent ?int = Optional<int>();
     C.printf("%d %d\n", absent.present() as int, absent.value_or(9));
     if (present) {
@@ -90,7 +90,7 @@ fn reading_an_absent_optional_raises_none_error() {
 fn main() int except {
     absent ?int = Optional<int>();
     try {
-        C.printf("never %d\n", absent.value()?!);
+        C.printf("never %d\n", absent.value()??);
     } except {
         e &const std.Exception = std.exception();
         C.printf("%s: %s\n", e.name().data(), e.what().data());
@@ -118,13 +118,13 @@ fn find(index int) ?int {
 
 fn describe(value ?int) int except {
     if (value) {
-        return value.value()?!;
+        return value.value()??;
     }
     return -1;
 }
 
 fn main() int except {
-    C.printf("%d %d\n", describe(find(0))?!, describe(find(1))?!);
+    C.printf("%d %d\n", describe(find(0))??, describe(find(1))??);
     C.printf("%d\n", find(0).present() as int);
     return 0;
 }
@@ -142,9 +142,9 @@ fn an_optional_string_owns_its_text() {
 fn main() int except {
     original ?String = Optional<String>(String("hello"));
     copy ?String = original;
-    C.printf("%s %s\n", original.value()?!.data(), copy.value()?!.data());
+    C.printf("%s %s\n", original.value()??.data(), copy.value()??.data());
     copy.reset();
-    C.printf("%d %s\n", copy.present() as int, original.value()?!.data());
+    C.printf("%d %s\n", copy.present() as int, original.value()??.data());
     original.reset();
     C.printf("%d\n", original.present() as int);
     return 0;

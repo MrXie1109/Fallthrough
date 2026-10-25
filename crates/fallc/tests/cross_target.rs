@@ -54,8 +54,8 @@ import std.os;
 import meta;
 
 fn main() int except {
-    std.out.println("platform is ", $meta.PLATFORM)?!;
-    std.out.println("pid is ", os.pid())?!;
+    std.out.println("platform is ", $meta.PLATFORM)??;
+    std.out.println("pid is ", os.pid())??;
     return 0;
 }
 "#;

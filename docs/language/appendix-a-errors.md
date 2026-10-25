@@ -188,7 +188,7 @@ reviewed (see [10 Diagnostics](10-diagnostics.md)).
 | `S0082` | error | a `raise` operand must be a string, but this is `{}` |
 | `S0082` | error | {what} is only allowed in a function marked `except` |
 | `S0083` | error | a call to `{label}` may raise, and nothing here handles it |
-| `S0083` | warning | this call cannot raise, so `?!` does nothing |
+| `S0083` | warning | this call cannot raise, so `??` does nothing |
 | `S0084` | error | `type(expr)` cannot be used here |
 | `S0085` | error | `{}` contains itself by value, so it has no size |
 | `S0130` | error | `{trait_name}` asks about a type, but this argument is a value |
@@ -245,7 +245,7 @@ reviewed (see [10 Diagnostics](10-diagnostics.md)).
 | `S0177` | error | `{}` does not satisfy `{base}`: it has no method `{}` with this signature |
 | `S0178` | error | `{target_base}` cannot be made from `{source_base}`: it declares no method `{}` |
 | `S0178` | error | `{target_base}` cannot be made from `{source_base}`: method `{}` has a different signature |
-| `S0178` | error | this call cannot raise, and the restriction marks it with `?!` |
+| `S0178` | error | this call cannot raise, and the restriction marks it with `??` |
 | `S0179` | error | （实现内部文本） |
 | `S0180` | error | `{name}` omits `{parameter}`, whose default belongs to a template's parameter |
 | `S0181` | error | `main` returns `int` or nothing |
@@ -262,4 +262,4 @@ reviewed (see [10 Diagnostics](10-diagnostics.md)).
 The mapping between warning codes and the command-line group switches is in
 [10 Diagnostics §5](10-diagnostics.md#warning-groups). A group may contain several
 codes; a code belongs to one group (S0083 is the only code that can appear both as an
-error -- an unhandled raising call site -- and as a warning -- a `?!` that does nothing).
+error -- an unhandled raising call site -- and as a warning -- a `??` that does nothing).

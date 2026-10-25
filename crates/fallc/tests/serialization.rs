@@ -57,16 +57,16 @@ fn csv_rows_parse_and_write_back() {
 
 fn main() int except {
     body String = String("a,b,c\n1,\"hello, world\",3\n\"x\"\"y\",,\n");
-    rows Array<Array<String>> = std.parse_rows(&body)?!;
-    std.print("{} {} {} {}\n", rows.length(), rows[1][1], rows[2][0], rows[2][1].length())?!;
+    rows Array<Array<String>> = std.parse_rows(&body)??;
+    std.print("{} {} {} {}\n", rows.length(), rows[1][1], rows[2][0], rows[2][1].length())??;
     written String = std.write_rows(&rows);
-    std.print("{}", written)?!;
+    std.print("{}", written)??;
     try {
         bad String = String("a,\"b");
-        std.parse_rows(&bad)?!;
+        std.parse_rows(&bad)??;
     } except {
         e &const std.Exception = std.exception();
-        std.print("\n{}\n", e.name())?!;
+        std.print("\n{}\n", e.name())??;
     }
     return 0;
 }
@@ -84,17 +84,17 @@ fn toml_entries_are_read_by_table_and_key() {
 
 fn main() int except {
     body String = String("# config\nname = \"demo\"\ncount = 3\nratio = 1.5\nenabled = true\n\n[server]\nhost = \"localhost\"\nport = 8080\n");
-    document TomlDocument = std.parse_toml(&body)?!;
-    std.print("{}\n", document.length())?!;
+    document TomlDocument = std.parse_toml(&body)??;
+    std.print("{}\n", document.length())??;
     server String = String("server");
     port_key String = String("port");
     host_key String = String("host");
     root String = String("");
     ratio_key String = String("ratio");
     std.print("{} {} {}\n",
-        document.get(&server, &port_key).value()?!.as_int()?!,
-        document.get(&server, &host_key).value()?!.as_string()?!,
-        document.get(&root, &ratio_key).value()?!.as_real()?!)?!;
+        document.get(&server, &port_key).value()??.as_int()??,
+        document.get(&server, &host_key).value()??.as_string()??,
+        document.get(&root, &ratio_key).value()??.as_real()??)??;
     return 0;
 }
 "##;
@@ -108,13 +108,13 @@ fn xml_elements_attributes_and_text_round_trip() {
 
 fn main() int except {
     body String = String("<?xml version=\"1.0\"?>\n<config><name lang=\"en\">demo &amp; test</name><item id=\"1\"/><item id=\"2\"/></config>");
-    document XmlDocument = std.parse_xml(&body)?!;
+    document XmlDocument = std.parse_xml(&body)??;
     root XmlValue = document.root();
-    std.print("{} {} {}\n", root.name(), root.child_count(), root.child(0)?!.text())?!;
+    std.print("{} {} {}\n", root.name(), root.child_count(), root.child(0)??.text())??;
     lang String = String("lang");
-    std.print("{}\n", root.child(0)?!.attribute(&lang).value()?!)?!;
-    written String = std.serialize(&root)?!;
-    std.print("{}", written)?!;
+    std.print("{}\n", root.child(0)??.attribute(&lang).value()??)??;
+    written String = std.serialize(&root)??;
+    std.print("{}", written)??;
     return 0;
 }
 "#;

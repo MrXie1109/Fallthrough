@@ -94,11 +94,11 @@ fn the_standard_output_writes_text_and_characters() {
     let source = r#"import std;
 
 fn main() int except {
-    std.out.write("first")?!;
-    std.out.put('\n')?!;
-    std.out.write("second")?!;
-    std.out.put('\n')?!;
-    std.out.flush()?!;
+    std.out.write("first")??;
+    std.out.put('\n')??;
+    std.out.write("second")??;
+    std.out.put('\n')??;
+    std.out.flush()??;
     return 0;
 }
 "#;
@@ -114,25 +114,25 @@ fn a_file_is_written_and_read_back() {
     let source = r#"import std;
 
 fn main() int except {
-    sink std.File = std.File("notes.txt", std.OpenMode.WRITE)?!;
+    sink std.File = std.File("notes.txt", std.OpenMode.WRITE)??;
     if (!sink.valid() || !sink.writable() || sink.readable()) {
         return 1;
     }
-    sink.write("alpha")?!;
-    sink.put('\n')?!;
-    sink.write("beta\n")?!;
-    sink.close()?!;
+    sink.write("alpha")??;
+    sink.put('\n')??;
+    sink.write("beta\n")??;
+    sink.close()??;
 
-    src std.File = std.File("notes.txt", std.OpenMode.READ)?!;
+    src std.File = std.File("notes.txt", std.OpenMode.READ)??;
     if (!src.valid() || !src.readable() || src.writable()) {
         return 2;
     }
     line std.String = std.String();
-    while (src.getline(line)?!) {
-        std.out.write(line)?!;
-        std.out.put('\n')?!;
+    while (src.getline(line)??) {
+        std.out.write(line)??;
+        std.out.put('\n')??;
     }
-    src.close()?!;
+    src.close()??;
     return 0;
 }
 "#;
@@ -150,24 +150,24 @@ fn a_file_is_created_without_a_stream_and_opened_later() {
 fn main() int except {
     sink std.File = std.File();
     if (sink.valid()) {
-        std.out.write("valid too early")?!;
+        std.out.write("valid too early")??;
     } else {
-        std.out.write("invalid")?!;
+        std.out.write("invalid")??;
     }
-    std.out.put('\n')?!;
-    sink.open("made.txt", std.OpenMode.WRITE)?!;
+    std.out.put('\n')??;
+    sink.open("made.txt", std.OpenMode.WRITE)??;
     if (sink.valid() && sink.writable()) {
-        std.out.write("opened")?!;
+        std.out.write("opened")??;
     }
-    std.out.put('\n')?!;
-    sink.write("body")?!;
-    sink.close()?!;
+    std.out.put('\n')??;
+    sink.write("body")??;
+    sink.close()??;
     if (sink.valid()) {
-        std.out.write("still valid")?!;
+        std.out.write("still valid")??;
     } else {
-        std.out.write("closed")?!;
+        std.out.write("closed")??;
     }
-    std.out.put('\n')?!;
+    std.out.put('\n')??;
     return 0;
 }
 "#;
@@ -183,18 +183,18 @@ fn a_file_that_cannot_be_opened_raises() {
     let source = r#"import std;
 
 fn missing() int except {
-    src std.File = std.File("nothing-here.txt", std.OpenMode.READ)?!;
+    src std.File = std.File("nothing-here.txt", std.OpenMode.READ)??;
     return 1;
 }
 
 fn main() int except {
     try {
-        marker int = missing()?!;
-        std.out.write(str(marker))?!;
+        marker int = missing()??;
+        std.out.write(str(marker))??;
     } except {
         e &const std.Exception = std.exception();
-        std.out.write(e.name())?!;
-        std.out.put('\n')?!;
+        std.out.write(e.name())??;
+        std.out.put('\n')??;
     }
     return 0;
 }
@@ -212,30 +212,30 @@ fn an_input_file_reads_characters_and_the_end() {
     let source = r#"import std;
 
 fn main() int except {
-    sink std.File = std.File("data.txt", std.OpenMode.WRITE)?!;
-    sink.write("xyz")?!;
-    sink.close()?!;
+    sink std.File = std.File("data.txt", std.OpenMode.WRITE)??;
+    sink.write("xyz")??;
+    sink.close()??;
 
-    src std.File = std.File("data.txt", std.OpenMode.READ)?!;
+    src std.File = std.File("data.txt", std.OpenMode.READ)??;
     buffer [4]char;
-    got usize = src.read(&buffer[0], 2)?!;
-    std.out.write(str(got))?!;
-    std.out.put('\n')?!;
-    first char = src.peek()?!;
-    second char = src.get()?!;
-    std.out.put(first)?!;
-    std.out.put(second)?!;
-    std.out.put('\n')?!;
-    std.out.write(str(src.eof()))?!;
-    std.out.put('\n')?!;
+    got usize = src.read(&buffer[0], 2)??;
+    std.out.write(str(got))??;
+    std.out.put('\n')??;
+    first char = src.peek()??;
+    second char = src.get()??;
+    std.out.put(first)??;
+    std.out.put(second)??;
+    std.out.put('\n')??;
+    std.out.write(str(src.eof()))??;
+    std.out.put('\n')??;
     try {
-        past char = src.get()?!;
-        std.out.write(str(past))?!;
+        past char = src.get()??;
+        std.out.write(str(past))??;
     } except {
-        std.out.write(std.exception().name())?!;
-        std.out.put('\n')?!;
+        std.out.write(std.exception().name())??;
+        std.out.put('\n')??;
     }
-    src.close()?!;
+    src.close()??;
     return 0;
 }
 "#;
@@ -251,29 +251,29 @@ fn a_duplex_file_seeks_back_to_what_it_wrote() {
     let source = r#"import std;
 
 fn main() int except {
-    make std.File = std.File("both.txt", std.OpenMode.WRITE)?!;
-    make.write("first line\nsecond line\n")?!;
-    make.close()?!;
+    make std.File = std.File("both.txt", std.OpenMode.WRITE)??;
+    make.write("first line\nsecond line\n")??;
+    make.close()??;
 
-    both std.File = std.File("both.txt", std.OpenMode.RW)?!;
+    both std.File = std.File("both.txt", std.OpenMode.RW)??;
     if (!both.readable() || !both.writable()) {
         return 1;
     }
-    both.write("FIRST")?!;
-    both.seek(0isize, std.SeekFrom.START)?!;
+    both.write("FIRST")??;
+    both.seek(0isize, std.SeekFrom.START)??;
     line String;
-    both.getline(&line)?!;
-    std.out.print("read: ", line, "\n")?!;
-    both.seek(11isize, std.SeekFrom.START)?!;
+    both.getline(&line)??;
+    std.out.print("read: ", line, "\n")??;
+    both.seek(11isize, std.SeekFrom.START)??;
     rest String;
-    both.getline(&rest)?!;
-    std.out.print("again: ", rest, "\n")?!;
-    both.seek(16isize, std.SeekFrom.START)?!;
+    both.getline(&rest)??;
+    std.out.print("again: ", rest, "\n")??;
+    both.seek(16isize, std.SeekFrom.START)??;
     tail String;
-    both.getline(&tail)?!;
-    std.out.print("tail: ", tail, "\n")?!;
-    std.out.print("end: ", both.seek(0isize, std.SeekFrom.END)?!, "\n")?!;
-    both.close()?!;
+    both.getline(&tail)??;
+    std.out.print("tail: ", tail, "\n")??;
+    std.out.print("end: ", both.seek(0isize, std.SeekFrom.END)??, "\n")??;
+    both.close()??;
     return 0;
 }
 "#;
@@ -293,14 +293,14 @@ fn the_standard_streams_are_files_like_any_other() {
 
 fn main() int except {
     log std.File = std.File(C.stdout, std.OpenMode.WRITE);
-    log.print("wrapped\n")?!;
-    std.out.print("direct ", 42, "\n")?!;
-    std.out.write(str(std.out.valid()))?!;
-    std.out.put('\n')?!;
-    std.out.write(str(std.out.readable()))?!;
-    std.out.put('\n')?!;
-    std.out.write(str(std.out.writable()))?!;
-    std.out.put('\n')?!;
+    log.print("wrapped\n")??;
+    std.out.print("direct ", 42, "\n")??;
+    std.out.write(str(std.out.valid()))??;
+    std.out.put('\n')??;
+    std.out.write(str(std.out.readable()))??;
+    std.out.put('\n')??;
+    std.out.write(str(std.out.writable()))??;
+    std.out.put('\n')??;
     return 0;
 }
 "#;
@@ -319,23 +319,23 @@ fn the_direction_of_a_handle_is_asked_at_run_time() {
     let source = r#"import std;
 
 fn main() int except {
-    sink std.File = std.File("ro.txt", std.OpenMode.WRITE)?!;
-    sink.write("text")?!;
-    sink.close()?!;
+    sink std.File = std.File("ro.txt", std.OpenMode.WRITE)??;
+    sink.write("text")??;
+    sink.close()??;
 
-    src std.File = std.File("ro.txt", std.OpenMode.READ)?!;
+    src std.File = std.File("ro.txt", std.OpenMode.READ)??;
     if (!src.writable()) {
-        std.out.write("not writable")?!;
-        std.out.put('\n')?!;
+        std.out.write("not writable")??;
+        std.out.put('\n')??;
     }
     try {
-        written usize = src.write("more")?!;
-        std.out.write(str(written))?!;
+        written usize = src.write("more")??;
+        std.out.write(str(written))??;
     } except {
-        std.out.write(std.exception().name())?!;
-        std.out.put('\n')?!;
+        std.out.write(std.exception().name())??;
+        std.out.put('\n')??;
     }
-    src.close()?!;
+    src.close()??;
     return 0;
 }
 "#;
@@ -351,13 +351,13 @@ fn the_output_file_formats_its_arguments() {
 
 fn main() int except {
     x int = 42;
-    std.out.print("x = ", x, "\n")?!;
-    std.out.print('a', 'b', 'c', "\n")?!;
-    std.out.print(1, " and ", 2, " and ", 3, "\n")?!;
+    std.out.print("x = ", x, "\n")??;
+    std.out.print('a', 'b', 'c', "\n")??;
+    std.out.print(1, " and ", 2, " and ", 3, "\n")??;
 
-    f std.File = std.File("format.txt", std.OpenMode.WRITE)?!;
-    f.print("file: ", x, '\n')?!;
-    f.close()?!;
+    f std.File = std.File("format.txt", std.OpenMode.WRITE)??;
+    f.print("file: ", x, '\n')??;
+    f.close()??;
     return 0;
 }
 "#;
@@ -380,8 +380,8 @@ fn main() int except {
     word String = String();
     letter char = '?';
     ratio f64 = 0.0;
-    std.in.input(count, word, letter, ratio)?!;
-    std.out.print(count, " ", word, " ", letter, " ", ratio, "\n")?!;
+    std.in.input(count, word, letter, ratio)??;
+    std.out.print(count, " ", word, " ", letter, " ", ratio, "\n")??;
     return 0;
 }
 "#;
@@ -417,26 +417,26 @@ fn __str__(this &const Version) String {
 
 fn __input__(this &Version, token &const String) void except {
     separator String = ".";
-    dot isize = token.find(separator)?!;
+    dot isize = token.find(separator)??;
     if (dot < 0) {
         raise "ValueError": "a version is `major.minor`";
     }
     head String = token.substring(0, dot as usize);
     tail String = token.substring(dot as usize + 1, token.length() - dot as usize - 1);
-    this.major = head as int?!;
-    this.minor = tail as int?!;
+    this.major = head as int??;
+    this.minor = tail as int??;
 }
 
 fn main() int except {
-    source std.File = std.File("version.txt", std.OpenMode.WRITE)?!;
-    source.write("2.5\n")?!;
-    source.close()?!;
+    source std.File = std.File("version.txt", std.OpenMode.WRITE)??;
+    source.write("2.5\n")??;
+    source.close()??;
 
-    f std.File = std.File("version.txt", std.OpenMode.READ)?!;
+    f std.File = std.File("version.txt", std.OpenMode.READ)??;
     v Version;
-    f.input(v)?!;
-    std.out.print("major ", v.major, ", minor ", v.minor, "\n")?!;
-    f.close()?!;
+    f.input(v)??;
+    std.out.print("major ", v.major, ", minor ", v.minor, "\n")??;
+    f.close()??;
     return 0;
 }
 "#;
@@ -465,13 +465,13 @@ fn __str__(this &const Tag) String {
 
 fn main() int except {
     tag Tag;
-    std.out.print("value: ", tag, "\n")?!;
-    source std.File = std.File("tag.txt", std.OpenMode.WRITE)?!;
-    source.write("99\n")?!;
-    source.close()?!;
-    f std.File = std.File("tag.txt", std.OpenMode.READ)?!;
-    f.input(tag)?!;
-    f.close()?!;
+    std.out.print("value: ", tag, "\n")??;
+    source std.File = std.File("tag.txt", std.OpenMode.WRITE)??;
+    source.write("99\n")??;
+    source.close()??;
+    f std.File = std.File("tag.txt", std.OpenMode.READ)??;
+    f.input(tag)??;
+    f.close()??;
     return 0;
 }
 "#;
@@ -490,10 +490,10 @@ fn println_writes_a_newline_after_its_arguments() {
     let source = r#"import std;
 
 fn main() int except {
-    std.out.println("line")?!;
-    std.out.println(1, " ", 2)?!;
-    std.out.println()?!;
-    std.out.print("end")?!;
+    std.out.println("line")??;
+    std.out.println(1, " ", 2)??;
+    std.out.println()??;
+    std.out.print("end")??;
     return 0;
 }
 "#;
@@ -511,30 +511,30 @@ fn the_formatted_members_respect_the_direction() {
     let source = r#"import std;
 
 fn main() int except {
-    sink std.File = std.File("d.txt", std.OpenMode.WRITE)?!;
-    sink.write("text")?!;
-    sink.close()?!;
+    sink std.File = std.File("d.txt", std.OpenMode.WRITE)??;
+    sink.write("text")??;
+    sink.close()??;
 
-    read_only std.File = std.File("d.txt", std.OpenMode.READ)?!;
+    read_only std.File = std.File("d.txt", std.OpenMode.READ)??;
     try {
-        read_only.print("more")?!;
-        std.out.print("printed\n")?!;
+        read_only.print("more")??;
+        std.out.print("printed\n")??;
     } except {
-        std.out.print(std.exception().name())?!;
-        std.out.print("\n")?!;
+        std.out.print(std.exception().name())??;
+        std.out.print("\n")??;
     }
-    read_only.close()?!;
+    read_only.close()??;
 
-    write_only std.File = std.File("d.txt", std.OpenMode.WRITE)?!;
+    write_only std.File = std.File("d.txt", std.OpenMode.WRITE)??;
     n int = 0;
     try {
-        write_only.input(n)?!;
-        std.out.print("read ", n, "\n")?!;
+        write_only.input(n)??;
+        std.out.print("read ", n, "\n")??;
     } except {
-        std.out.print(std.exception().name())?!;
-        std.out.print("\n")?!;
+        std.out.print(std.exception().name())??;
+        std.out.print("\n")??;
     }
-    write_only.close()?!;
+    write_only.close()??;
     return 0;
 }
 "#;
@@ -554,17 +554,17 @@ fn the_short_forms_print_and_input_use_the_standard_streams() {
     let source = r#"import std;
 
 fn main() int except {
-    std.print("x = ", 42, "\n")?!;
-    std.print("plain line\n")?!;
-    first String = std.input()?!;
-    std.print("got: ", first, "\n")?!;
-    blank String = std.input()?!;
-    std.print("blank length: ", blank.length(), "\n")?!;
+    std.print("x = ", 42, "\n")??;
+    std.print("plain line\n")??;
+    first String = std.input()??;
+    std.print("got: ", first, "\n")??;
+    blank String = std.input()??;
+    std.print("blank length: ", blank.length(), "\n")??;
     try {
-        last String = std.input()?!;
-        std.print("unexpected: ", last, "\n")?!;
+        last String = std.input()??;
+        std.print("unexpected: ", last, "\n")??;
     } except {
-        std.print(std.exception().name(), "\n")?!;
+        std.print(std.exception().name(), "\n")??;
     }
     return 0;
 }
@@ -601,11 +601,11 @@ fn __format__(this &const Point) String {
 }
 
 fn main() int except {
-    std.print("{} + {} = {}\n", 1, 2, 3)?!;
+    std.print("{} + {} = {}\n", 1, 2, 3)??;
     p Point = .{ 1, 2 };
-    std.print("at {}\n", p)?!;
-    std.print("fallback {}\n", 7)?!;
-    std.print("x = ", 5, "\n")?!;
+    std.print("at {}\n", p)??;
+    std.print("fallback {}\n", 7)??;
+    std.print("x = ", 5, "\n")??;
     return 0;
 }
 "#;
@@ -625,7 +625,7 @@ import C;
 
 fn main() int {
     try {
-        f std.File = std.File("/definitely/missing-file", std.OpenMode.READ)?!;
+        f std.File = std.File("/definitely/missing-file", std.OpenMode.READ)??;
     } except {
         e &const std.Exception = std.exception();
         C.printf("%s\n", e.name().data());
@@ -652,8 +652,8 @@ fn print_takes_a_pack_not_a_fixed_number_of_arguments() {
     let source = r#"import std;
 
 fn main() int except {
-    std.print(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, "\n")?!;
-    std.print("{} {} {} {} {} {}\n", 1, 2, 3, 4, 5, 6)?!;
+    std.print(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, "\n")??;
+    std.print("{} {} {} {} {} {}\n", 1, 2, 3, 4, 5, 6)??;
     return 0;
 }
 "#;

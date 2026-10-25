@@ -2,7 +2,7 @@
 //! call may need.
 //!
 //! A call is lowered from the symbol the checker recorded; the ABI decides how
-//! the arguments travel, and a `?!` call is unwrapped at the call site.
+//! the arguments travel, and a `??` call is unwrapped at the call site.
 
 use super::*;
 
@@ -101,6 +101,21 @@ impl<'ctx> Lowerer<'ctx> {
             .build_conditional_branch(condition, value_block, escape_block)
             .map_err(|error| CodegenError::Emit(error.to_string()))?;
         builder.position_at_end(escape_block);
+        if self.abort_lowering > 0 {
+            // This raise is inside an `expr!!`, which is `try { expr }
+            // except { std.panic(); }`: the exception is handled here, by
+            // stopping the program.
+            self.emit_panic(builder, "a `!!` expression raised", span)?;
+            builder.position_at_end(value_block);
+            if fields >= 3 {
+                return Ok(Some(
+                    builder
+                        .build_extract_value(aggregate, 1, "value")
+                        .map_err(|error| CodegenError::Emit(error.to_string()))?,
+                ));
+            }
+            return Ok(None);
+        }
         let bindings = self.current_bindings.clone();
         let skip_handlers = self.propagating_calls.contains(&span);
         self.lower_escape(ast, types, &bindings, builder, Some(raised), skip_handlers)?;
@@ -117,7 +132,7 @@ impl<'ctx> Lowerer<'ctx> {
 
     /// Lowers a call, and unwraps the exception if the callee may raise.
     ///
-    /// A `?!` callee returns `{ ok, value, error }`. The tag decides whether the
+    /// A `??` callee returns `{ ok, value, error }`. The tag decides whether the
     /// call produced a value or an exception, and the exception leaves through
     /// the same path a `raise` takes -- the handler if one encloses the call, or
     /// this function's own result.

@@ -110,6 +110,7 @@ impl<'ctx> Lowerer<'ctx> {
             throwing_calls: std::collections::HashSet::new(),
             propagating_calls: std::collections::HashSet::new(),
             current_bindings: BindingTypes::default(),
+            abort_lowering: 0,
             assign_methods: HashMap::new(),
             deref_reads: HashMap::new(),
             pointer_targets: HashMap::new(),

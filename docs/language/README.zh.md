@@ -92,7 +92,7 @@
 | [03 声明](03-declarations.zh.md) | 声明形式、绑定与初始化、属性、宏、traits、interface、模板 |
 | [04 函数](04-functions.zh.md) | 函数、成员函数、lambda、调用约定、参数传递、重载、移动 |
 | [05 语句](05-statements.zh.md) | 块、条件、循环、范围循环、`switch`、跳转、`defer`、编译期断言 |
-| [06 异常](06-exceptions.zh.md) | 异常模型、`raise`、`try`、`?!`、调用点义务 |
+| [06 异常](06-exceptions.zh.md) | 异常模型、`raise`、`try`、`??`、调用点义务 |
 | [07 表达式](07-expressions.zh.md) | 表达式形式、转换、运算符、赋值、特殊方法、求值顺序 |
 | [08 模块](08-modules.zh.md) | 导入与导出、名字身份、模块查找、多文件与链接 |
 | [09 作用域](09-scopes.zh.md) | 作用域、遮蔽、重复声明、`_`、生命周期 |

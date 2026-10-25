@@ -25,6 +25,15 @@ module.exports = grammar({
     // A block is both a statement and an expression (a lambda body, a scope
     // written where a value may stand), so the two readings overlap.
     [$.statement, $.expression],
+    // `a.b` is a type path in a type position and a field access in an
+    // expression. The grammar accepts both readings at that point and keeps
+    // them apart by where the result stands, which is what a GLR parse is for;
+    // no precedence can decide it earlier, because nothing in the text says
+    // which one it is.
+    [$.qualified_type, $.expression],
+    [$.qualified_type, $.field_expression],
+    [$.qualified_type, $.method_call_expression],
+    [$.index_expression, $.expression],
     // A name is both a type and a value; only the checker can tell them apart,
     // and the grammar accepts both readings rather than guessing.
     [$.type, $.expression],
@@ -346,7 +355,8 @@ module.exports = grammar({
 
     // The same expression grammar without a bare name, for statement position:
     // a statement that is only a name does nothing, and allowing one is what
-    // made `s String = ..` ambiguous with two expressions in a row.
+    // made `s String = ..` ambiguous with two expressions in a row. The suffix
+    // forms stay, so `path[0].show();` is still one call.
     expression_without_identifier: $ => choice(
       $.literal,
       $.parenthesized_expression,
@@ -356,6 +366,8 @@ module.exports = grammar({
       $.index_expression,
       $.unary_expression,
       $.binary_expression,
+      $.assignment_expression,
+      $.compound_assignment_expression,
       $.ternary_expression,
       $.cast_expression,
       $.prefix_expression,
@@ -368,6 +380,7 @@ module.exports = grammar({
       $.template_call,
       $.macro_invocation,
     ),
+
 
     empty_statement: $ => ';',
 
@@ -508,6 +521,10 @@ module.exports = grammar({
       // separate name so a highlight query can colour a type position as a
       // type without colouring every name.
       alias($.identifier, $.type_identifier),
+      // `std.String`, `C.Int`: a type named through its module. Read only in a
+      // type position, which is why it is a rule of its own rather than a field
+      // access; `prec.right` keeps `a.b.c` one path.
+      $.qualified_type,
     ),
 
     primitive_type: _ => choice(
@@ -535,6 +552,12 @@ module.exports = grammar({
     // parenthesised expression; the grammar takes the expression reading,
     // which is also what a highlight should colour, and the checker decides
     // what a parenthesised name means in a type position.
+    // `std.String`: a dotted path in type position.
+    qualified_type: $ => prec.right(-1, seq(
+      $.identifier,
+      repeat1(seq('.', $.identifier)),
+    )),
+
     paren_type: $ => prec.dynamic(-1, seq('(', $.type, ')')),
 
     pointer_type: $ => prec(2, seq('*', $.type)),
@@ -557,8 +580,10 @@ module.exports = grammar({
 
     // ------------------------------------------------------------ expressions
 
+    // A name is the last resort: when the text after it continues into an
+    // index, a field or an argument list, that longer reading is the one meant,
+    // so `path[0].show()` is a call rather than a name and a stray bracket.
     expression: $ => choice(
-      $.identifier,
       $.literal,
       $.parenthesized_expression,
       $.block,
@@ -587,6 +612,7 @@ module.exports = grammar({
       $.this,
       $.nullptr,
       $.boolean_literal,
+      $.identifier,
     ),
 
     parenthesized_expression: $ => seq('(', choice($._expression_or_comma_list, $.fold_expression), ')'),
@@ -602,8 +628,19 @@ module.exports = grammar({
 
     _expression_or_comma_list: $ => seq($.expression, optional(seq(',', commaSep1($.expression)))),
 
+    // `f(x)`, `std.format(x)` and `p.method(x)` are three shapes of one call.
+    // A callee that is a name or a dotted path is read first: `std.format(x)`
+    // split as `std` called with `.format(x)` was the first thing the parser
+    // tried, and left the argument in an error node.
     call_expression: $ => prec(15, seq(
-      field('function', $.expression),
+      field('function', choice(
+        $.template_call,
+        $.macro_invocation,
+        $._postfix_base,
+        $.qualified_type,
+        $.parenthesized_expression,
+        $.call_expression,
+      )),
       field('arguments', $.argument_list),
     )),
 
@@ -627,17 +664,13 @@ module.exports = grammar({
       $.integer_literal,
       $.boolean_literal,
       $.string_literal,
-      $.qualified_name,
     ),
 
-    // `util.move` and `C.printf`: a dotted name in expression position is a
-    // field of a module, and a template argument may be one.
-    qualified_name: $ => prec.right(seq($.identifier, '.', $.identifier)),
 
     // A method call with explicit template arguments outranks a field access,
     // so `a.b<T>(..)` is a call and `a.b` stays a field.
-    method_call_expression: $ => prec(17, seq(
-      field('receiver', $.expression),
+    method_call_expression: $ => prec.left(19, seq(
+      field('receiver', $._postfix_base),
       choice('.', '->'),
       field('method', $.identifier),
       optional($.template_argument_list),
@@ -650,14 +683,34 @@ module.exports = grammar({
       ')',
     ),
 
-    field_expression: $ => prec(15, seq(
-      field('value', $.expression),
+    field_expression: $ => prec.left(18, seq(
+      field('value', $._postfix_base),
       choice('.', '->'),
       field('field', $.identifier),
     )),
 
-    index_expression: $ => prec(15, seq(
-      field('value', $.expression),
+    // The suffixes chain: `a[0].b.c(d)` is an index, a field, a field, a call.
+    // The suffix forms come first so that a name followed by `[` or `.`
+    // continues instead of being taken for a whole expression.
+    _postfix_base: $ => choice(
+      $.index_expression,
+      $.field_expression,
+      $.method_call_expression,
+      $.identifier,
+      $.literal,
+      $.parenthesized_expression,
+      $.call_expression,
+      $.template_call,
+      $.macro_invocation,
+      $.index_expression,
+      $.field_expression,
+      $.method_call_expression,
+      $.this,
+      $.nullptr,
+    ),
+
+    index_expression: $ => prec.left(18, seq(
+      field('value', $._postfix_base),
       '[',
       field('index', $.expression),
       ']',
@@ -817,12 +870,17 @@ module.exports = grammar({
       '"""',
     ),
 
+    // `r"..."` and `r#tag"..."tag#`. The opener must be `r` followed by
+    // optional `#`s and a quote, so the token cannot swallow an ordinary
+    // `"..."`: an earlier spelling allowed the quote to be absent, and every
+    // string literal parsed as raw.
     raw_string_literal: _ => token(seq(
       'r',
-      optional(/#+"|"/),
+      /#*/,
+      '"',
       /[^"]*/,
       '"',
-      optional(/#+/),
+      /#*/,
     )),
 
     escape_sequence: _ => token(prec(1, seq(

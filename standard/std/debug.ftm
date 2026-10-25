@@ -58,7 +58,7 @@ export fn breakpoint() void {
 }
 
 // A condition that must hold.
-export define ASSERT_DEBUG(condition) std.assert(condition, #condition, $__builtin_FILE, $__builtin_LINE)?!
+export define ASSERT_DEBUG(condition) std.assert(condition, #condition, $__builtin_FILE, $__builtin_LINE)??
 
 // A place that must not be reached.
-export define DEBUG_UNREACHABLE(message) std.unreachable(#message, $__builtin_FILE, $__builtin_LINE)?!
+export define DEBUG_UNREACHABLE(message) std.unreachable(#message, $__builtin_FILE, $__builtin_LINE)??

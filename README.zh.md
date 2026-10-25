@@ -35,7 +35,7 @@ Fallthrough 是一门静态类型、编译型的系统级语言。名字本身�
 2. **值语义与确定性析构。** 值拥有它持有的东西，并在作用域结束时通过 `__drop__` 销毁。拷贝与
    移动是类型自己的构造函数；`std.move` 是程序声明“这个具名值正在死亡”的方式。
 3. **错误是类型的一部分。** 可能失败的函数写 `except`；调用点要么用 `try` 处理异常，要么用
-   `?!` 把它传出去。异常携带类型名与消息。没有隐藏的错误码，也没有未检查的异常。
+   `??` 把它传出去。异常携带类型名与消息。没有隐藏的错误码，也没有未检查的异常。
 4. **小的可读核心，功能长在库里。** 泛型是带模板参数的类型家族，traits 在编译期按结构回答；
    容器、字符串、JSON、TOML、XML、网络与日志都是使用本语言写成的普通模块。标准库不是魔法，
    它是这门语言的第一个用户。
@@ -165,12 +165,12 @@ fallc hello.ft -o hello
 import std;
 
 fn main() int except {
-    std.println("Hello, world!")?!;
+    std.println("Hello, world!")??;
     return 0;
 }
 ```
 
-写流可能失败，所以 `println` 声明为 `except`，调用点要么处理异常，要么用 `?!` 把它传出去；
+写流可能失败，所以 `println` 声明为 `except`，调用点要么处理异常，要么用 `??` 把它传出去；
 可能抛出的 `main` 要在返回类型后写明 `except`。
 
 `import C;` 是用本语言写成的 C 标准库绑定；`import std;` 是语言自己的标准库。两者都是普通
@@ -201,7 +201,7 @@ fallc hello.ft --emit=llvm   -o hello.ll    # LLVM IR
 | [03 声明](docs/language/03-declarations.zh.md) | 声明、属性、宏、traits、interface、模板 |
 | [04 函数](docs/language/04-functions.zh.md) | 函数、成员函数、lambda、实参传递、重载、移动 |
 | [05 语句](docs/language/05-statements.zh.md) | 块、循环、`switch`、跳转、`defer` |
-| [06 异常](docs/language/06-exceptions.zh.md) | `raise`、`try`、`except`、`?!`、调用点义务 |
+| [06 异常](docs/language/06-exceptions.zh.md) | `raise`、`try`、`except`、`??`、调用点义务 |
 | [07 表达式](docs/language/07-expressions.zh.md) | 运算符、转换、特殊方法、求值顺序 |
 | [08 模块](docs/language/08-modules.zh.md) | 导入与导出、模块查找、多文件程序 |
 | [09 作用域](docs/language/09-scopes.zh.md) | 作用域、遮蔽、生命周期、销毁顺序 |

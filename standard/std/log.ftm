@@ -1,14 +1,14 @@
 // Logging: named levels, one line each, a filter, and a stream.
 //
 //     std.log.info("starting on {}\n"? no -- the line break is the logger's);
-//     log.info("starting with {} items", count)?!;
+//     log.info("starting with {} items", count)??;
 //
 // A log line is `[LEVEL] text`, written to standard error by default. The
 // level filter is one number: a message below the current level is dropped
 // before its text is built, so a disabled debug line costs nothing.
 //
 //     log.set_level(std.log.Level.DEBUG);
-//     log.debug("value = {}", value)?!;
+//     log.debug("value = {}", value)??;
 //
 // The stream is `std.err` unless the program changes it, which is what makes a
 // test or a daemon able to send logs elsewhere without every call changing.
@@ -102,42 +102,42 @@ fn write(level Level, values ...Ts) void except {
     if (!enabled(level)) {
         return;
     }
-    _target.print("[{}] ", level_name(level))?!;
-    _target.print(values...)?!;
-    _target.print("\n")?!;
+    _target.print("[{}] ", level_name(level))??;
+    _target.print(values...)??;
+    _target.print("\n")??;
 }
 
 // Writes a trace line.
 export
 template <Ts ...type>
 fn trace(values ...Ts) void except {
-    write(Level.TRACE, values...)?!;
+    write(Level.TRACE, values...)??;
 }
 
 // Writes a debug line.
 export
 template <Ts ...type>
 fn debug(values ...Ts) void except {
-    write(Level.DEBUG, values...)?!;
+    write(Level.DEBUG, values...)??;
 }
 
 // Writes an info line.
 export
 template <Ts ...type>
 fn info(values ...Ts) void except {
-    write(Level.INFO, values...)?!;
+    write(Level.INFO, values...)??;
 }
 
 // Writes a warning line.
 export
 template <Ts ...type>
 fn warn(values ...Ts) void except {
-    write(Level.WARN, values...)?!;
+    write(Level.WARN, values...)??;
 }
 
 // Writes an error line.
 export
 template <Ts ...type>
 fn error(values ...Ts) void except {
-    write(Level.ERROR, values...)?!;
+    write(Level.ERROR, values...)??;
 }

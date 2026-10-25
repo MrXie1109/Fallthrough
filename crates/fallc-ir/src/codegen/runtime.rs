@@ -81,7 +81,7 @@ impl<'ctx> Lowerer<'ctx> {
     }
 
     /// A pointer to a NUL-terminated constant string.
-    fn text_constant_pointer(&mut self, text: &str) -> PointerValue<'static> {
+    pub(super) fn text_constant_pointer(&mut self, text: &str) -> PointerValue<'static> {
         let context = self.backend.context();
         let module = self.backend.module();
         let bytes = context.const_string(text.as_bytes(), true);
@@ -106,6 +106,46 @@ impl<'ctx> Lowerer<'ctx> {
             .get_function(name)
             .is_some_and(|function| function.count_basic_blocks() > 0)
         {
+            return Ok(());
+        }
+        if name == "__builtin_render_object" {
+            let signature = pointer.fn_type(&[pointer.into(), pointer.into()], false);
+            let function = match self.backend.module().get_function(name) {
+                Some(function) => function,
+                None => self.backend.module().add_function(name, signature, None),
+            };
+            function.set_linkage(inkwell::module::Linkage::LinkOnceODR);
+            let entry = context.append_basic_block(function, "entry");
+            let builder = context.create_builder();
+            builder.position_at_end(entry);
+            let value = function.get_nth_param(0).expect("the value address");
+            let pointer = context.ptr_type(inkwell::AddressSpace::default());
+            let i32_ty = context.i32_type();
+            let i64_ty = context.i64_type();
+            let buffer = self
+                .renderer_buffer("__builtin_render_object.buffer", RENDER_BUFFER * 2)
+                .as_pointer_value();
+            let snprintf = self.declare_libc(
+                "snprintf",
+                &[pointer.into(), i64_ty.into(), pointer.into()],
+                Some(i32_ty.into()),
+            );
+            let format = self.text_constant_pointer("<%s object at %p>");
+            let type_name = function.get_nth_param(1).expect("the type name");
+            builder
+                .build_call(
+                    snprintf,
+                    &[
+                        buffer.into(),
+                        i64_ty.const_int(RENDER_BUFFER * 2, false).into(),
+                        format.into(),
+                        type_name.into(),
+                        value.into(),
+                    ],
+                    "",
+                )
+                .map_err(failed)?;
+            builder.build_return(Some(&buffer)).map_err(failed)?;
             return Ok(());
         }
         let value_ty: BasicTypeEnum<'static> = if name.ends_with("float") {
@@ -151,6 +191,39 @@ impl<'ctx> Lowerer<'ctx> {
                     .build_select(non_zero, truthy, falsy, "text")
                     .map_err(failed)?
                     .into_pointer_value()
+            }
+            // `<Type object at 0x...>`: the default `repr` of a value whose
+            // type declares none, and what every language says when a value has
+            // no better text. Two arguments, so it does not go through the
+            // one-argument table below.
+            "__builtin_render_object" => {
+                let pointer = context.ptr_type(inkwell::AddressSpace::default());
+                let i32_ty = context.i32_type();
+                let i64_ty = context.i64_type();
+                let buffer = self
+                    .renderer_buffer("__builtin_render_object.buffer", RENDER_BUFFER * 2)
+                    .as_pointer_value();
+                let snprintf = self.declare_libc(
+                    "snprintf",
+                    &[pointer.into(), i64_ty.into(), pointer.into()],
+                    Some(i32_ty.into()),
+                );
+                let format = self.text_constant_pointer("<%s object at %p>");
+                let type_name = function.get_nth_param(1).expect("the type name");
+                builder
+                    .build_call(
+                        snprintf,
+                        &[
+                            buffer.into(),
+                            i64_ty.const_int(RENDER_BUFFER * 2, false).into(),
+                            format.into(),
+                            type_name.into(),
+                            value.into(),
+                        ],
+                        "",
+                    )
+                    .map_err(failed)?;
+                buffer
             }
             // One `snprintf` into the renderer's own buffer, with the format C
             // used: `%g` keeps a whole float reading as `2`, not `2.000000`.

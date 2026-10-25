@@ -61,10 +61,10 @@ fn a_spec_says_how_wide_and_which_way() {
     let source = r#"import std;
 
 fn main() int except {
-    std.print("[{:>8}][{:<8}][{:^8}]\n", "ab", "cd", "ef")?!;
-    std.print("[{:08}][{:08.2f}]\n", 42, 3.14159)?!;
-    std.print("[{:x}][{:X}][{:b}][{:o}]\n", 255, 255, 5, 8)?!;
-    std.print("[{:.2f}][{}]\n", 3.14159, 3.14159)?!;
+    std.print("[{:>8}][{:<8}][{:^8}]\n", "ab", "cd", "ef")??;
+    std.print("[{:08}][{:08.2f}]\n", 42, 3.14159)??;
+    std.print("[{:x}][{:X}][{:b}][{:o}]\n", 255, 255, 5, 8)??;
+    std.print("[{:.2f}][{}]\n", 3.14159, 3.14159)??;
     return 0;
 }
 "#;
@@ -91,10 +91,10 @@ fn __format__(this &const Point) String {
 
 fn main() int except {
     p Point = .{1, 2};
-    std.print("point {}\n", p)?!;
-    std.print("padded [{:>9}]\n", p)?!;
+    std.print("point {}\n", p)??;
+    std.print("padded [{:>9}]\n", p)??;
     text String = fmt.format_value(p);
-    std.print("direct {}\n", text)?!;
+    std.print("direct {}\n", text)??;
     return 0;
 }
 "#;
@@ -114,10 +114,10 @@ fn main() int except {
     pieces auto = fmt.empty_pieces();
     pieces.push(String("[{}]"));
     pieces.push(fmt.format_value(7));
-    line String = fmt.rendered(&pieces)?!;
-    std.print("{}\n", line)?!;
+    line String = fmt.rendered(&pieces)??;
+    std.print("{}\n", line)??;
     spec String = String("04");
-    std.print("[{}]\n", fmt.apply_spec(String("7"), &spec)?!)?!;
+    std.print("[{}]\n", fmt.apply_spec(String("7"), &spec)??)??;
     return 0;
 }
 "#;

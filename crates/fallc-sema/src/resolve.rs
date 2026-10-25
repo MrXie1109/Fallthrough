@@ -680,7 +680,7 @@ pub struct FunctionSignature {
     /// `__as__Box__const_Box__double`; a caller that resolved one needs both,
     /// so the definition name travels with the signature.
     pub bound_as: String,
-    /// The condition of a `?!(cond)` claim, when the declaration is in this
+    /// The condition of a `??(cond)` claim, when the declaration is in this
     /// tree.
     ///
     /// The expression id belongs to one tree, so a signature that crossed a
@@ -689,7 +689,7 @@ pub struct FunctionSignature {
     pub throws_condition: Option<fallc_ast::ExprId>,
     /// Whether calling this may raise an exception.
     ///
-    /// True for a body marked `?!`. A body marked `?!(cond)` is true only when
+    /// True for a body marked `??`. A body marked `??(cond)` is true only when
     /// `cond` cannot be shown false: the claim is the function's, and a caller
     /// that trusts it without proof is trusting the wrong party.
     pub throws: bool,
@@ -1917,6 +1917,7 @@ impl Resolver {
             ExprKind::PackExpand(inner) => self.resolve_expr(ast, *inner),
             ExprKind::CommaFold { pattern } => self.resolve_expr(ast, *pattern),
             ExprKind::Propagate(node) => self.resolve_expr(ast, node.value),
+            ExprKind::Abort(node) => self.resolve_expr(ast, node.value),
             ExprKind::ThrowQuery(inner) => self.resolve_expr(ast, *inner),
             // `type(expr)` names the type of an expression: the expression is
             // still an expression, so its names resolve as usual.

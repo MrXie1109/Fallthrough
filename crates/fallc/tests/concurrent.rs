@@ -64,7 +64,7 @@ type Answer {
 fn producer(argument *byte) u32 {
     answer Answer = *(argument as *Answer);
     try {
-        answer.promise->set(42)?!;
+        answer.promise->set(42)??;
     } except {
     }
     return 0;
@@ -74,10 +74,10 @@ fn main() int except {
     promise Promise<int> = Promise<int>();
     future Future<int> = promise.future();
     answer Answer = .{ &promise };
-    thread Thread = Thread(producer, &answer as *byte)?!;
-    value int = future.get()?!;
-    thread.join()?!;
-    std.print("{} {}\n", value, future.ready() as int)?!;
+    thread Thread = Thread(producer, &answer as *byte)??;
+    value int = future.get()??;
+    thread.join()??;
+    std.print("{} {}\n", value, future.ready() as int)??;
     return 0;
 }
 "#;
@@ -97,9 +97,9 @@ type Feed {
 fn producer(argument *byte) u32 {
     feed Feed = *(argument as *Feed);
     try {
-        feed.channel->send(1)?!;
-        feed.channel->send(2)?!;
-        feed.channel->send(3)?!;
+        feed.channel->send(1)??;
+        feed.channel->send(2)??;
+        feed.channel->send(3)??;
         feed.channel->close();
     } except {
     }
@@ -109,13 +109,13 @@ fn producer(argument *byte) u32 {
 fn main() int except {
     channel Channel<int> = Channel<int>();
     feed Feed = .{ &channel };
-    thread Thread = Thread(producer, &feed as *byte)?!;
-    first int = channel.recv()?!;
-    second int = channel.recv()?!;
-    third int = channel.recv()?!;
-    thread.join()?!;
-    std.print("{} {} {}\n", first, second, third)?!;
-    std.print("{} {}\n", channel.closed() as int, channel.try_recv().present() as int)?!;
+    thread Thread = Thread(producer, &feed as *byte)??;
+    first int = channel.recv()??;
+    second int = channel.recv()??;
+    third int = channel.recv()??;
+    thread.join()??;
+    std.print("{} {} {}\n", first, second, third)??;
+    std.print("{} {}\n", channel.closed() as int, channel.try_recv().present() as int)??;
     return 0;
 }
 "#;
@@ -138,12 +138,12 @@ fn job(argument *byte) u32 {
 fn main() int except {
     counter Atomic<int> = Atomic<int>(0);
     pool ThreadPool = ThreadPool(2usize);
-    pool.start()?!;
+    pool.start()??;
     pool.submit(job, &counter as *byte);
     pool.submit(job, &counter as *byte);
     pool.submit(job, &counter as *byte);
-    pool.shutdown()?!;
-    std.print("{}\n", counter.load())?!;
+    pool.shutdown()??;
+    std.print("{}\n", counter.load())??;
     return 0;
 }
 "#;

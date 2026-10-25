@@ -57,14 +57,14 @@ fn a_holder_carries_values_of_different_types() {
 
 fn main() int except {
     a Any = Any(42);
-    std.print("{} {} {}\n", a.present() as int, a.type_name(), a)?!;
-    std.print("int {}\n", a.to_int()?!)?!;
+    std.print("{} {} {}\n", a.present() as int, a.type_name(), a)??;
+    std.print("int {}\n", a.to_int()??)??;
     b Any = Any(String("hi"));
-    std.print("{} {}\n", b.type_name(), b.to_text()?!)?!;
+    std.print("{} {}\n", b.type_name(), b.to_text()??)??;
     c Any = Any(2.5);
-    std.print("real {}\n", c.to_real()?!)?!;
+    std.print("real {}\n", c.to_real()??)??;
     d Any = Any(true);
-    std.print("bool {}\n", d.to_bool()?!)?!;
+    std.print("bool {}\n", d.to_bool()??)??;
     return 0;
 }
 "#;
@@ -82,13 +82,13 @@ fn a_wrong_question_raises_type_error() {
 fn main() int except {
     a Any = Any(42);
     try {
-        std.print("never {}\n", a.to_text()?!)?!;
+        std.print("never {}\n", a.to_text()??)??;
     } except {
         e &const std.Exception = std.exception();
-        std.print("caught {}\n", e.name())?!;
+        std.print("caught {}\n", e.name())??;
     }
     empty Any = Any();
-    std.print("empty {} {}\n", empty.present() as int, empty.type_name())?!;
+    std.print("empty {} {}\n", empty.present() as int, empty.type_name())??;
     return 0;
 }
 "#;
@@ -106,9 +106,9 @@ fn a_holder_is_copied_and_compared() {
 fn main() int except {
     a Any = Any(String("text"));
     b Any = a;
-    std.print("eq {} {}\n", (a == b) as int, (a == Any(42)) as int)?!;
+    std.print("eq {} {}\n", (a == b) as int, (a == Any(42)) as int)??;
     b.reset();
-    std.print("{} {}\n", b.present() as int, a.to_text()?!)?!;
+    std.print("{} {}\n", b.present() as int, a.to_text()??)??;
     return 0;
 }
 "#;

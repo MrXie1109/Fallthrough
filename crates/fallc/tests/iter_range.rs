@@ -67,12 +67,12 @@ fn main() int except {
         std.count_if(values.begin(), values.end(), even),
         std.all_of(values.begin(), values.end(), even) as int,
         std.any_of(values.begin(), values.end(), odd) as int,
-        std.none_of(values.begin(), values.end(), odd) as int)?!;
+        std.none_of(values.begin(), values.end(), odd) as int)??;
     first *int = std.find_if(values.begin(), values.end(), even);
-    std.print("{}\n", *first)?!;
+    std.print("{}\n", *first)??;
     third *int = std.advance(values.begin(), values.end(), 2usize);
     last *int = std.nth(values.begin(), values.end(), 99usize);
-    std.print("{} {}\n", *third, (last == values.end()) as int)?!;
+    std.print("{} {}\n", *third, (last == values.end()) as int)??;
     return 0;
 }
 "#;
@@ -92,18 +92,18 @@ fn main() int except {
     for (value i64 : std.to(5i64)) {
         total += value;
     }
-    std.print("{} {}\n", total, std.to(5i64).length())?!;
+    std.print("{} {}\n", total, std.to(5i64).length())??;
     down i64 = 0i64;
     for (value i64 : std.down_to(3i64, 0i64)) {
         down += value;
     }
-    std.print("{}\n", down)?!;
+    std.print("{}\n", down)??;
     stepped i64 = 0i64;
-    range IntRange = std.step_range(0i64, 10i64, 3i64)?!;
+    range IntRange = std.step_range(0i64, 10i64, 3i64)??;
     for (value i64 : range) {
         stepped += 1i64;
     }
-    std.print("{} {}\n", stepped, range.length())?!;
+    std.print("{} {}\n", stepped, range.length())??;
     return 0;
 }
 "#;

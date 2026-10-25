@@ -59,10 +59,10 @@ import std.time;
 fn main() int except {
     a Duration = time.from_millis(1500);
     b Duration = time.from_seconds(2);
-    std.print("{} {} {} {}\n", a.nanos(), a.millis(), a.seconds(), a)?!;
-    std.print("sum {} {}\n", (a + b).nanos(), (b - a).millis())?!;
-    std.print("cmp {} {}\n", (a < b) as int, (a == time.from_millis(1500)) as int)?!;
-    std.print("neg {}\n", time.from_millis(0) - time.from_millis(250))?!;
+    std.print("{} {} {} {}\n", a.nanos(), a.millis(), a.seconds(), a)??;
+    std.print("sum {} {}\n", (a + b).nanos(), (b - a).millis())??;
+    std.print("cmp {} {}\n", (a < b) as int, (a == time.from_millis(1500)) as int)??;
+    std.print("neg {}\n", time.from_millis(0) - time.from_millis(250))??;
     return 0;
 }
 "#;
@@ -83,7 +83,7 @@ fn main() int except {
     start Instant = time.now();
     os.sleep_ms(3);
     took Duration = time.since(&start);
-    std.print("{} {}\n", (took.nanos() >= 0i64) as int, (took.millis() >= 3i64) as int)?!;
+    std.print("{} {}\n", (took.nanos() >= 0i64) as int, (took.millis() >= 3i64) as int)??;
     return 0;
 }
 "#;
@@ -97,11 +97,11 @@ fn the_wall_clock_converts_to_a_civil_date() {
 import std.time;
 
 fn main() int except {
-    std.print("{}\n", SystemTime(0i64).to_utc())?!;
-    std.print("{}\n", SystemTime(1792454400i64 * 1000000000i64).to_utc())?!;
-    std.print("{}\n", SystemTime(-86400i64 * 1000000000i64).to_utc())?!;
+    std.print("{}\n", SystemTime(0i64).to_utc())??;
+    std.print("{}\n", SystemTime(1792454400i64 * 1000000000i64).to_utc())??;
+    std.print("{}\n", SystemTime(-86400i64 * 1000000000i64).to_utc())??;
     now SystemTime = time.unix_now();
-    std.print("{}\n", (now.unix_seconds() > 1600000000i64) as int)?!;
+    std.print("{}\n", (now.unix_seconds() > 1600000000i64) as int)??;
     return 0;
 }
 "#;

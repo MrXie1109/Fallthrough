@@ -667,10 +667,10 @@ pub struct FunctionItem {
     pub exported: bool,
     /// What the declaration says about raising exceptions, if anything.
     ///
-    /// `?!` claims the body may raise; `?!(cond)` claims it may raise only when
+    /// `??` claims the body may raise; `??(cond)` claims it may raise only when
     /// `cond` holds, which is a constant the checker evaluates. A function
     /// without either may not raise, and a call to one that may needs a `try` or
-    /// a `?!` of its own.
+    /// a `??` of its own.
     pub throws: Option<Throws>,
     /// Whether the declaration is only a signature, with no body.
     ///
@@ -887,8 +887,8 @@ pub struct InterfaceMethod {
     /// The annotation is part of the method's *type*: a method that may raise
     /// returns its result through the exception ABI, so a type satisfies the
     /// interface only when its method agrees about this. The restriction writes
-    /// it with `?!`, the same marker a call that passes an exception on uses:
-    /// `it.save(String)?! -> void`.
+    /// it with `??`, the same marker a call that passes an exception on uses:
+    /// `it.save(String)?? -> void`.
     pub throws: bool,
     /// The whole signature's source range.
     pub span: Span,

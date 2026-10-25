@@ -68,10 +68,10 @@ fn two_threads_incrementing_an_atomic_value_lose_nothing() {
 {WORKER}
 fn main() int except {{
     shared Atomic<int> = Atomic<int>(0);
-    first Thread = Thread(&worker, &shared)?!;
-    second Thread = Thread(&worker, &shared)?!;
-    first.join()?!;
-    second.join()?!;
+    first Thread = Thread(&worker, &shared)??;
+    second Thread = Thread(&worker, &shared)??;
+    first.join()??;
+    second.join()??;
     C.printf("%d\n", shared.load());
     return 0;
 }}
@@ -106,10 +106,10 @@ fn main() int except {
     shared Shared;
     (&shared.mutex)->__init__();
     shared.value = 0;
-    first Thread = Thread(&worker, &shared)?!;
-    second Thread = Thread(&worker, &shared)?!;
-    first.join()?!;
-    second.join()?!;
+    first Thread = Thread(&worker, &shared)??;
+    second Thread = Thread(&worker, &shared)??;
+    first.join()??;
+    second.join()??;
     C.printf("%d\n", shared.value);
     return 0;
 }
@@ -163,10 +163,10 @@ fn main() int except {
     seen = 41;
     first_value int = 0;
     second_value int = 0;
-    first Thread = Thread(&worker, &first_value as *byte)?!;
-    second Thread = Thread(&worker, &second_value as *byte)?!;
-    first.join()?!;
-    second.join()?!;
+    first Thread = Thread(&worker, &first_value as *byte)??;
+    second Thread = Thread(&worker, &second_value as *byte)??;
+    first.join()??;
+    second.join()??;
     C.printf("main %d first %d second %d\n", seen, first_value, second_value);
     return 0;
 }

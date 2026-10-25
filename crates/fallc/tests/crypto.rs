@@ -65,7 +65,7 @@ fn main() int except {
         check.push(text[index] as byte);
         index += 1;
     }
-    std.print("{:08x} {:04x} {:02x}\n", std.crc32(&check), std.crc16(&check), std.crc8(&check))?!;
+    std.print("{:08x} {:04x} {:02x}\n", std.crc32(&check), std.crc16(&check), std.crc8(&check))??;
     return 0;
 }
 "#;
@@ -92,10 +92,10 @@ fn bytes_of(text &const String) Bytes {
 fn main() int except {
     abc String = String("abc");
     abc_bytes Bytes = bytes_of(&abc);
-    std.print("{}\n", std.sha256_hex(&abc_bytes))?!;
+    std.print("{}\n", std.sha256_hex(&abc_bytes))??;
     empty String = String("");
     empty_bytes Bytes = bytes_of(&empty);
-    std.print("{}\n", std.sha256_hex(&empty_bytes))?!;
+    std.print("{}\n", std.sha256_hex(&empty_bytes))??;
     key Bytes = Bytes();
     counter int = 0;
     while (counter < 20) {
@@ -104,7 +104,7 @@ fn main() int except {
     }
     data String = String("Hi There");
     data_bytes Bytes = bytes_of(&data);
-    std.print("{}\n", std.hmac_sha256_hex(&key, &data_bytes))?!;
+    std.print("{}\n", std.hmac_sha256_hex(&key, &data_bytes))??;
     return 0;
 }
 "#;
@@ -122,16 +122,16 @@ fn uuid_version_four_round_trips_through_its_text() {
     let source = r#"import std;
 
 fn main() int except {
-    identifier Uuid = std.v4()?!;
+    identifier Uuid = std.v4()??;
     text String = identifier.to_string();
-    std.print("{} {} {} ", text.length(), identifier.version(), identifier.variant())?!;
-    parsed Uuid = std.parse_uuid(&text)?!;
-    std.print("{} {}", (parsed == identifier) as int, (parsed != identifier) as int)?!;
+    std.print("{} {} {} ", text.length(), identifier.version(), identifier.variant())??;
+    parsed Uuid = std.parse_uuid(&text)??;
+    std.print("{} {}", (parsed == identifier) as int, (parsed != identifier) as int)??;
     try {
         bad String = String("0123456789abcdef0123456789abcdef0123456789");
-        std.parse_uuid(&bad)?!;
+        std.parse_uuid(&bad)??;
     } except {
-        std.print(" {}", std.exception().name())?!;
+        std.print(" {}", std.exception().name())??;
     }
     return 0;
 }
@@ -168,7 +168,7 @@ fn main() int except {
         poisson_value < 100u32,
         binomial_value <= 10usize,
         geometric_value >= 1u32,
-        picked)?!;
+        picked)??;
     return 0;
 }
 "#;

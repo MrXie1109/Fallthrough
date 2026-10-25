@@ -1,10 +1,10 @@
 // JSON: a document, values into it, a parser and a writer.
 //
-//     document JsonDocument = json.parse(&text)?!;
+//     document JsonDocument = json.parse(&text)??;
 //     root JsonValue = document.root();
 //     key String = String("name");
-//     name String = root.member(&key).value()?!.as_text()?!;
-//     written String = json.serialize(&root)?!;
+//     name String = root.member(&key).value()??.as_text()??;
+//     written String = json.serialize(&root)??;
 //
 // # Ownership
 //
@@ -297,7 +297,7 @@ export fn parse(text &const String) JsonDocument except {
     document JsonDocument = JsonDocument();
     dummy u32 = document.add_node();
     parser Parser = Parser(text, &document);
-    root_index u32 = parser.parse_into()?!;
+    root_index u32 = parser.parse_into()??;
     parser.skip_space();
     if (parser._index != parser._text.length()) {
         raise "ValueError": "trailing text after the JSON value";
@@ -342,28 +342,28 @@ fn parse_into(this &Parser) u32 except {
     }
     character char = this._text[this._index];
     if (character == '{' as char) {
-        return this.parse_object()?!;
+        return this.parse_object()??;
     }
     if (character == '[' as char) {
-        return this.parse_array()?!;
+        return this.parse_array()??;
     }
     if (character == '"' as char) {
-        text_value String = this.parse_text()?!;
+        text_value String = this.parse_text()??;
         return this.add_text(&text_value);
     }
     if (character == 't' as char) {
-        this.expect_word("true")?!;
+        this.expect_word("true")??;
         return this.add_boolean(true);
     }
     if (character == 'f' as char) {
-        this.expect_word("false")?!;
+        this.expect_word("false")??;
         return this.add_boolean(false);
     }
     if (character == 'n' as char) {
-        this.expect_word("null")?!;
+        this.expect_word("null")??;
         return this.add_node(JsonKind.NULL_VALUE);
     }
-    return this.add_number(this.parse_number()?!);
+    return this.add_number(this.parse_number()??);
 }
 
 // Reads an object, returning its node index.
@@ -380,13 +380,13 @@ fn parse_object(this &Parser) u32 except {
         if (!this.at('"')) {
             raise "ValueError": "an object's key must be a string";
         }
-        key String = this.parse_text()?!;
+        key String = this.parse_text()??;
         this.skip_space();
         if (!this.at(':')) {
             raise "ValueError": "an object's key must be followed by `:`";
         }
         this._index += 1;
-        child u32 = this.parse_into()?!;
+        child u32 = this.parse_into()??;
         this._document->_nodes[index as usize]._keys.push(key);
         this._document->_nodes[index as usize]._values.push(child);
         this.skip_space();
@@ -412,7 +412,7 @@ fn parse_array(this &Parser) u32 except {
         return index;
     }
     while (true) {
-        child u32 = this.parse_into()?!;
+        child u32 = this.parse_into()??;
         this._document->_nodes[index as usize]._children.push(child);
         this.skip_space();
         if (this.at(',')) {
@@ -462,8 +462,8 @@ fn parse_text(this &Parser) String except {
         } else if (escape == 't' as char) {
             result.push('\t' as char);
         } else if (escape == 'u' as char) {
-            code_point u32 = this.parse_hex4()?!;
-            result.push(unicode.encode(code_point)?!);
+            code_point u32 = this.parse_hex4()??;
+            result.push(unicode.encode(code_point)??);
         } else {
             raise "ValueError": "unknown JSON escape";
         }
@@ -479,7 +479,7 @@ fn parse_hex4(this &Parser) u32 except {
         if (this._index >= this._text.length()) {
             raise "ValueError": "a `\\u` escape is incomplete";
         }
-        digit u32 = json_hex_digit(this._text[this._index])?!;
+        digit u32 = json_hex_digit(this._text[this._index])??;
         value = value * 16u32 + digit;
         this._index += 1;
         count += 1;
@@ -520,7 +520,7 @@ fn parse_number(this &Parser) f64 except {
         raise "ValueError": "expected a JSON value";
     }
     number_text String = this._text.substring(start, this._index - start);
-    return number_text as f64?!;
+    return number_text as f64??;
 }
 
 // Skips spaces, tabs and newlines.
@@ -573,7 +573,7 @@ fn c_length(word *const char) usize {
 // Writes a value as compact JSON text.
 export fn serialize(value &const JsonValue) String except {
     result String = String();
-    write_into(&result, value)?!;
+    write_into(&result, value)??;
     return result;
 }
 
@@ -585,7 +585,7 @@ fn write_into(out &String, value &const JsonValue) void except {
         return;
     }
     if (kind_value == JsonKind.BOOLEAN) {
-        if (value.as_bool()?!) {
+        if (value.as_bool()??) {
             out.push("true");
         } else {
             out.push("false");
@@ -593,7 +593,7 @@ fn write_into(out &String, value &const JsonValue) void except {
         return;
     }
     if (kind_value == JsonKind.NUMBER) {
-        out.push(str(value.as_number()?!));
+        out.push(str(value.as_number()??));
         return;
     }
     if (kind_value == JsonKind.TEXT) {
@@ -607,8 +607,8 @@ fn write_into(out &String, value &const JsonValue) void except {
             if (index > 0) {
                 out.push(',');
             }
-            element JsonValue = at(value, index)?!;
-            write_into(out, &element)?!;
+            element JsonValue = at(value, index)??;
+            write_into(out, &element)??;
             index += 1;
         }
         out.push(']');
@@ -622,8 +622,8 @@ fn write_into(out &String, value &const JsonValue) void except {
         }
         write_text(out, value.node_of()._keys[index]);
         out.push(':');
-        member JsonValue = member_value(value, index)?!;
-        write_into(out, &member)?!;
+        member JsonValue = member_value(value, index)??;
+        write_into(out, &member)??;
         index += 1;
     }
     out.push('}');

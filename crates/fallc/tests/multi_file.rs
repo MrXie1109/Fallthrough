@@ -317,7 +317,7 @@ fn a_throwing_interface_method_crosses_a_module_boundary() {
     let scratch = Scratch::new("interface-across-throws");
     let library = scratch.write(
         "engine.ftm",
-        "export type Engine {\n    fuel int;\n}\n\nexport fn start(this &Engine) int except {\n    if (this.fuel == 0) {\n        raise \"E\": \"empty\";\n    }\n    return this.fuel;\n}\n\nexport interface IEngine(it T) {\n    it.start()?! -> int,\n}\n",
+        "export type Engine {\n    fuel int;\n}\n\nexport fn start(this &Engine) int except {\n    if (this.fuel == 0) {\n        raise \"E\": \"empty\";\n    }\n    return this.fuel;\n}\n\nexport interface IEngine(it T) {\n    it.start()?? -> int,\n}\n",
     );
     let main = scratch.write(
         "main.ft",

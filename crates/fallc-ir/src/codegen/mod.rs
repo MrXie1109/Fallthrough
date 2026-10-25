@@ -238,7 +238,7 @@ fn implicit_constructor_symbol(ty: &Type) -> String {
 /// Returns the name an expression denotes, if it is a plain name.
 /// Returns the span an initialiser's constructor was resolved at.
 ///
-/// A construction has no call to write `?!` on, so the marker goes on the
+/// A construction has no call to write `??` on, so the marker goes on the
 /// initialiser as a whole; the constructor was resolved from the value beneath
 /// it, and that value is what the checker keyed the call by.
 fn initialiser_span(ast: &Ast, expr: fallc_ast::ExprId) -> fallc_span::Span {
@@ -571,7 +571,7 @@ pub struct ModuleResolutions {
     pub default_expressions: fallc_sema::ExpressionDefaults,
     /// The calls whose callee may raise, so each is unwrapped after it returns.
     pub throwing_calls: std::collections::HashSet<Span>,
-    /// Those written with `?!`, whose exception leaves the function.
+    /// Those written with `??`, whose exception leaves the function.
     pub propagating_calls: std::collections::HashSet<Span>,
 }
 
@@ -902,7 +902,7 @@ impl fallc_ast::visit::Visitor for StaticStorageFinder {
 /// passes its address as a hidden first parameter, and the callee writes into it
 /// and returns nothing. The threshold is deliberately a size limit rather than
 /// "every aggregate": small records keep the value convention they always had,
-/// so every existing call site, `?!` result struct, and standard-library
+/// so every existing call site, `??` result struct, and standard-library
 /// signature that returns one stays unchanged.
 #[derive(Clone, Debug)]
 enum ReturnKind {
@@ -979,7 +979,7 @@ pub struct Lowerer<'ctx> {
     exc_result_type: Option<inkwell::types::BasicTypeEnum<'static>>,
     /// The slot the current function's result is built in.
     ///
-    /// A function marked `?!` returns `{ ok, value, error }`, and every way out
+    /// A function marked `??` returns `{ ok, value, error }`, and every way out
     /// writes it here before returning: the ordinary `return`, a `raise`, and a
     /// propagated exception.
     exc_result: Option<inkwell::values::PointerValue<'static>>,
@@ -1237,12 +1237,18 @@ pub struct Lowerer<'ctx> {
     method_calls: HashMap<Span, String>,
     /// The calls whose callee may raise, so a check follows each one.
     throwing_calls: std::collections::HashSet<Span>,
-    /// Those written with `?!`, whose exception leaves the function rather than
+    /// Those written with `??`, whose exception leaves the function rather than
     /// going to a handler in it.
     propagating_calls: std::collections::HashSet<Span>,
     /// The bindings of the function being lowered, kept so the escape paths --
     /// which run `finally` blocks -- can lower statements.
     current_bindings: BindingTypes,
+    /// How many `expr!!` are being lowered around the current position.
+    ///
+    /// Nonzero means a raise is not an escape but a stop: `!!` is `try { .. }
+    /// except { std.panic(); }`, so the unwrap of a throwing call checks this
+    /// and panics instead of looking for a handler.
+    abort_lowering: u32,
     /// The symbol each plain assignment resolved to, by the statement's span.
     assign_methods: HashMap<Span, String>,
     /// Where a `__deref__` result is meant as a value rather than a reference,

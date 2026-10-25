@@ -774,7 +774,7 @@ pub struct InstantiationRecords {
     /// The calls whose callee may raise, so a caller can check for a pending
     /// exception before going on.
     pub throwing_calls: std::collections::HashSet<Span>,
-    /// The throwing calls written with `?!`, which send the exception past this
+    /// The throwing calls written with `??`, which send the exception past this
     /// function's own handlers rather than to them.
     pub propagating_calls: std::collections::HashSet<Span>,
     /// Which operator method each operator resolved to.
@@ -987,7 +987,7 @@ pub struct LambdaInstance {
     /// Whether the body may raise, which makes the lambda a throwing function.
     ///
     /// A throwing lambda's result is the exception result struct, and a call of
-    /// it must be handled with `try` or `?!`, exactly as a written `except`
+    /// it must be handled with `try` or `??`, exactly as a written `except`
     /// function's is.
     pub throws: bool,
     /// The type table the body was checked against.
@@ -1206,7 +1206,7 @@ pub struct TypeCheckResult {
     /// The calls whose callee may raise, so that code generation can check for
     /// a pending exception after each one.
     pub throwing_calls: std::collections::HashSet<Span>,
-    /// The throwing calls written with `?!`.
+    /// The throwing calls written with `??`.
     pub propagating_calls: std::collections::HashSet<Span>,
     /// What each `type Name = Other;` alias stands for, by name.
     ///
@@ -1711,21 +1711,21 @@ pub struct TypeChecker {
     method_calls: std::collections::HashMap<Span, String>,
     /// The calls whose callee may raise.
     throwing_calls: std::collections::HashSet<Span>,
-    /// Those of them written with `?!`, which leave the function rather than
+    /// Those of them written with `??`, which leave the function rather than
     /// going to a handler in it.
     propagating_calls: std::collections::HashSet<Span>,
     /// Whether raising is allowed here: one entry per function whose body is
     /// being checked, true when it is marked `except`.
     throws_allowed: Vec<bool>,
     /// How many `try` bodies with an `except` enclose the statement being
-    /// checked. A call that may raise needs one of these, or a `?!`.
+    /// checked. A call that may raise needs one of these, or a `??`.
     protected_depth: usize,
     /// How many `except` blocks enclose it, which is where `raise;` is legal.
     except_depth: usize,
-    /// Non-zero while the value of a `?!` statement is being checked: that call
+    /// Non-zero while the value of a `??` statement is being checked: that call
     /// is propagating, so it is not the unprotected one.
     propagating_depth: usize,
-    /// Non-zero while a `?!(expr)` query is being analysed: the expression is
+    /// Non-zero while a `??(expr)` query is being analysed: the expression is
     /// never emitted, so what it *would* do is all that matters.
     probe_depth: usize,
     /// Whether the probe just analysed may raise.

@@ -11,7 +11,7 @@
 //
 //     channel Channel<int> = Channel<int>();
 //     producer->send(1);
-//     value int = channel.recv()?!;
+//     value int = channel.recv()??;
 //
 // # Sharing
 //
@@ -334,7 +334,7 @@ export fn __init__(this &ThreadPool, workers usize) void {
 export fn start(this &ThreadPool) void except {
     index usize = 0;
     while (index < this._workers) {
-        this._threads.push(Thread(worker_entry, &this as *byte)?!);
+        this._threads.push(Thread(worker_entry, &this as *byte)??);
         index += 1;
     }
 }
@@ -380,7 +380,7 @@ export fn shutdown(this &ThreadPool) void except {
     this._jobs.notify_all();
     this._mutex.unlock();
     for (thread &Thread : this._threads) {
-        thread.join()?!;
+        thread.join()??;
     }
     this._threads.clear();
 }
@@ -393,7 +393,7 @@ export fn __drop__(this &ThreadPool) void {
     this._mutex.unlock();
     for (thread &Thread : this._threads) {
         try {
-            thread.join()?!;
+            thread.join()??;
         } except {
             // A destructor cannot raise; a thread that could not be joined is
             // left to the process, which is what an unhandled join would do.

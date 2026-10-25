@@ -56,10 +56,10 @@ fn math_extensions_answer_their_definitions() {
     let source = r#"import std;
 
 fn main() int except {
-    std.print("{} {} {} {}\n", std.hypot(3.0, 4.0), std.cbrt(-27.0), std.trunc(-2.75), std.fract(2.75))?!;
-    std.print("{} {} {}\n", std.gcd(12, 18), std.lcm(4, 6), std.isqrt(17))?!;
-    std.print("{} {} {} {}\n", std.is_power_of_two(64), std.is_even(10), std.is_nan(std.nan()), std.is_infinite(std.infinity()))?!;
-    std.print("{} {}\n", std.degrees(std.pi()), std.radians(180.0))?!;
+    std.print("{} {} {} {}\n", std.hypot(3.0, 4.0), std.cbrt(-27.0), std.trunc(-2.75), std.fract(2.75))??;
+    std.print("{} {} {}\n", std.gcd(12, 18), std.lcm(4, 6), std.isqrt(17))??;
+    std.print("{} {} {} {}\n", std.is_power_of_two(64), std.is_even(10), std.is_nan(std.nan()), std.is_infinite(std.infinity()))??;
+    std.print("{} {}\n", std.degrees(std.pi()), std.radians(180.0))??;
     return 0;
 }
 "#;
@@ -78,11 +78,11 @@ fn main() int except {
     first Complex = std.complex(1.0, 2.0);
     second Complex = std.complex(3.0, -4.0);
     product Complex = first.mul(&second);
-    quotient Complex = first.div(&second)?!;
-    std.print("{} {} {} {}\n", product, first.conjugate(), first.abs(), first.arg())?!;
-    std.print("{} {} {} {}\n", quotient, first.norm_squared(), first == second, first != second)?!;
-    power Complex = std.complex(0.0, 1.0).pow(2.0)?!;
-    std.print("{}", power)?!;
+    quotient Complex = first.div(&second)??;
+    std.print("{} {} {} {}\n", product, first.conjugate(), first.abs(), first.arg())??;
+    std.print("{} {} {} {}\n", quotient, first.norm_squared(), first == second, first != second)??;
+    power Complex = std.complex(0.0, 1.0).pow(2.0)??;
+    std.print("{}", power)??;
     return 0;
 }
 "#;
@@ -100,16 +100,16 @@ fn matrix_arithmetic_checks_its_dimensions() {
 fn main() int except {
     identity Matrix = std.identity(2usize);
     value Matrix = std.matrix(2usize, 3usize, 2.0);
-    product Matrix = identity.mul(&value)?!;
-    std.print("{} {} {} {}\n", product.rows(), product.columns(), product.at(1usize, 2usize)?!, value.transpose().rows())?!;
-    std.print("{} {} {}\n", value.transpose().columns(), product == value, product != value)?!;
+    product Matrix = identity.mul(&value)??;
+    std.print("{} {} {} {}\n", product.rows(), product.columns(), product.at(1usize, 2usize)??, value.transpose().rows())??;
+    std.print("{} {} {}\n", value.transpose().columns(), product == value, product != value)??;
     scaled Matrix = value.scale(0.5);
-    std.print("{} {}", scaled.at(0usize, 0usize)?!, std.matrix(2usize, 2usize, 1.0).add(&identity)?!.at(1usize, 1usize)?!)?!;
+    std.print("{} {}", scaled.at(0usize, 0usize)??, std.matrix(2usize, 2usize, 1.0).add(&identity)??.at(1usize, 1usize)??)??;
     try {
-        identity.mul(&value)?!;
-        value.mul(&identity)?!;
+        identity.mul(&value)??;
+        value.mul(&identity)??;
     } except {
-        std.print(" {}", std.exception().name())?!;
+        std.print(" {}", std.exception().name())??;
     }
     return 0;
 }

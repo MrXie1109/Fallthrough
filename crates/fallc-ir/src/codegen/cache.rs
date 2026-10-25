@@ -72,19 +72,32 @@ pub fn entry_path(key: &CacheKey<'_>) -> Option<PathBuf> {
 
 /// Returns the directory module bitcode is cached in.
 ///
-/// The workspace `target` directory is used because it is build output that
-/// already exists and is per-checkout; `FALLC_CACHE` overrides it for a shared
-/// or read-only checkout.
+/// The cache belongs to the *user*, not to whoever built the compiler, so it
+/// lives where the platform keeps caches. In order:
+///
+/// 1. `FALLC_CACHE`, when set -- for a shared cache, or a read-only home;
+/// 2. `$XDG_CACHE_HOME/fallthrough`, which is the same directory `$HOME/.cache`
+///    normally names;
+/// 3. `$HOME/.cache/fallthrough` when `XDG_CACHE_HOME` is unset;
+/// 4. the system temporary directory, so a machine with no home still compiles.
+///
+/// An earlier version derived the directory from `CARGO_MANIFEST_DIR`, which is
+/// baked in when the compiler is built. That pointed an installed compiler at
+/// the source tree of whoever built it: the cache was written there, and a user
+/// without that checkout silently got no cache at all.
 pub fn cache_directory() -> Option<PathBuf> {
     if let Some(configured) = std::env::var_os("FALLC_CACHE") {
         let path = PathBuf::from(configured);
         return std::fs::create_dir_all(&path).ok().map(|()| path);
     }
-    // `CARGO_MANIFEST_DIR` is `<workspace>/crates/fallc` when the compiler is
-    // built from source; its grandparent is the workspace root.
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = manifest.parent()?.parent()?;
-    let path = workspace.join("target").join("fallc-cache");
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache"))
+        })
+        .unwrap_or_else(std::env::temp_dir);
+    let path = base.join("fallthrough");
     std::fs::create_dir_all(&path).ok().map(|()| path)
 }
 

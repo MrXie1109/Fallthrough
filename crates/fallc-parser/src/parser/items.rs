@@ -1314,8 +1314,8 @@ impl Parser {
     /// types its arguments name, because a restriction states a type where a
     /// call site passes a value; and the result is what `-> Type` says.
     ///
-    /// `?!` marks a method that may raise, as it marks a call that passes an
-    /// exception on: `it.save(String)?! -> void`. The annotation belongs to the
+    /// `??` marks a method that may raise, as it marks a call that passes an
+    /// exception on: `it.save(String)?? -> void`. The annotation belongs to the
     /// method's type, so a concrete method that disagrees cannot stand in for
     /// it.
     ///
@@ -1339,7 +1339,7 @@ impl Parser {
         let mut stated: Vec<String> = Vec::new();
         for requirement in requirements {
             let mut expr = requirement.expr;
-            // `it.save(..)?!` -- the call passes an exception on, which is how
+            // `it.save(..)??` -- the call passes an exception on, which is how
             // the restriction says the method may raise one.
             let mut throws = false;
             while let fallc_ast::ExprKind::Propagate(propagate) = &ast.expr(expr).kind {

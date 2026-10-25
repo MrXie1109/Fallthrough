@@ -251,7 +251,7 @@ impl TypeChecker {
                 self.return_types.pop().map(|(_, ty)| ty)
             }
         };
-        // A raise at this level, or a `?!` whose exception nothing here
+        // A raise at this level, or a `??` whose exception nothing here
         // catches, makes the lambda a throwing function.
         let raised = self
             .lambda_raise_stack
@@ -534,7 +534,7 @@ impl TypeChecker {
         self.check_lambda_arguments(ast, resolutions, types, node, &parameter_types)?;
         let returns = instance.returns.clone();
         // A lambda whose body raises is a throwing function, so the call is a
-        // throwing call: it must be handled here, or passed on with `?!`.
+        // throwing call: it must be handled here, or passed on with `??`.
         if instance.throws {
             self.note_throwing_lambda_call(span);
         }
@@ -544,7 +544,7 @@ impl TypeChecker {
 
     /// Records that a call may raise, for a callee that has no signature.
     ///
-    /// The rules are `note_throwing_call`'s: a `try` here catches it, `?!`
+    /// The rules are `note_throwing_call`'s: a `try` here catches it, `??`
     /// passes it on, and otherwise the call site has to say what it does.
     fn note_throwing_lambda_call(&mut self, span: fallc_span::Span) {
         self.note_raising_site(span, "this lambda may raise, and nothing here handles it");

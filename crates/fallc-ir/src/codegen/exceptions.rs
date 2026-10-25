@@ -1,6 +1,6 @@
 //! Returns, raises, and the shape of a function that may raise.
 //!
-//! A `?!` function returns a result struct instead of a value; a `raise` and a
+//! A `??` function returns a result struct instead of a value; a `raise` and a
 //! `try` are the operations on it. Getting a value out of one is a branch, so
 //! every operation on the shape lives here.
 
@@ -18,6 +18,71 @@ impl<'ctx> Lowerer<'ctx> {
     ) -> Result<(), CodegenError> {
         match node.value {
             Some(value) => {
+                // `return expr;` may construct the result: the checker records
+                // the constructor it chose at the returned expression's span,
+                // exactly as it does for a binding's initialiser. The value is
+                // built in a temporary and that temporary is what is returned,
+                // so `return 300.0;` in a function returning a type with an
+                // `__im_init__` calls it rather than returning the argument.
+                if let Some(symbol) = self.init_calls.get(&initialiser_span(ast, value)).cloned() {
+                    let Some(return_ty) = self.current_return_type.clone() else {
+                        return Err(CodegenError::Emit(
+                            "internal error: a `return` outside a function".to_owned(),
+                        ));
+                    };
+                    let mapper = TypeMapper::new(self.backend.context());
+                    let Some(llvm_ty) = mapper.map(&return_ty) else {
+                        return Err(CodegenError::Emit(
+                            "internal error: the return type has no LLVM form".to_owned(),
+                        ));
+                    };
+                    let function = self.current_function.expect("a function is being lowered");
+                    // The temporary lives in the entry block, like every other
+                    // value this stage allocates.
+                    let entry = function
+                        .get_first_basic_block()
+                        .expect("a function being lowered has a body");
+                    let slot = self.create_entry_alloca(builder, entry, "return.value", llvm_ty);
+                    let callee = match self.backend.module().get_function(&symbol) {
+                        Some(callee) => callee,
+                        None => {
+                            let qualified = self
+                                .external_symbols
+                                .iter()
+                                .find(|(_, signature)| signature.symbol == symbol)
+                                .map(|(qualified, _)| qualified.clone());
+                            match qualified {
+                                Some(qualified) => {
+                                    self.declare_external(&symbol, &qualified, ast.expr(value).span)?
+                                }
+                                None => {
+                                    return Err(CodegenError::Emit(format!(
+                                        "internal error: `{symbol}` was resolved as a constructor \
+                                         but not declared"
+                                    )));
+                                }
+                            }
+                        }
+                    };
+                    // The propagation marker, if any, belongs to the
+                    // construction: the argument is the value under it.
+                    let argument = match &ast.expr(value).kind {
+                        ExprKind::Propagate(inner) => inner.value,
+                        _ => value,
+                    };
+                    let argument =
+                        self.lower_argument(ast, types, builder, argument, ast.expr(value).span)?;
+                    let call = builder
+                        .build_call(callee, &[slot.into(), argument], "")
+                        .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                    let _ = self.unwrap_throwing(ast, types, builder, ast.expr(value).span, call)?;
+                    let returned = builder
+                        .build_load(llvm_ty, slot, "returned")
+                        .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                    let moved_out = None;
+                    self.emit_all_drops(ast, types, bindings, builder, moved_out)?;
+                    return self.build_function_return(builder, Some(returned));
+                }
                 // A function declared to return `&T` returns a *place*, so what
                 // is returned is the address the expression names -- not the
                 // value loaded out of it. The checker allowed a plain `T`
@@ -446,7 +511,7 @@ impl<'ctx> Lowerer<'ctx> {
     /// The frames are walked from the inside out: each `finally` runs as it is
     /// passed, and the first `except` takes the exception. With no handler in
     /// the way the exception is the result of this function, which is what makes
-    /// `?!` a claim about the ABI rather than a flag somewhere.
+    /// `??` a claim about the ABI rather than a flag somewhere.
     pub(super) fn lower_escape(
         &mut self,
         ast: &Ast,
@@ -472,8 +537,8 @@ impl<'ctx> Lowerer<'ctx> {
                     depth,
                 } => {
                     if skip_handlers {
-                        // A `?!` sends the exception past this function's own
-                        // handlers: `foo()?!` means "leave", not "handle here".
+                        // A `??` sends the exception past this function's own
+                        // handlers: `foo()??` means "leave", not "handle here".
                         continue;
                     }
                     if Self::is_terminated(builder) {
@@ -835,7 +900,7 @@ impl<'ctx> Lowerer<'ctx> {
 
     /// Returns from the current function, wrapping the value if it may raise.
     ///
-    /// A `?!` function's result is `{ ok, value, error }`; the ordinary path
+    /// A `??` function's result is `{ ok, value, error }`; the ordinary path
     /// fills in `ok` and the value and leaves the error arm undefined, because
     /// nothing reads the arm the tag does not name.
     pub(super) fn build_function_return(

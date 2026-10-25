@@ -5,7 +5,7 @@
 // question raises instead of reinterpreting bits.
 //
 //     held Any = Any(42);
-//     std.print("{} {}\n", held.type_name(), held.to_int()?!)?!;
+//     std.print("{} {}\n", held.type_name(), held.to_int()??)??;
 //
 // # Why text
 //
@@ -165,7 +165,7 @@ export fn to_int(this &const Any) int except {
     if (!this._present || !(this._type == String("int"))) {
         raise "TypeError": "the holder does not contain an int";
     }
-    return this._text as int?!;
+    return this._text as int??;
 }
 
 // The held value as a real.
@@ -173,7 +173,7 @@ export fn to_real(this &const Any) f64 except {
     if (!this._present || !(this._type == String("f64"))) {
         raise "TypeError": "the holder does not contain a real";
     }
-    return this._text as f64?!;
+    return this._text as f64??;
 }
 
 // The held value as a `bool`.

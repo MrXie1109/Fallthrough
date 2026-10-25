@@ -2763,7 +2763,7 @@ impl TypeChecker {
                     // the body, so an `auto` binding with a literal initialiser
                     // picks up the function's type rather than the fallback.
                     let previous = self.expected.replace(expected);
-                    // `raise` and `?!` are allowed only where the function says
+                    // `raise` and `??` are allowed only where the function says
                     // it may raise, so that is part of checking its body.
                     self.throws_allowed.push(function.throws.is_some());
                     // A declaration-only check does not enter the body: the

@@ -10,7 +10,7 @@
 // in order. A value renders itself through `__format__` when its type has one,
 // and through `str` otherwise -- so a type decides its own text.
 //
-//     std.print("{} + {} = {}\n", 1, 2, 3)?!;
+//     std.print("{} + {} = {}\n", 1, 2, 3)??;
 //
 // # Specs
 //
@@ -63,11 +63,41 @@ export fn empty_pieces() Array<String> {
 export
 template <T type>
 fn format_value(value T, spec &const String) String except {
+    // `!s` and `!r` are conversions, not layout: they choose which text the
+    // value is written as. They stand at the *end* of the spec, after the
+    // layout, exactly as in Python's format strings:
+    //
+    //     {!s}       `str(x)` -- the value as a reader should see it
+    //     {!r}       `repr(x)` -- the value as a program would write it
+    //     {:>12!r}   that text, right-aligned in twelve columns
+    //
+    // The layout is applied to the text the conversion produced, so the two
+    // compose rather than one replacing the other.
+    conversion char = '\0';
+    layout String = spec;
+    length usize = spec.length();
+    if (length >= 2 && spec[length - 2] == '!' as char) {
+        kind char = spec[length - 1];
+        if (kind == 's' as char || kind == 'r' as char) {
+            conversion = kind;
+            layout = spec.substring(0, length - 2);
+        }
+    }
+    if (length == 2 && spec[0] == '!' as char) {
+        kind char = spec[1];
+        if (kind == 's' as char || kind == 'r' as char) {
+            conversion = kind;
+            layout = String();
+        }
+    }
     text String = plain_text(value);
-    if (spec.empty()) {
+    if (conversion == 'r' as char) {
+        text = repr(value);
+    }
+    if (layout.empty()) {
         return text;
     }
-    return apply_spec(text, spec)?!;
+    return apply_spec(text, &layout)??;
 }
 
 // Returns the text of a value with no spec.
@@ -81,6 +111,14 @@ fn format_value(value T) String {
 export fn has_placeholder(text &const String) bool {
     index usize = 0;
     while (index < text.length()) {
+        // `{{` and `}}` are a literal brace, not a placeholder.
+        if (text[index] == '{' as char
+            && index + 1 < text.length()
+            && text[index + 1] == '{' as char
+        ) {
+            index += 2;
+            continue;
+        }
         if (text[index] == '{' as char) {
             closing usize = index + 1;
             while (closing < text.length() && text[closing] != '}' as char) {
@@ -104,6 +142,25 @@ export fn render(format &const String, values &const Array<String>, start usize)
     index usize = 0;
     next usize = start;
     while (index < format.length()) {
+        // `{{` and `}}` are a literal brace: they are written once and the
+        // pair is skipped, so a format string can say `{` without naming a
+        // value.
+        if (format[index] == '{' as char
+            && index + 1 < format.length()
+            && format[index + 1] == '{' as char
+        ) {
+            out.push('{' as char);
+            index += 2;
+            continue;
+        }
+        if (format[index] == '}' as char
+            && index + 1 < format.length()
+            && format[index + 1] == '}' as char
+        ) {
+            out.push('}' as char);
+            index += 2;
+            continue;
+        }
         if (format[index] == '{' as char) {
             closing usize = index + 1;
             while (closing < format.length() && format[closing] != '}' as char) {
@@ -117,7 +174,7 @@ export fn render(format &const String, values &const Array<String>, start usize)
                     spec = spec.substring(1, spec.length() - 1);
                 }
                 if (next < values.length()) {
-                    out.push(apply_spec(values[next], &spec)?!);
+                    out.push(apply_spec(values[next], &spec)??);
                     next += 1;
                 } else {
                     out.push("{}");
@@ -143,13 +200,38 @@ export fn rendered(pieces &const Array<String>) String except {
         return String();
     }
     if (pieces.length() > 1 && has_placeholder(&pieces[0])) {
-        return render(&pieces[0], pieces, 1)?!;
+        return render(&pieces[0], pieces, 1)??;
     }
     joined String = String();
     for (piece &const String : pieces) {
         joined.push(piece);
     }
     return joined;
+}
+
+// Builds the text a `print` would write, without writing it.
+//
+// The first argument is the format when it holds a placeholder: its `{}` are
+// filled from the rest, in order, and `{spec}` chooses how a value is written
+// (`{:>8}`, `{:08}`, `{:.2f}`, `{:#x}`). When it holds none, every argument is
+// written one after another, which is the same rule `print` follows -- the two
+// are one implementation, so a format string cannot mean one thing in a
+// message and another in a name.
+//
+// ```ft
+// name String = std.format("{} has {} items", owner, count)??;
+// hex String = std.format("{:#x}", 255)??;
+// ```
+//
+// The result is `except`: rendering a value allocates, and applying a spec to a
+// number parses text back, so the same failures a `print` has are possible
+// here.
+export
+template <Ts ...type>
+fn format(values ...Ts) String except {
+    pieces auto = empty_pieces();
+    (pieces.push(format_value(values)), ...);
+    return rendered(&pieces)??;
 }
 
 // Applies a spec to text that has already been rendered.
@@ -172,6 +254,13 @@ export fn apply_spec(text String, spec &const String) String except {
     } else if (is_align(spec[0])) {
         align = spec[0];
         index = 1;
+    }
+    // `#` asks for the base prefix: `0x`, `0o`, `0b`. It is a flag, not a
+    // fill character, so it is read before the width.
+    alternate bool = false;
+    if (index < length && spec[index] == '#' as char) {
+        alternate = true;
+        index += 1;
     }
     width usize = 0;
     zero_fill bool = false;
@@ -198,7 +287,7 @@ export fn apply_spec(text String, spec &const String) String except {
     if (index < length) {
         kind = spec[index];
     }
-    text = convert(text, kind, precision)?!;
+    text = convert(text, kind, precision, alternate)??;
     if (width <= text.length()) {
         return text;
     }
@@ -224,12 +313,12 @@ export fn apply_spec(text String, spec &const String) String except {
 }
 
 // Converts the text according to the spec's type letter.
-fn convert(text String, kind char, precision isize) String except {
+fn convert(text String, kind char, precision isize, alternate bool) String except {
     if (kind == 'x' as char || kind == 'X' as char || kind == 'b' as char || kind == 'o' as char) {
         // An unsigned value does not fit `int`: CRC-32's digits, for instance,
         // go past `INT_MAX`, and parsing them as one made `{:08x}` fail with
         // "the text is not an integer".
-        unsigned u64 = text as u64?! ;
+        unsigned u64 = text as u64?? ;
         base int = 10;
         if (kind == 'x' as char || kind == 'X' as char) {
             base = 16;
@@ -239,6 +328,22 @@ fn convert(text String, kind char, precision isize) String except {
             base = 8;
         }
         converted String = base_text_u64(unsigned, base, kind == 'X' as char);
+        if (alternate) {
+            // The prefix a C program writes: `0x` and `0X` follow the digit
+            // case, and `0o`/`0b` have one spelling.
+            prefix String = String();
+            if (kind == 'x' as char) {
+                prefix = String("0x");
+            } else if (kind == 'X' as char) {
+                prefix = String("0X");
+            } else if (kind == 'b' as char) {
+                prefix = String("0b");
+            } else {
+                prefix = String("0o");
+            }
+            prefix.push(&converted);
+            converted = prefix;
+        }
         if (precision > 0) {
             wanted usize = precision as usize;
             if (wanted > converted.length()) {
@@ -248,7 +353,7 @@ fn convert(text String, kind char, precision isize) String except {
         return converted;
     }
     if ((kind == 'f' as char || kind == 'e' as char || kind == 'g' as char) && precision >= 0) {
-        real f64 = text as f64?! ;
+        real f64 = text as f64?? ;
         buffer [64]char;
         pattern *const char = "%.*f";
         if (kind == 'e' as char) {

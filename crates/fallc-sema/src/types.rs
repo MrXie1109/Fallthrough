@@ -1367,7 +1367,7 @@ pub struct ConversionMethod {
     /// The definition it was resolved from.
     ///
     /// Kept whole because the conversion is a call site: whether it may raise,
-    /// and any `?!(cond)` claim it makes, travel with the signature.
+    /// and any `??(cond)` claim it makes, travel with the signature.
     pub signature: crate::FunctionSignature,
     /// What the method returns, which is what the cast produces.
     pub returns: Type,

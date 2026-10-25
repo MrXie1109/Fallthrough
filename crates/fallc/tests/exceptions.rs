@@ -1,6 +1,6 @@
 //! Raising, catching, and passing an exception on.
 //!
-//! A `?!` function returns its value *or* an exception, so these tests can only
+//! A `??` function returns its value *or* an exception, so these tests can only
 //! be about behaviour: what a handler sees, which clauses run, and where an
 //! exception that nobody catches ends up. The programs are compiled and run
 //! rather than inspected, because the protocol is about what happens.
@@ -232,11 +232,11 @@ fn inner(n int) int except {
 }
 
 fn middle(n int) int except {
-    // `?!` re-raises at the mark, so the `try` here is what takes it: that is
-    // the meaning `x?!` has -- `try { x } except { raise; }`. The handler
+    // `??` re-raises at the mark, so the `try` here is what takes it: that is
+    // the meaning `x??` has -- `try { x } except { raise; }`. The handler
     // passes it on again, which is how a layer adds something and re-raises.
     try {
-        return inner(n)?!;
+        return inner(n)??;
     } except {
         C.printf("middle caught %d\n", n);
         raise;
@@ -262,7 +262,7 @@ fn main() int {
     let output = scratch.run("propagate", source);
     assert!(output.contains("value 5"), "{output}");
     assert!(output.contains("main saw DeepError: from inner"), "{output}");
-    // The `try` in `middle` catches the re-raise `?!` produced, and its
+    // The `try` in `middle` catches the re-raise `??` produced, and its
     // handler raises again to pass it on.
     assert!(output.contains("middle caught -1"), "{output}");
 }
@@ -382,7 +382,7 @@ fn risky() int except {
 }
 
 fn plain() int {
-    return risky()?!;
+    return risky()??;
 }
 
 fn main() int {
@@ -453,7 +453,7 @@ fn main() int {
 
 #[test]
 fn a_conditional_claim_is_decided_at_the_call() {
-    // `?!(n < 0)` says the function raises only when the argument is negative.
+    // `??(n < 0)` says the function raises only when the argument is negative.
     // With a constant argument that is a fact the checker can establish, so
     // `check(3)` needs no protection; a variable argument leaves it undecided,
     // and then it does.
@@ -624,10 +624,10 @@ fn get(this &const Ratio) int {
     return this._value;
 }
 
-// A construction has no call to write `?!` on, so the marker goes on the
+// A construction has no call to write `??` on, so the marker goes on the
 // initialiser itself.
 fn build(value int) int except {
-    made Ratio = value?!;
+    made Ratio = value??;
     return made.get();
 }
 
@@ -699,7 +699,7 @@ fn main() int {
 
 #[test]
 fn an_initialiser_marker_is_only_legal_in_a_throwing_function() {
-    // `?!` passes the raise on, so it needs a function that may raise: a plain
+    // `??` passes the raise on, so it needs a function that may raise: a plain
     // one has nowhere to pass it to.
     let source = r#"import std;
 
@@ -715,7 +715,7 @@ fn __im_init__(this &Ratio, value int) void except {
 }
 
 fn plain() int {
-    made Ratio = 0?!;
+    made Ratio = 0??;
     return 1;
 }
 
@@ -731,7 +731,7 @@ fn main() int {
 fn a_function_may_swallow_what_it_cannot_do() {
     // A layer that can decide what a raise means does not propagate it: the
     // `try` is inside an ordinary function, so its callers see a plain
-    // function and no `except` mark, and no `?!` is needed anywhere above.
+    // function and no `except` mark, and no `??` is needed anywhere above.
     let source = r#"import std;
 
 fn risky(n int) int except {
@@ -787,7 +787,7 @@ fn the_exception_runtime_comes_without_an_import() {
     // Exceptions are the language's, not the library's: a file that raises gets
     // the runtime it needs. Naming the standard library is not a rule a
     // program should have to know.
-    let source = "fn bad() int except {\n    raise \"Unimported\";\n}\nfn main() int except {\n    return bad()?!;\n}\n";
+    let source = "fn bad() int except {\n    raise \"Unimported\";\n}\nfn main() int except {\n    return bad()??;\n}\n";
     let scratch = Scratch::new("no-import");
     let main = scratch.directory.join("main.ft");
     std::fs::write(&main, source).expect("the source can be written");
@@ -810,9 +810,9 @@ fn the_exception_runtime_comes_without_an_import() {
 
 #[test]
 fn a_mark_on_a_call_that_cannot_raise_is_a_warning() {
-    // `?!` says "pass on whatever this raised". A call that cannot raise has
+    // `??` says "pass on whatever this raised". A call that cannot raise has
     // nothing to pass on, so the mark does nothing -- worth saying, but not
-    // worth refusing: inside a template the same `?!` may stand for calls that
+    // worth refusing: inside a template the same `??` may stand for calls that
     // do raise, and an error would forbid the spelling the marker exists for.
     let source = r#"import std;
 
@@ -821,7 +821,7 @@ fn twice(n int) int {
 }
 
 fn main() int except {
-    return twice(2)?!;
+    return twice(2)??;
 }
 "#;
     let (outcome, printed) =
@@ -840,7 +840,7 @@ fn risky() int except {
 }
 
 fn main() int except {
-    return risky()?!;
+    return risky()??;
 }
 "#;
     let (outcome, printed) = fallc::pipeline::compile_text("quiet.ft", source, &[fallc::cli::EmitKind::Llvm]);
@@ -930,7 +930,7 @@ fn main() int {
 
 #[test]
 fn a_throwing_assignment_is_a_call_site() {
-    // An `__assign__` that may raise needs a `try` or a `?!` at the assignment,
+    // An `__assign__` that may raise needs a `try` or a `??` at the assignment,
     // exactly as a call does. It was not reported at all, so an exception could
     // be raised and lost: the target kept its old value and nothing said so.
     let source = r#"type Thing {
@@ -1054,7 +1054,7 @@ fn matching() int except {
 
 fn mismatched() int except {
     try {
-        risky(1)?!;
+        risky(1)??;
     } except ("OtherError") {
         C.printf("wrong handler\n");
     } finally {
@@ -1064,14 +1064,14 @@ fn mismatched() int except {
 }
 
 fn run() int except {
-    matching()?!;
-    mismatched()?!;
+    matching()??;
+    mismatched()??;
     return 0;
 }
 
 fn main() int {
     try {
-        run()?!;
+        run()??;
     } except {
         e &const std.Exception = std.exception();
         C.printf("escaped %s\n", e.name().data());
@@ -1100,7 +1100,7 @@ fn risky() int except {
 
 fn main() int {
     try {
-        risky()?!;
+        risky()??;
     } except ("ZeroError") {
         C.printf("caught\n");
     }
@@ -1130,18 +1130,18 @@ fn classify(n int) int except {
 }
 
 fn order() int except {
-    classify(2)?!;
+    classify(2)??;
     return 0;
 }
 
 fn fallback() int except {
-    classify(3)?!;
+    classify(3)??;
     return 0;
 }
 
 fn run() int except {
     try {
-        order()?!;
+        order()??;
     } except ("A") {
         C.printf("A\n");
     } except ("B") {
@@ -1150,7 +1150,7 @@ fn run() int except {
         C.printf("other\n");
     }
     try {
-        fallback()?!;
+        fallback()??;
     } except ("A") {
         C.printf("A again\n");
     } except ("B") {
@@ -1164,7 +1164,7 @@ fn run() int except {
 
 fn main() int {
     try {
-        run()?!;
+        run()??;
     } except {
         C.printf("escaped\n");
     }

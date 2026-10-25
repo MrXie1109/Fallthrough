@@ -71,7 +71,7 @@ interface.
 | `division-by-zero` | a divisor known at compile time to be zero | `S0147` |
 | `use-after-move` | reading a value after it was moved | `S0148` |
 | `unreachable` | a statement that can never be executed | `S0141` |
-| `useless-raise-mark` | `?!` attached to a call that does not raise | `S0083` |
+| `useless-raise-mark` | `??` attached to a call that does not raise | `S0083` |
 | `deprecated` | use of a declaration carrying `@deprecated` | `S0160` |
 
 5.1 The implementation **must** provide a way to enable and disable warnings by group:

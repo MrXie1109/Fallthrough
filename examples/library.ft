@@ -125,23 +125,23 @@ fn main() int except {
     // same text back. The file lives beside the program's working directory,
     // so the tour does not need a writable home.
     written File;
-    written.open("fallc-library-tour.txt", OpenMode.WRITE)?!;
-    written.print("first line", '\n')?!;
-    written.write("second line\n")?!;
-    written.close()?!;
+    written.open("fallc-library-tour.txt", OpenMode.WRITE)??;
+    written.print("first line", '\n')??;
+    written.write("second line\n")??;
+    written.close()??;
 
     read_back File;
-    read_back.open("fallc-library-tour.txt", OpenMode.READ)?!;
+    read_back.open("fallc-library-tour.txt", OpenMode.READ)??;
     line String;
     lines int = 0;
-    while (read_back.getline(&line)?!) {
+    while (read_back.getline(&line)??) {
         C.printf("line %d: %s\n", lines, line.data());
         lines += 1;
     }
     // The end of the file is a question about the next character, and asking it
     // twice must give the same answer.
-    C.printf("eof: %d %d\n", read_back.eof()?!, read_back.eof()?!);
-    read_back.close()?!;
+    C.printf("eof: %d %d\n", read_back.eof()??, read_back.eof()??);
+    read_back.close()??;
 
     // A device that was never opened is not valid, and says so rather than
     // failing when it is used.

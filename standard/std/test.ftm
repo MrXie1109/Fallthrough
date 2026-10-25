@@ -87,16 +87,16 @@ export fn fail(message *const char, file *const char, line int) void except {
 }
 
 // A condition that must hold.
-export define CHECK(condition) std.assert_true(condition, #condition, $__builtin_FILE, $__builtin_LINE)?!
+export define CHECK(condition) std.assert_true(condition, #condition, $__builtin_FILE, $__builtin_LINE)??
 
 // Two integers that must be equal.
-export define CHECK_EQ(actual, expected) std.assert_equal_int((actual) as i64, (expected) as i64, #actual, $__builtin_FILE, $__builtin_LINE)?!
+export define CHECK_EQ(actual, expected) std.assert_equal_int((actual) as i64, (expected) as i64, #actual, $__builtin_FILE, $__builtin_LINE)??
 
 // Two reals that must be equal.
-export define CHECK_EQ_REAL(actual, expected) std.assert_equal_real((actual) as f64, (expected) as f64, #actual, $__builtin_FILE, $__builtin_LINE)?!
+export define CHECK_EQ_REAL(actual, expected) std.assert_equal_real((actual) as f64, (expected) as f64, #actual, $__builtin_FILE, $__builtin_LINE)??
 
 // Two texts that must be equal.
-export define CHECK_EQ_TEXT(actual, expected) std.assert_equal_text(&(actual), &(expected), #actual, $__builtin_FILE, $__builtin_LINE)?!
+export define CHECK_EQ_TEXT(actual, expected) std.assert_equal_text(&(actual), &(expected), #actual, $__builtin_FILE, $__builtin_LINE)??
 
 // An unconditional failure with a message.
-export define FAIL(message) std.fail(#message, $__builtin_FILE, $__builtin_LINE)?!
+export define FAIL(message) std.fail(#message, $__builtin_FILE, $__builtin_LINE)??

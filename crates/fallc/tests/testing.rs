@@ -62,16 +62,16 @@ fn main() int except {
     expected String = String("same");
     actual String = String("same");
     $CHECK_EQ_TEXT(actual, expected);
-    std.print("passed\n")?!;
+    std.print("passed\n")??;
     try {
         $CHECK_EQ(1, 2);
     } except {
-        std.print("{} ", std.exception().name())?!;
+        std.print("{} ", std.exception().name())??;
     }
     try {
         $FAIL("deliberate");
     } except {
-        std.print("{}", std.exception().name())?!;
+        std.print("{}", std.exception().name())??;
     }
     return 0;
 }
@@ -91,7 +91,7 @@ fn main() int except {
     try {
         $ASSERT_DEBUG(1 > 2);
     } except {
-        std.print("{}", std.exception().name())?!;
+        std.print("{}", std.exception().name())??;
     }
     return 0;
 }
@@ -110,7 +110,7 @@ fn main() int except {
     array.push(3);
     array.push(4);
     sample f64 = prelude.sqrt(16.0);
-    prelude.print("{} {} {}", text, array[0], sample)?!;
+    prelude.print("{} {} {}", text, array[0], sample)??;
     return 0;
 }
 "#;

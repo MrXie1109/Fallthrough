@@ -394,6 +394,9 @@ impl Visitor for Dumper {
             crate::node::ExprKind::Propagate(node) => {
                 self.line(&format!("Expr {id} propagate expr#{}", node.value.as_raw()));
             }
+            crate::node::ExprKind::Abort(node) => {
+                self.line(&format!("Expr {id} abort expr#{}", node.value.as_raw()));
+            }
             crate::node::ExprKind::SizeofPack(node) => {
                 self.line(&format!("Expr {id} sizeof... `{}`", node.pack));
             }

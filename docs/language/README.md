@@ -119,7 +119,7 @@ prevails. In examples, `...` denotes an omission and is not part of the language
 | [03 Declarations](03-declarations.md) | Declaration forms, bindings and initialization, attributes, macros, traits, interface, templates |
 | [04 Functions](04-functions.md) | Functions, member functions, lambda, call conventions, argument passing, overloading, moves |
 | [05 Statements](05-statements.md) | Blocks, conditions, loops, range loops, `switch`, jumps, `defer`, compile-time assertions |
-| [06 Exceptions](06-exceptions.md) | The exception model, `raise`, `try`, `?!`, obligations at a call site |
+| [06 Exceptions](06-exceptions.md) | The exception model, `raise`, `try`, `??`, obligations at a call site |
 | [07 Expressions](07-expressions.md) | Expression forms, conversions, operators, assignment, special methods, evaluation order |
 | [08 Modules](08-modules.md) | Importing and exporting, name identity, module lookup, multi-file compilation and linking |
 | [09 Scopes](09-scopes.md) | Scopes, shadowing, repeated declarations, `_`, lifetimes |

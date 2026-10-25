@@ -36,7 +36,7 @@ fn length(this &const Point) int {
 
 fn main() int except {
     p Point = .{3, 4};
-    std.println("{}", p.length())?!;
+    std.println("{}", p.length())??;
     return 0;
 }
 ```

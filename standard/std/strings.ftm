@@ -5,8 +5,8 @@
 // padding one to a width are about strings *and* a rule, so they live here as
 // free functions over `String`.
 //
-//     line String = strings.join(&parts, ", ")?!;
-//     stars String = strings.repeat(String("*"), 10)?!;
+//     line String = strings.join(&parts, ", ")??;
+//     stars String = strings.repeat(String("*"), 10)??;
 
 import std.array;
 from std.array import Array;

@@ -1,7 +1,7 @@
 // Compression: adler32 and the zlib "stored" format.
 //
 //     packed Bytes = compress.deflate_stored(&plain);
-//     plain2 Bytes = compress.inflate_stored(&packed)?!;
+//     plain2 Bytes = compress.inflate_stored(&packed)??;
 //
 // # What this is
 //
@@ -137,8 +137,8 @@ export fn inflate_stored(data &const Bytes) Bytes except {
         if (block_kind != 0u32) {
             raise "ValueError": "the stream uses a compressed block, which this module does not read";
         }
-        length u32 = read_u16(data, offset)?!;
-        check u32 = read_u16(data, offset + 2usize)?!;
+        length u32 = read_u16(data, offset)??;
+        check u32 = read_u16(data, offset + 2usize)??;
         offset += 4usize;
         if ((length ^ check) != 0xffffu32) {
             raise "ValueError": "a stored block's length and its complement disagree";
@@ -160,7 +160,7 @@ export fn inflate_stored(data &const Bytes) Bytes except {
     if ((offset + 4usize) != data.length()) {
         raise "ValueError": "trailing bytes after the last block";
     }
-    expected u32 = read_u32_be(data, offset)?!;
+    expected u32 = read_u32_be(data, offset)??;
     if (expected != adler32(&plain)) {
         raise "ValueError": "the adler32 checksum does not match";
     }

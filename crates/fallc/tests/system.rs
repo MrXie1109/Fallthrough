@@ -61,8 +61,8 @@ fn main() int except {
     arguments Array<String> = Array<String>();
     arguments.push(String("-c"));
     arguments.push(String("exit 3"));
-    child Process = std.spawn(&program, &arguments)?!;
-    std.print("{}", child.wait()?!)?!;
+    child Process = std.spawn(&program, &arguments)??;
+    std.print("{}", child.wait()??)??;
     return 0;
 }
 "#;
@@ -75,7 +75,7 @@ fn term_sequences_are_the_ansi_ones() {
     let source = r#"import std;
 
 fn main() int except {
-    std.print("{}{}{}{} {}", std.color_fg(std.Color.RED), std.style_bold(), std.style_reset(), std.color_bg(std.Color.BLUE), std.supports_color() as int)?!;
+    std.print("{}{}{}{} {}", std.color_fg(std.Color.RED), std.style_bold(), std.style_reset(), std.color_bg(std.Color.BLUE), std.supports_color() as int)??;
     return 0;
 }
 "#;
@@ -93,14 +93,14 @@ import std.dynlib;
 
 fn main() int except {
     lib_path String = String("libm.so.6");
-    lib Library = dynlib.open(&lib_path)?!;
+    lib Library = dynlib.open(&lib_path)??;
     sqrt_name String = String("sqrt");
-    address *byte = lib.symbol(&sqrt_name)?!;
+    address *byte = lib.symbol(&sqrt_name)??;
     missing_name String = String("no_such_symbol_xyz");
-    missing *byte = lib.symbol(&missing_name)?!;
-    std.print("{} {} {}", lib.loaded() as int, (address != nullptr) as int, (missing == nullptr) as int)?!;
+    missing *byte = lib.symbol(&missing_name)??;
+    std.print("{} {} {}", lib.loaded() as int, (address != nullptr) as int, (missing == nullptr) as int)??;
     lib.close();
-    std.print(" {}", lib.loaded() as int)?!;
+    std.print(" {}", lib.loaded() as int)??;
     return 0;
 }
 "#;
@@ -120,10 +120,10 @@ fn remember(sig i32) void {
 }
 
 fn main() int except {
-    std.install(std.Signal.USR1, &remember)?!;
+    std.install(std.Signal.USR1, &remember)??;
     std.signal_self(std.Signal.USR1);
     os.sleep_ms(5);
-    std.print("{}", received)?!;
+    std.print("{}", received)??;
     std.restore(std.Signal.USR1);
     return 0;
 }
@@ -144,14 +144,14 @@ fn main() int except {
     plain.push('l' as byte);
     plain.push('o' as byte);
     packed Bytes = std.deflate_stored(&plain);
-    back Bytes = std.inflate_stored(&packed)?!;
+    back Bytes = std.inflate_stored(&packed)??;
     back_text String = String(back.data() as *const char);
-    std.print("{} {} {}", packed.length(), back.length(), back_text)?!;
+    std.print("{} {} {}", packed.length(), back.length(), back_text)??;
     packed[packed.length() - 1usize] = 0 as u8;
     try {
-        std.inflate_stored(&packed)?!;
+        std.inflate_stored(&packed)??;
     } except {
-        std.print(" {}", std.exception().name())?!;
+        std.print(" {}", std.exception().name())??;
     }
     return 0;
 }
@@ -169,20 +169,20 @@ fn regex_anchors_classes_and_search() {
 
 fn main() int except {
     digits_pattern String = String("^[0-9]+$");
-    digits Regex = std.compile(&digits_pattern)?!;
+    digits Regex = std.compile(&digits_pattern)??;
     good String = String("12345");
     bad String = String("12a45");
-    std.print("{} {} ", digits.is_match(&good)?! as int, digits.is_match(&bad)?! as int)?!;
+    std.print("{} {} ", digits.is_match(&good)?? as int, digits.is_match(&bad)?? as int)??;
     word_pattern String = String("\\w+@\\w+");
-    words Regex = std.compile(&word_pattern)?!;
+    words Regex = std.compile(&word_pattern)??;
     email String = String("say hi@example");
-    found Match = words.find(&email).value()?!;
-    std.print("{} {} {}", found.start(), found.end(), found.matched(&email)?!)?!;
+    found Match = words.find(&email).value()??;
+    std.print("{} {} {}", found.start(), found.end(), found.matched(&email)??)??;
     try {
         group_pattern String = String("a(b)c");
-        std.compile(&group_pattern)?!;
+        std.compile(&group_pattern)??;
     } except {
-        std.print(" {}", std.exception().name())?!;
+        std.print(" {}", std.exception().name())??;
     }
     return 0;
 }
@@ -207,12 +207,12 @@ fn serve(raw *byte) u32 {
     holder *Echo = raw as *Echo;
     received int = 0;
     try {
-        stream TcpStream = holder.listener.accept()?!;
-        question String = stream.read_text(64usize)?!;
+        stream TcpStream = holder.listener.accept()??;
+        question String = stream.read_text(64usize)??;
         answer Bytes = Bytes();
         answer.append_string(String("pong:"));
         answer.append_string(question);
-        stream.write_all(&answer)?!;
+        stream.write_all(&answer)??;
         received = 1;
     } except {
     }
@@ -221,17 +221,17 @@ fn serve(raw *byte) u32 {
 
 fn main() int except {
     loopback String = String("127.0.0.1");
-    listener TcpListener = net.listen(&loopback, 0u16, 8)?!;
-    port u16 = listener.local_port()?!;
+    listener TcpListener = net.listen(&loopback, 0u16, 8)??;
+    port u16 = listener.local_port()??;
     holder Echo = .{ listener };
-    thread Thread = Thread(&serve, (&holder) as *byte)?!;
-    stream TcpStream = net.connect(&loopback, port)?!;
+    thread Thread = Thread(&serve, (&holder) as *byte)??;
+    stream TcpStream = net.connect(&loopback, port)??;
     request Bytes = Bytes();
     request.append_string(String("ping"));
-    stream.write_all(&request)?!;
-    answer String = stream.read_text(64usize)?!;
-    std.print("{}", answer)?!;
-    thread.join()?!;
+    stream.write_all(&request)??;
+    answer String = stream.read_text(64usize)??;
+    std.print("{}", answer)??;
+    thread.join()??;
     return 0;
 }
 "#;

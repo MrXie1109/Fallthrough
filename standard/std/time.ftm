@@ -11,7 +11,7 @@
 //     start Instant = time.now();
 //     ... work ...
 //     took Duration = time.since(&start);
-//     std.print("took {} ms\n", took.millis())?!;
+//     std.print("took {} ms\n", took.millis())??;
 //
 // # Why two clocks
 //

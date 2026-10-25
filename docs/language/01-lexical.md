@@ -178,7 +178,7 @@ as the table states.
 | 1 | `\|\|` | left |
 | 0 | `?:`, `=` and the compound assignments | right |
 
-7.2 Postfix forms (call, subscript, field access, `++`, `--`, `?!`) have higher
+7.2 Postfix forms (call, subscript, field access, `++`, `--`, `??`) have higher
 precedence than any binary operator in the table.
 
 7.3 `as` has higher precedence than any binary operator and lower precedence than the
