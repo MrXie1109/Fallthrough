@@ -1,8 +1,8 @@
-//! Producing an executable: object files, the linker, and the runtime stub.
+//! Producing an executable: object files and the linker.
 //!
-//! The runtime is a small C file that a program using exceptions links against;
-//! it is built once per run and cached, and the linker is then asked for an
-//! executable with the objects and the libraries a program declared.
+//! The builtins a module calls -- the debug-mode panic and the value renderers
+//! -- are defined inside the module's own IR, so linking needs nothing beyond
+//! the objects and the libraries a program declared.
 
 use super::*;
 
@@ -64,16 +64,10 @@ pub(super) fn temporary_object_path(input: &Path) -> PathBuf {
 
 /// Links an object file into an executable.
 ///
-/// # The runtime stub
-///
-/// Debug-mode guards call `__builtin_panic`, which stands in for `std.panic`
-/// and has no definition in the module. The stub is compiled from
-/// `runtime/builtins.c` on demand, so a program that never traps still links
-/// without it.
-///
-/// `std.panic` is not implemented yet: this stub is the interim abort, and when
-/// the module defines one, the compiler links the standard library instead and
-/// the stub goes away.
+/// Debug-mode guards call `__builtin_panic`, and `str(x)` calls the renderers;
+/// both are defined by code generation itself (see
+/// `fallc_ir::codegen::runtime`), so the link line is the objects and whatever
+/// the program asked for.
 pub(super) fn link_executable(objects: &[PathBuf], output: &Path, links: &[LinkRequest]) -> Result<(), String> {
     link_objects(objects, output, links, false)
 }
@@ -105,25 +99,17 @@ pub(super) fn create_static_library(objects: &[PathBuf], output: &Path) -> Resul
     } else {
         "ar".to_owned()
     };
-    // The runtime stub goes in with the objects: the archive has to be usable
-    // by a plain `cc` link, and debug guards in the unit's object call the
-    // builtins the stub defines. A consumer that links two of these archives
-    // pulls the member from the first and the second stays unused.
-    let stub = build_runtime_stub()?;
+    // Every builtin the code calls is defined inside the objects themselves
+    // (see `fallc_ir::codegen::runtime`), so the archive needs nothing added
+    // for a plain `cc` link to succeed.
     let mut command = std::process::Command::new(&archiver);
     command.arg("rcs").arg(output);
     for object in objects {
         command.arg(object);
     }
-    if let Some(stub) = &stub {
-        command.arg(stub);
-    }
     let result = command
         .output()
         .map_err(|error| format!("cannot run `{archiver}` to archive: {error}"))?;
-    if let Some(stub) = &stub {
-        let _ = fs::remove_file(stub);
-    }
     if result.status.success() {
         Ok(())
     } else {
@@ -145,8 +131,6 @@ fn link_objects(
     // startup files spelled out.
     let linker = linker_driver();
 
-    let stub = build_runtime_stub()?;
-
     let mut command = std::process::Command::new(&linker);
     if shared {
         command.arg("-shared");
@@ -156,9 +140,6 @@ fn link_objects(
     for object in objects {
         command.arg(object);
     }
-    if let Some(stub) = &stub {
-        command.arg(stub);
-    }
     command.arg("-o").arg(output);
 
     command.args(linker_arguments(links));
@@ -166,11 +147,6 @@ fn link_objects(
     let result = command
         .output()
         .map_err(|error| format!("cannot run `{linker}` to link: {error}"))?;
-
-    // The stub is only needed for this link, so it is removed either way.
-    if let Some(stub) = &stub {
-        let _ = fs::remove_file(stub);
-    }
 
     if result.status.success() {
         Ok(())
@@ -247,98 +223,6 @@ pub(super) fn collect_links(ast: &Ast, imported: &[&Ast]) -> Vec<LinkRequest> {
         }
     }
     links
-}
-
-/// Finds `runtime/builtins.c`, or `None` if this build has no stub.
-///
-/// # Why it is not a bare relative path
-///
-/// `runtime/builtins.c` used to be opened as a relative path, which resolves
-/// against the compiler process's working directory. That works when the
-/// compiler is run from the repository root and nowhere else: run from a test,
-/// or from an installed location, the stub is silently not found and every
-/// program that can trap fails to link with an undefined `__builtin_panic`.
-///
-/// The search therefore starts from the executable's own directory and walks
-/// up, which finds the file both in a cargo build tree and in an unpacked
-/// distribution. The working directory is tried last, for the case of a
-/// compiler run from a checkout it does not live in.
-pub(super) fn find_runtime_stub() -> Option<PathBuf> {
-    let relative = Path::new("runtime").join("builtins.c");
-    let mut roots = Vec::new();
-    if let Ok(executable) = std::env::current_exe() {
-        // `target/debug/fallc` is three levels from the root and a test binary
-        // at `target/debug/deps/fallc-..` is four, so the walk is generous
-        // rather than exact: it stops at the first directory holding the file.
-        let mut directory = executable.parent().map(Path::to_path_buf);
-        for _ in 0..6 {
-            let Some(current) = directory else {
-                break;
-            };
-            roots.push(current.clone());
-            directory = current.parent().map(Path::to_path_buf);
-        }
-    }
-    if let Ok(working) = std::env::current_dir() {
-        roots.push(working);
-    }
-    roots
-        .into_iter()
-        .map(|root| root.join(&relative))
-        .find(|candidate| candidate.is_file())
-}
-
-/// Returns a counter value unique within this process.
-///
-/// Used to name a temporary file so that two compilations running at the same
-/// time do not collide. A process id alone is not enough, because a test binary
-/// compiles many programs in parallel within one process.
-pub(super) fn next_stub_serial() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SERIAL: AtomicU64 = AtomicU64::new(0);
-    SERIAL.fetch_add(1, Ordering::Relaxed)
-}
-
-/// Compiles the runtime stub if the source is present.
-///
-/// Returns `None` when there is no stub to build, which is the case for a
-/// released compiler that links a real standard library instead.
-pub(super) fn build_runtime_stub() -> Result<Option<PathBuf>, String> {
-    let Some(source) = find_runtime_stub() else {
-        return Ok(None);
-    };
-    // The name is unique per call, not per process. Two compilations in one
-    // process -- which is what a test binary running its tests in parallel
-    // does -- would otherwise share this path, and whichever finished first
-    // would delete the file the other was still about to link.
-    let object = std::env::temp_dir().join(format!(
-        "fallc-builtins-{}-{}.o",
-        std::process::id(),
-        next_stub_serial()
-    ));
-    let compiler = linker_driver();
-
-    let mut command = std::process::Command::new(&compiler);
-    command.arg("-c").arg(&source).arg("-o").arg(&object);
-    // Position-independent code is a POSIX shared-object requirement; a
-    // Windows compiler warns about the flag and ignores it, so it is only asked
-    // for where it means something.
-    if crate::modules::target_platform() != "windows" {
-        command.arg("-fPIC");
-    }
-    let result = command
-        .output()
-        .map_err(|error| format!("cannot compile the runtime stub: {error}"))?;
-
-    if result.status.success() {
-        Ok(Some(object))
-    } else {
-        Err(format!(
-            "cannot compile `{}`:\n{}",
-            source.display(),
-            String::from_utf8_lossy(&result.stderr).trim()
-        ))
-    }
 }
 
 /// Derives a module name from an input path.

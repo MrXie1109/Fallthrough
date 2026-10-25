@@ -1,0 +1,6 @@
+name = "Fallthrough"
+path_suffixes = ["ft", "ftm"]
+line_comments = ["// "]
+block_comment = ["/*", "*/"]
+tab_size = 4
+hard_tabs = false

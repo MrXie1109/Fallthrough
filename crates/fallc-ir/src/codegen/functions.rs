@@ -1198,8 +1198,7 @@ impl<'ctx> Lowerer<'ctx> {
                 // copy constructor. The register value is written to a
                 // temporary to give the constructor the address it takes; the
                 // caller's object is untouched.
-                if self.aggregate_is_by_address(&ty)
-                    == false
+                if !self.aggregate_is_by_address(&ty)
                     && !ty.is_void()
                     && matches!(ty, fallc_sema::Type::Nominal(_))
                 {

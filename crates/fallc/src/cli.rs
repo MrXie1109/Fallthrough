@@ -43,6 +43,7 @@ OPTIONS:
                     Keep intermediate files. `--emit=all` implies this.
     --help, -h      Print this message
     --version, -V   Print the compiler version
+    --lsp           Run the language server on stdin and stdout
 
 A construct the compiler accepts but cannot yet turn into machine code stops
 the compilation with an internal error that names it, instead of emitting
@@ -52,6 +53,8 @@ something that might not mean what the program says.
 /// What the user asked the driver to do.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Command {
+    /// Run the language server on stdin and stdout.
+    LanguageServer,
     /// Compile the given input files.
     Compile {
         /// The input files, in the order given.
@@ -281,6 +284,12 @@ impl Options {
                 "--version" | "-V" => {
                     return Ok(Options {
                         command: Command::Version,
+                    });
+                }
+                // The language server: no file arguments, stdin and stdout.
+                "--lsp" => {
+                    return Ok(Options {
+                        command: Command::LanguageServer,
                     });
                 }
                 "--check" => check_only = true,

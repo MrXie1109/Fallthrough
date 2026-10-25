@@ -584,7 +584,11 @@ impl<'ctx> Lowerer<'ctx> {
             context.i32_type().into()
         };
         let signature = bytes.fn_type(&[value_ty], false);
-        Ok(self.backend.module().add_function(name, signature, None))
+        let function = self.backend.module().add_function(name, signature, None);
+        // The body is generated here rather than linked from a C file, so the
+        // module carries its own runtime (see `runtime.rs`).
+        self.define_renderer(name)?;
+        Ok(function)
     }
 
     /// Lowers a method call, passing the receiver as the first argument.

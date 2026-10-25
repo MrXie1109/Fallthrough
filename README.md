@@ -69,13 +69,17 @@ The repository is [`MrXie1109/Fallthrough`](https://github.com/MrXie1109/Fallthr
 | ----------- | --- |
 | A Rust toolchain (edition 2024) | the compiler is a Rust workspace |
 | LLVM 18 development files | code generation links against LLVM through `inkwell` |
-| A C compiler | linking, and the runtime stub, use the platform's C toolchain |
+| A C compiler | the linker *driver*, and any C library a program links against |
 | `make` | the build driver has the short names: `make release`, `make install` |
 
 If `llvm-sys` cannot find LLVM, point it at the installation:
-`LLVM_SYS_181_PREFIX=/path/to/llvm-18 make release`.
+`LLVM_SYS_181_PREFIX=/path/to/llvm-18 make release`. On Windows the same value
+is set with `set LLVM_SYS_181_PREFIX=C:\Program Files\LLVM` before `make`.
 
 ### Clone, build and install
+
+The command line below is the Unix one; [Windows](#windows) has its own, because
+the install location, the `sudo` and the shell profile are all different there.
 
 ```sh
 git clone https://github.com/MrXie1109/Fallthrough.git
@@ -87,6 +91,74 @@ fallc --version
 
 `make install PREFIX=$HOME/.local` installs without root, if `~/.local/bin` is on
 `PATH`. To remove it again: `sudo make uninstall`.
+
+`make install` also places the standard library in
+`/usr/local/share/fallthrough/standard` and writes one environment file,
+`/usr/local/etc/fallthrough/env`, that names it:
+
+```sh
+export FALLTHROUGH_STANDARD="/usr/local/share/fallthrough/standard"
+```
+
+The compiler looks for the library through `FALLTHROUGH_STANDARD`, so add that
+line to the profile of the shell so that every session has it. With `bash` and
+`zsh`, for the current user:
+
+```sh
+echo '. /usr/local/etc/fallthrough/env' >> ~/.bashrc   # or ~/.zshrc
+```
+
+with `fish`:
+
+```fish
+echo 'source /usr/local/etc/fallthrough/env' >> ~/.config/fish/config.fish
+```
+
+For every user of the machine: put the same line in `/etc/profile`. Do not use
+`sudo` for these two commands -- they edit your own profile, not root's.
+
+### Windows
+
+Windows has no `/usr/local`, no `sudo` and no shell profile that every shell
+reads, so the install is a copy and the variable is set for the user in the
+registry.
+
+Build in an environment that has `make`, a C compiler for the linker, and LLVM 18
+-- an MSYS2/MINGW64 shell, or a Developer PowerShell with `mingw32-make`:
+
+```sh
+make release
+```
+
+Then copy the compiler and the library somewhere stable, and set the variable.
+In PowerShell, for the current user:
+
+```powershell
+$root = "$env:LOCALAPPDATA\Fallthrough"
+New-Item -ItemType Directory -Force "$root\bin" | Out-Null
+Copy-Item target\release\fallc.exe "$root\bin\fallc.exe"
+Copy-Item standard "$root\standard" -Recurse
+[Environment]::SetEnvironmentVariable(
+    "FALLTHROUGH_STANDARD", "$root\standard", "User")
+$env:FALLTHROUGH_STANDARD = "$root\standard"   # this session
+$env:PATH = "$root\bin;$env:PATH"
+fallc --version
+```
+
+In `cmd.exe`, the same variable, permanently:
+
+```bat
+setx FALLTHROUGH_STANDARD "%LOCALAPPDATA%\Fallthrough\standard"
+```
+
+`setx` affects new shells only, so open a new terminal (or set `FALLTHROUGH_STANDARD`
+in the current one as well) before running `fallc`. Add `%LOCALAPPDATA%\Fallthrough\bin`
+to `PATH` through **System Properties → Environment Variables** so that `fallc` is
+found by name.
+
+A static or shared library built with `--emit=static` or `--emit=shared` is a
+`.a` and a `.dll` on Windows, and linking it needs the same toolchain the
+compiler used. The CLI options are the same on every platform.
 
 ### Hello, world
 
@@ -173,7 +245,6 @@ The Chinese translation of this file is [README.zh.md](README.zh.md).
 ```
 crates/            the compiler: span, diagnostics, lexer, AST, parser, sema, IR, driver
 standard/          the standard library and the C bindings, written in Fallthrough
-runtime/           the C shim the debug-mode guards call
 examples/          small programs
 docs/              the standard, the library reference and the design record
 ```
