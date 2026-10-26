@@ -348,6 +348,187 @@ impl<'ctx> Lowerer<'ctx> {
     ///
     /// A handler stores the exception it caught there; that is the only state
     /// the runtime has, and it is written once per handler.
+    /// Reports a `!!` exception and stops the program.
+    ///
+    /// It is the report a program makes for an exception nothing caught --
+    /// the same two texts, read the same way -- with `panic:` where that says
+    /// `uncaught exception:`. `diagnostic` says nothing here; it is kept for the
+    /// caller's error messages.
+    ///
+    /// The reading is the delicate part and is copied from the uncaught path on
+    /// purpose: a `String` may keep its characters inside itself, so the field
+    /// is stored and `data()` is called on it, rather than the field being used
+    /// as the address of the text.
+    pub(super) fn emit_abort_report(
+        &mut self,
+        ast: &Ast,
+        types: &TypeTable,
+        builder: &Builder<'static>,
+        error: BasicValueEnum<'static>,
+    ) -> Result<(), CodegenError> {
+        let _ = (ast, types);
+        let context = self.backend.context();
+        let module = self.backend.module();
+        let pointer = context.ptr_type(inkwell::AddressSpace::default());
+        let i32_type = context.i32_type();
+        let function = builder
+            .get_insert_block()
+            .and_then(|block| block.get_parent())
+            .ok_or_else(|| CodegenError::Emit("internal error: no function".to_owned()))?;
+
+        let stderr = match module.get_global("stderr") {
+            Some(global) => global,
+            None => {
+                let global = module.add_global(pointer, None, "stderr");
+                global.set_linkage(inkwell::module::Linkage::External);
+                global
+            }
+        };
+        let fprintf = match module.get_function("fprintf") {
+            Some(function) => function,
+            None => module.add_function(
+                "fprintf",
+                i32_type.fn_type(&[pointer.into(), pointer.into()], true),
+                None,
+            ),
+        };
+        fn private_text(
+            module: &inkwell::module::Module<'static>,
+            text: &str,
+            name: &str,
+        ) -> inkwell::values::PointerValue<'static> {
+            let bytes = module.get_context().const_string(text.as_bytes(), true);
+            let global = module.add_global(bytes.get_type(), None, name);
+            global.set_initializer(&bytes);
+            global.set_constant(true);
+            global.set_linkage(inkwell::module::Linkage::Private);
+            global.as_pointer_value()
+        }
+        let format = private_text(module, "panic: %s", ".abort.format");
+        let stream = builder
+            .build_load(pointer, stderr.as_pointer_value(), "stderr")
+            .map_err(|error| CodegenError::Emit(error.to_string()))?
+            .into_pointer_value();
+
+        // Each of the exception's two `String`s: stored, then `data()` on it.
+        let empty = private_text(module, "", ".abort.empty");
+        let mut texts: Vec<BasicValueEnum<'static>> = Vec::new();
+        if let BasicValueEnum::StructValue(aggregate) = error {
+            for index in 0..2 {
+                let text = (|| -> Option<BasicValueEnum<'static>> {
+                    let field = builder.build_extract_value(aggregate, index, "text").ok()?;
+                    let slot = builder.build_alloca(field.get_type(), "held").ok()?;
+                    builder.build_store(slot, field).ok()?;
+                    let mut string = self
+                        .nominal_types
+                        .iter()
+                        .find(|(name, _)| name.rsplit('.').next() == Some("String"))
+                        .map(|(_, nominal)| nominal.clone())?;
+                    if let Some(bare) = string.name.rsplit('.').next() {
+                        string.name = bare.to_owned();
+                    }
+                    let receiver = fallc_sema::Type::Reference {
+                        referent: Box::new(fallc_sema::Type::Nominal(string)),
+                        referent_is_const: true,
+                        is_rvalue: false,
+                    };
+                    let data = self
+                        .std_function(
+                            "data",
+                            std::slice::from_ref(&receiver),
+                            fallc_span::Span::SYNTHETIC,
+                        )
+                        .ok()?;
+                    let call = builder
+                        .build_call(data, &[slot.as_basic_value_enum().into()], "text")
+                        .ok()?;
+                    match call.try_as_basic_value() {
+                        inkwell::values::ValueKind::Basic(value) => Some(value),
+                        _ => None,
+                    }
+                })()
+                .unwrap_or_else(|| empty.as_basic_value_enum());
+                texts.push(text);
+            }
+        }
+        let mut arguments: Vec<inkwell::values::BasicMetadataValueEnum<'static>> =
+            vec![stream.into(), format.into()];
+        if let Some(name) = texts.first() {
+            arguments.push((*name).into());
+        }
+        let _ = builder.build_call(fprintf, &arguments, "panic");
+        if let Some(BasicValueEnum::PointerValue(message)) = texts.get(1).copied() {
+            let first = builder
+                .build_load(context.i8_type(), message, "first")
+                .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            let has_text = builder
+                .build_int_compare(
+                    inkwell::IntPredicate::NE,
+                    first.into_int_value(),
+                    context.i8_type().const_zero(),
+                    "has.message",
+                )
+                .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            let with_message = context.append_basic_block(function, "panic.message");
+            let after = context.append_basic_block(function, "panic.after");
+            builder
+                .build_conditional_branch(has_text, with_message, after)
+                .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            builder.position_at_end(with_message);
+            // `stderr` is loaded again here: the value loaded in the entry
+            // block does not reach this one, and a stale pointer made the
+            // separator write through a stream that was never a stream.
+            let stream = builder
+                .build_load(pointer, stderr.as_pointer_value(), "stderr.message")
+                .map_err(|error| CodegenError::Emit(error.to_string()))?
+                .into_pointer_value();
+            let separator = private_text(module, ": %s", ".abort.message");
+            let _ = builder.build_call(
+                fprintf,
+                &[stream.into(), separator.into(), message.into()],
+                "panic.message",
+            );
+            let _ = builder.build_unconditional_branch(after);
+            builder.position_at_end(after);
+        }
+        let stream = builder
+            .build_load(pointer, stderr.as_pointer_value(), "stderr.end")
+            .map_err(|error| CodegenError::Emit(error.to_string()))?
+            .into_pointer_value();
+        let newline = private_text(module, "\n", ".abort.end");
+        let _ = builder.build_call(
+            fprintf,
+            &[stream.into(), newline.into()],
+            "panic.end",
+        );
+        let abort = self.declare_libc("abort", &[], None);
+        builder
+            .build_call(abort, &[], "")
+            .map_err(|error| CodegenError::Emit(error.to_string()))?;
+        builder
+            .build_unreachable()
+            .map_err(|error| CodegenError::Emit(error.to_string()))?;
+        Ok(())
+    }
+
+    /// Publishes `slot` as the exception being handled.
+    ///
+    /// `std.exception()` reads the global this writes, so anything that wants
+    /// the caught value to be visible to the standard library -- a written
+    /// `except` block, or the panic an `expr!!` reaches -- has to call this
+    /// before it runs the code that looks.
+    pub(super) fn register_handled_exception(
+        &mut self,
+        builder: &Builder<'static>,
+        slot: inkwell::values::PointerValue<'static>,
+    ) -> Result<(), CodegenError> {
+        let global = self.handled_global();
+        builder
+            .build_store(global, slot)
+            .map_err(|error| CodegenError::Emit(error.to_string()))?;
+        Ok(())
+    }
+
     pub(super) fn handled_global(&mut self) -> inkwell::values::PointerValue<'static> {
         if let Some(global) = self.handled_global {
             return global;

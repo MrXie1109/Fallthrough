@@ -584,18 +584,39 @@ impl TypeChecker {
             // depth is what tells the calls inside that a handler encloses
             // them.
             fallc_ast::ExprKind::Abort(node) => {
+                let span = node_span(ast, expr);
                 self.protected_depth += 1;
                 let found = self.infer_expr(ast, resolutions, types, node.value);
                 self.protected_depth -= 1;
+                // `!!` on something that cannot raise does nothing, and in a
+                // program that is worth the same warning `??` gets: the mark
+                // says the program stops here, and it is not true of this
+                // expression. Inside a template the same `!!` may be about a
+                // call that raises for some instantiations and not for others,
+                // which is why this is a warning and not an error.
+                let raises = self.throwing_calls.contains(&ast.expr(node.value).span);
+                if found.is_some() && !raises {
+                    self.diagnostics.push(
+                        Diagnostic::warning("this call cannot raise, so `!!` does nothing")
+                            .with_code(DiagnosticCode::sema(83))
+                            .with_warning("useless-raise-mark")
+                            .with_span(span)
+                            .with_note(
+                                "`!!` stops the program when the call raises, and this one \
+                                 raises nothing: drop the mark, or silence this line with \
+                                 `// no warning` if the call is generic elsewhere",
+                            ),
+                    );
+                }
                 found
             }
             fallc_ast::ExprKind::Propagate(node) => {
                 let span = node_span(ast, expr);
-                // A restriction writes `?` to say that the *method* may raise,
-                // not to pass an exception on: there is no function here whose
-                // exceptions could leave, and the call is never emitted.
+                // A restriction writes `??` to say that the *method* may
+                // raise, not to pass an exception on: there is no function here
+                // whose exceptions could leave, and the call is never emitted.
                 if !self.in_trait_requirement {
-                    self.require_throw_allowed(span, "`?`");
+                    self.require_throw_allowed(span, "`??`");
                 }
                 self.propagating_depth += 1;
                 let found = self.infer_expr(ast, resolutions, types, node.value);

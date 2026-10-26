@@ -120,6 +120,7 @@ character types.
 | `b"bytes"` | `[N]const byte` | no | element type is `byte` |
 | `r"text"` | `[N]const c8` | yes | raw string; does not interpret escapes |
 | `r#tag"text"tag#` | `[N]const c8` | yes | delimited raw string |
+| `f"text{expr}text"` | — | — | interpolated string; not a value of its own (6.5.5) |
 
 6.5.1 `N` is the number of array elements: for the `c8`/`c16`/`c32` forms, `N` equals
 the number of decoded elements plus one (including the terminator); for the `b` form,
@@ -136,6 +137,13 @@ delimited form of a raw string is `r#TAG"…"TAG#`: `TAG` must not contain white
 
 6.5.4 The `u16`/`u32` prefixes select the element type; the `b` prefix selects the
 `byte` element type. The `b` form denotes raw memory and contains no terminator.
+
+6.5.5 An interpolated string is written `f"…"`: the `f` is a prefix, and what follows is
+read to the closing `"` like an ordinary string, escapes included. It is **not** a literal
+of an array type: it denotes a call, and
+[07 Expressions](07-expressions.md#interpolated-strings) says what the call is. An
+interpolated string may span lines the way `"…"` does, since a newline inside it is an
+ordinary character. There is no `f"""…"""` form.
 
 ### Boolean literals and the null pointer
 
@@ -178,7 +186,7 @@ as the table states.
 | 1 | `\|\|` | left |
 | 0 | `?:`, `=` and the compound assignments | right |
 
-7.2 Postfix forms (call, subscript, field access, `++`, `--`, `??`) have higher
+7.2 Postfix forms (call, subscript, field access, `++`, `--`, `??`, `!!`) have higher
 precedence than any binary operator in the table.
 
 7.3 `as` has higher precedence than any binary operator and lower precedence than the

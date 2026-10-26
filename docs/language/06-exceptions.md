@@ -151,44 +151,72 @@ unmatched exception leaves the function as 5.7 says.
 conversions and assignment are covered too):
 
 1. it is inside a `try` block with an `except`;
-2. `??` is written after the expression that may raise, handing the exception to the
-   caller of this function.
+2. `??` is written after it, handing the exception to the caller of this function;
+3. `!!` is written after it, stopping the program with the exception reported.
 
-6.2 `??` is a postfix expression: `x??` is equivalent to
-`try { x } except { raise; }`.
+6.2 An expression that may raise and satisfies none of the three is an unhandled call
+site; the implementation **must** report a diagnostic.
 
-6.3 `??` affects only the current call site; an enclosing `try` in the same function may
+### `??` — pass it on
+
+6.3 `??` is a postfix expression: `x??` is equivalent to `try { x } except { raise; }`.
+
+6.4 `??` affects only the current call site; an enclosing `try` in the same function may
 still catch the exception.
-
-6.4 When an expression that may raise is left unhandled, the implementation **must**
-report a diagnostic.
 
 6.5 `??` on an expression that cannot raise is a warning (`S0083`), not an error: within
 a template instantiation, the same mark may be used for both raising and non-raising
 expressions.
 
-6.6 `!!` is the other postfix: `x!!` is equivalent to
-`try { x } except { std.panic(); }`. The exception is handled by stopping the program, so
-`!!` needs no `except` on the enclosing function and nothing leaves it. It is for the
-failure a program has decided is not worth handling.
+6.6 `??` in an expression whose value is used keeps the value: `v int = f(n)??;` is `v`
+holding `f`'s result, or the exception leaving. In a function whose result is not used
+the effect is the same, because passing an exception on never discards it.
 
-6.7 `??` and `!!` are the only two postfix marks. There is no `?!`: one question mark is
-the conditional's (see 7.x, `cond ? then : otherwise`) and belongs to the two-mark form.
+### `!!` — stop here
 
-A single `?` is the conditional operator, and `?:` is how it reads: `cond ? then : else`.
-Because `??` is the propagation mark and `?` alone the conditional, neither needs to be
-told from the other by looking ahead.
+6.7 `!!` is a postfix expression: `x!!` is equivalent to
+`try { x } except { std.panic(); }`. Where `??` hands the exception to a caller, `!!`
+ends the program.
+
+6.8 `!!` needs no `except` on the enclosing function: nothing leaves it, because the
+program has stopped. It is therefore legal in a function that cannot raise itself, which
+is the difference a reader should notice — `??` is a claim about the caller, `!!` is a
+claim about the program.
+
+6.9 The report **must** name the exception and its message, and the program **must**
+terminate abnormally rather than return a status: this is a stop, not a failure being
+returned. The form of the report is the implementation's, but it **must** contain the
+type name and the message when the exception has one, in the same shape as the uncaught
+report of 8.1.
+
+6.10 `!!` on an expression that cannot raise has no effect, and the implementation
+**must** warn (`S0083`, `useless-raise-mark`), exactly as it does for a `??` that has
+nothing to pass on: the mark says the program stops here, and that is not true of this
+expression. It is a warning rather than an error because within a template the same `!!`
+may be about a call that raises for some instantiations and not for others.
+
+6.11 Which of `??` and `!!` to write is a design decision the program makes: `??` when
+the failure is the caller's to handle, `!!` when it is not worth handling. A library
+**should** use `??` and leave the choice to its caller; an application **may** use `!!`
+where it has decided the failure ends the program.
+
+### The marks
+
+6.12 `??` and `!!` are the only two postfix marks. One `?` on its own is the conditional's,
+and `cond ? then : else` is how that reads, so a two-character mark is never mistaken for
+it.
+
 ## Implicit call sites
 
 7.1 The following constructs call member functions and are therefore also call sites:
 construction, assignment, operators, subscripts, type conversion, `__bool__` in a
 condition, `__call__`, `str()`, `repr()`.
 
-7.2 `??` on an initializer protects the entire initialization, including a construction
-call that the implementation inserts for the initialization.
+7.2 `??` or `!!` on an initializer protects the entire initialization, including a
+construction call that the implementation inserts for the initialization.
 
-7.3 `??` on an assignment belongs only to the right-hand expression; when the assignment
-operator itself may raise, the assignment is an unhandled call site.
+7.3 `??` or `!!` on an assignment belongs only to the right-hand expression; when the
+assignment operator itself may raise, the assignment is an unhandled call site.
 
 7.4 The call site of any other implicit call is the position of that expression; when
 the entire statement must be protected, a `try` region **must** be used.

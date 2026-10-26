@@ -775,6 +775,25 @@ impl<'ctx> Lowerer<'ctx> {
                     // receiver -- `__iadd__` returning a new value is exactly
                     // what an immutable type does -- so the store is required
                     // rather than optional.
+                    //
+                    // A method returning a *reference* -- `fn __iadd__(this &T,
+                    // n int) &T` -- hands back an address, and what has to be
+                    // stored is the value at it. Storing the address itself put
+                    // a pointer where the struct's first field belongs, and the
+                    // result read back as garbage. The test is the shapes: a
+                    // pointer where the target's slot holds an aggregate.
+                    let result = match result {
+                        Some(BasicValueEnum::PointerValue(address))
+                            if binding.ty.is_struct_type() =>
+                        {
+                            Some(
+                                builder
+                                    .build_load(binding.ty, address, "inplace.read")
+                                    .map_err(|error| CodegenError::Emit(error.to_string()))?,
+                            )
+                        }
+                        other => other,
+                    };
                     if let Some(value) = result {
                         builder
                             .build_store(binding.storage, value)

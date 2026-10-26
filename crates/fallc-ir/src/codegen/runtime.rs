@@ -59,7 +59,7 @@ impl<'ctx> Lowerer<'ctx> {
     }
 
     /// Declares a C library function this module calls.
-    fn declare_libc(
+    pub(super) fn declare_libc(
         &mut self,
         name: &str,
         params: &[BasicMetadataTypeEnum<'static>],

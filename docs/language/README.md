@@ -40,8 +40,10 @@ that states no version applies in its latest version.
 
 - the volumes themselves: [00](00-start.md) through
   [10](10-diagnostics.md), together with
-  [Appendix A](appendix-a-errors.md) (diagnostic codes) and
-  [Appendix B](appendix-b-special-methods.md) (special methods).
+  [Appendix A](appendix-a-errors.md) (diagnostic codes),
+  [Appendix B](appendix-b-special-methods.md) (special methods, and the forms the
+  implementation supplies for a type that declares none) and
+  [Appendix C](appendix-c-attributes.md) (attributes).
 - [`../SPEC-STATUS.md`](../SPEC-STATUS.md): the list of entries not yet finalised.
 - [`../templates.md`](../templates.md): supplementary rules for parameter packs,
   folding and `sizeof...`.
@@ -119,7 +121,7 @@ prevails. In examples, `...` denotes an omission and is not part of the language
 | [03 Declarations](03-declarations.md) | Declaration forms, bindings and initialization, attributes, macros, traits, interface, templates |
 | [04 Functions](04-functions.md) | Functions, member functions, lambda, call conventions, argument passing, overloading, moves |
 | [05 Statements](05-statements.md) | Blocks, conditions, loops, range loops, `switch`, jumps, `defer`, compile-time assertions |
-| [06 Exceptions](06-exceptions.md) | The exception model, `raise`, `try`, `??`, obligations at a call site |
+| [06 Exceptions](06-exceptions.md) | The exception model, `raise`, `try`, `??`, `!!`, obligations at a call site |
 | [07 Expressions](07-expressions.md) | Expression forms, conversions, operators, assignment, special methods, evaluation order |
 | [08 Modules](08-modules.md) | Importing and exporting, name identity, module lookup, multi-file compilation and linking |
 | [09 Scopes](09-scopes.md) | Scopes, shadowing, repeated declarations, `_`, lifetimes |
@@ -155,6 +157,8 @@ text, not a note.
 | a by-value aggregate parameter is copied by its copy constructor and destroyed at every way out of the function | [04 §4.3](04-functions.md#semantics-of-aggregate-arguments-passed-by-value) |
 | a compilation may produce a static or shared library as well as an executable or object | [00 §4.1](00-start.md#compilation-interface) |
 | the diagnostic appendix is a single deduplicated table generated against the compiler's codes | [Appendix A](appendix-a-errors.md) |
+| the special-method appendix states the default forms, not only the declared ones | [Appendix B](appendix-b-special-methods.md) |
+| every attribute is listed once, with where it may be written | [Appendix C](appendix-c-attributes.md) |
 
 ## Entries not yet finalised
 

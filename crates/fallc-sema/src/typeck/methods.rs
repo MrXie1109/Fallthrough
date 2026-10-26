@@ -1967,8 +1967,16 @@ impl TypeChecker {
             && !pointer_is_const
         {
             let element_is_const = element.is_const_value();
+            // Both sides are compared without their `const`, because the
+            // qualifier is judged by the line below this one: what is being
+            // asked is whether the *element* is the pointee, and whether the
+            // array's elements are constant is a separate fact. Comparing the
+            // stripped element against an unstripped pointee made the two never
+            // equal for `"text"`, whose type is `[N]const c8` while the
+            // parameter is `*const c8` -- so a string literal could not be
+            // passed to a constructor taking a C string.
             let element_base = element.unqualified();
-            if element_base == pointee.as_ref()
+            if element_base == pointee.unqualified()
                 && (element_is_const == *pointee_is_const
                     || (*pointee_is_const && !element_is_const))
             {

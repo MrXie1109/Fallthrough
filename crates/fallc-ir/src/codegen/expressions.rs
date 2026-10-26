@@ -262,6 +262,10 @@ impl<'ctx> Lowerer<'ctx> {
             // is thrown away and the panic runs, so nothing leaves the
             // function and no `except` is needed around it.
             ExprKind::Abort(node) => {
+                // `expr!!` is `try { expr } except { std.panic(err); }`: the
+                // unwind of a call inside it stops the program instead of
+                // looking for a handler. The counter is what says so at the
+                // unwrap site.
                 self.abort_lowering += 1;
                 let value = self.lower_expr(ast, types, builder, node.value);
                 self.abort_lowering -= 1;

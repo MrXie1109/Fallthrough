@@ -92,13 +92,14 @@
 | [03 声明](03-declarations.zh.md) | 声明形式、绑定与初始化、属性、宏、traits、interface、模板 |
 | [04 函数](04-functions.zh.md) | 函数、成员函数、lambda、调用约定、参数传递、重载、移动 |
 | [05 语句](05-statements.zh.md) | 块、条件、循环、范围循环、`switch`、跳转、`defer`、编译期断言 |
-| [06 异常](06-exceptions.zh.md) | 异常模型、`raise`、`try`、`??`、调用点义务 |
+| [06 异常](06-exceptions.zh.md) | 异常模型、`raise`、`try`、`??`、`!!`、调用点义务 |
 | [07 表达式](07-expressions.zh.md) | 表达式形式、转换、运算符、赋值、特殊方法、求值顺序 |
 | [08 模块](08-modules.zh.md) | 导入与导出、名字身份、模块查找、多文件与链接 |
 | [09 作用域](09-scopes.zh.md) | 作用域、遮蔽、重复声明、`_`、生命周期 |
 | [10 诊断](10-diagnostics.zh.md) | 诊断编号、结构、警告组、抑制、颜色、去重 |
 | [附录 A](appendix-a-errors.zh.md) | 稳定诊断编号、级别与消息模板对照表 |
-| [附录 B](appendix-b-special-methods.zh.md) | 特殊方法对照表：调用时机、签名约定与约束 |
+| [附录 B](appendix-b-special-methods.zh.md) | 特殊方法对照表：调用时机、签名约定、约束，以及类型未声明时实现提供的缺省形式 |
+| [附录 C](appendix-c-attributes.zh.md) | 属性对照表：可写位置、含义与约束 |
 
 ## 阅读顺序
 
@@ -124,6 +125,8 @@
 | 按值聚合形参用其拷贝构造建立副本，并在函数的每条退出路径上析构 | [04 §4.3](04-functions.zh.md#按值聚合实参的语义) |
 | 编译产物还可以是静态库或共享库 | [00 §4.1](00-start.zh.md#编译接口) |
 | 诊断附录是去重后的单张表，与编译器代码逐项核对 | [附录 A](appendix-a-errors.zh.md) |
+| 特殊方法附录写出缺省形式，而不只是声明过的形式 | [附录 B](appendix-b-special-methods.zh.md) |
+| 每个属性只列一次，并注明可写位置 | [附录 C](appendix-c-attributes.zh.md) |
 
 ## 未定稿条目
 

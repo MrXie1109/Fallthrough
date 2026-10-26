@@ -43,7 +43,7 @@ That rule generalises into the four ideas the language is built around.
    destroyed when its scope ends, through `__drop__`. Copying and moving are the type's
    own constructors; `std.move` is how a program says a named value is dying.
 3. **Errors are part of the type.** A function that can fail says `except`; a call site
-   either handles the exception with `try` or passes it on with `??`. An exception
+   either handles the exception with `try` or ends the program with `!!`. An exception
    carries a type name and a message. There are no hidden error codes and no unchecked
    exceptions.
 4. **A small readable core, features grown in the library.** Generics are type families
@@ -186,14 +186,13 @@ The same program against the language's own library:
 import std;
 
 fn main() int except {
-    std.println("Hello, world!")??;
+    std.println("Hello, world!")!!;
     return 0;
 }
 ```
 
-Writing to a stream can fail, so `println` is declared `except` and the call site
-either handles the exception or passes it on with `??`; a program whose `main` can
-raise says so after its return type.
+`println` can fail, so it is declared `except`: `!!` stops the program and prints the
+exception; `try` handles it instead.
 
 `import C;` is the C standard library written in the language; `import std;` is the
 language's own library. Both are ordinary modules, imported the same way as a module of
@@ -224,7 +223,7 @@ the primary text, and every volume carries a Chinese translation (`*.zh.md`).
 | [03 Declarations](docs/language/03-declarations.md) | declarations, attributes, macros, traits, interfaces, templates |
 | [04 Functions](docs/language/04-functions.md) | functions, member functions, lambdas, argument passing, overloading, moves |
 | [05 Statements](docs/language/05-statements.md) | blocks, loops, `switch`, jumps, `defer` |
-| [06 Exceptions](docs/language/06-exceptions.md) | `raise`, `try`, `except`, `??`, obligations at a call site |
+| [06 Exceptions](docs/language/06-exceptions.md) | `raise`, `try`, `except`, `!!`, and when a call has to say something |
 | [07 Expressions](docs/language/07-expressions.md) | operators, conversions, special methods, evaluation order |
 | [08 Modules](docs/language/08-modules.md) | importing and exporting, module lookup, multi-file programs |
 | [09 Scopes](docs/language/09-scopes.md) | scopes, shadowing, lifetimes, destruction order |

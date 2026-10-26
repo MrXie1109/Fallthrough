@@ -21,6 +21,41 @@ these constructs invoke.
 | `p(1)` | call through a function pointer, with no dereference written |
 | `f<int>(a)` | call with explicit template arguments |
 | `T(args)` | construction call |
+| `f"…{e}…"` | interpolated string; a call to `std.format`, see below |
+
+### Interpolated strings
+
+2.1.1 An interpolated string `f"…"` denotes `std.format(fmt, e1, e2, …)`, where `fmt` is
+the literal's text with each placeholder replaced by `{}` and `e1…` are the placeholder
+expressions in the order written. The type of the whole is the type `format` returns,
+which is the standard string.
+
+```ft
+n int = 42;
+s String = f"n is {n}";          // std.format("n is {}", n)
+h String = f"{n:#x}";            // std.format("{:#x}", n)
+```
+
+2.1.2 A placeholder is `{expr}` or `{expr:spec}`. The `spec` is the ordinary format
+specification ([06 Exceptions](06-exceptions.md) is not involved): `{:>8}`, `{:08}`,
+`{:.2f}`, `{:#x}` and the conversions `{!s}`/`{!r}` behave exactly as they do in a
+written format string, because that is what they become.
+
+2.1.3 `{{` and `}}` are one literal brace, so `f"{{x}}"` is `{x}` and not a placeholder.
+
+2.1.4 The call may raise, so an interpolated string is a call site like any other: it
+needs a `try`, a `??` or a `!!` ([06 Exceptions](06-exceptions.md#evaluation-site-obligations)).
+The literal carries no mark of its own — where the failure goes is the program's choice,
+written at the use.
+
+2.1.5 Each placeholder is a full expression, evaluated left to right, once each. Its
+result is rendered by the value's `__format__`, or by `str` when it has none
+([§8](#special-methods)).
+
+2.1.6 `std.format` comes from the standard library, so a file that writes an interpolated
+string **must** import it (`import std;` or `import std.fmt;`). Without the import the
+name `format` resolves to nothing, and the program is rejected as it would be for any
+other unknown name.
 
 ## Conversions
 

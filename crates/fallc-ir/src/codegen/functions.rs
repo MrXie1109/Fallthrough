@@ -1278,6 +1278,21 @@ impl<'ctx> Lowerer<'ctx> {
                 let _ = self.build_function_return(&builder, None);
             } else if returns_nothing {
                 let _ = builder.build_return(None);
+            } else if function.name == "main" {
+                // A program's entry that reaches its end has finished
+                // successfully. `fn main() int { …; }` with no `return` is the
+                // shape every reader writes first, and the status it means is
+                // 0 -- the status a C program gets from falling off the end of
+                // its `main`. Emitting `unreachable` there stopped the program
+                // with SIGILL instead.
+                let zero = self.backend.context().i32_type().const_zero();
+                let value: BasicValueEnum<'static> = match value_llvm {
+                    Some(inkwell::types::BasicTypeEnum::IntType(int)) => {
+                        int.const_zero().as_basic_value_enum()
+                    }
+                    _ => zero.as_basic_value_enum(),
+                };
+                let _ = self.build_function_return(&builder, Some(value));
             } else {
                 let _ = builder.build_unreachable();
             }

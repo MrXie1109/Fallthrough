@@ -187,6 +187,7 @@
 | `S0082` | error | {what} is only allowed in a function marked `except` |
 | `S0083` | error | a call to `{label}` may raise, and nothing here handles it |
 | `S0083` | warning | this call cannot raise, so `??` does nothing |
+| `S0083` | warning | this call cannot raise, so `!!` does nothing |
 | `S0084` | error | `type(expr)` cannot be used here |
 | `S0085` | error | `{}` contains itself by value, so it has no size |
 | `S0130` | error | `{trait_name}` asks about a type, but this argument is a value |

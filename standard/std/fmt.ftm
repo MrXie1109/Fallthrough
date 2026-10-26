@@ -107,6 +107,21 @@ fn format_value(value T) String {
     return plain_text(value);
 }
 
+// Whether `text` has an escaped brace: `{{` or `}}`.
+export fn has_escape(text &const String) bool {
+    index usize = 0;
+    while (index + 1 < text.length()) {
+        if (text[index] == '{' as char && text[index + 1] == '{' as char) {
+            return true;
+        }
+        if (text[index] == '}' as char && text[index + 1] == '}' as char) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
 // Whether `text` has a placeholder: `{}`, or `{spec}`.
 export fn has_placeholder(text &const String) bool {
     index usize = 0;
@@ -199,7 +214,14 @@ export fn rendered(pieces &const Array<String>) String except {
     if (pieces.empty()) {
         return String();
     }
+    // A format string with a placeholder, or with an escaped brace, is not
+    // literal text: `{{` has to be written out as one `{` even when there is no
+    // value to put anywhere. Collapsing the pair in the parser instead would
+    // turn an escaped brace back into the start of a placeholder.
     if (pieces.length() > 1 && has_placeholder(&pieces[0])) {
+        return render(&pieces[0], pieces, 1)??;
+    }
+    if (has_escape(&pieces[0])) {
         return render(&pieces[0], pieces, 1)??;
     }
     joined String = String();

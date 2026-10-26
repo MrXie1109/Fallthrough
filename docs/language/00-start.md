@@ -38,6 +38,15 @@ all declarations exported by the modules it statically imports.
 3.2 When `main` returns `int`, the return value is the program's exit code; when it
 returns `void` or omits the return type, the exit code is 0.
 
+3.2.1 A `main` that returns `int` is treated as ending with `return 0;`: reaching the end
+of its body without a `return` returns 0, as a C program does when it falls off the end of
+its `main`.
+
+3.2.2 For any other function, reaching the end of a body that declares a return value
+that is not `void` is undefined behaviour: the function **should** return on every path
+that can be taken. `main` is the one place the language supplies the value, because its
+body is where a reader first meets the question.
+
 3.3 `main` may be declared as possibly raising (`except`). An uncaught exception is
 reported by the implementation; the format of the report and the exit code are given in
 [06 Exceptions](06-exceptions.md).

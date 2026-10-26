@@ -1,6 +1,6 @@
 id = "fallthrough"
 name = "Fallthrough"
-version = "0.1.2"
+version = "0.1.3"
 schema_version = 1
 authors = ["MrXie1109"]
 description = "Fallthrough: syntax highlighting, and diagnostics from fallc --lsp."

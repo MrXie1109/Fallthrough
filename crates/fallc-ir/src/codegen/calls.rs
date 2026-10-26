@@ -103,9 +103,10 @@ impl<'ctx> Lowerer<'ctx> {
         builder.position_at_end(escape_block);
         if self.abort_lowering > 0 {
             // This raise is inside an `expr!!`, which is `try { expr }
-            // except { std.panic(); }`: the exception is handled here, by
-            // stopping the program.
-            self.emit_panic(builder, "a `!!` expression raised", span)?;
+            // except { panic }`. The report is the one a program makes for an
+            // exception nothing caught -- the same texts, read the same way --
+            // with `panic:` in place of `uncaught exception:`.
+            self.emit_abort_report(ast, types, builder, raised)?;
             builder.position_at_end(value_block);
             if fields >= 3 {
                 return Ok(Some(

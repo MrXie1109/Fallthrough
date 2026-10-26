@@ -854,10 +854,14 @@ impl TypeChecker {
             // local `Pair`.
             let receiver_written = &signature.param_types[0];
             let receiver = self.resolve_type_syntax(receiver_written, true);
-            let same_receiver = receiver == *target
-                || receiver
-                    .referent()
-                    .is_some_and(|referent| referent == target);
+            // One type may be known by two names: `String` where it is
+            // declared, `std.String` in a file that imported the umbrella. The
+            // receiver was written with one of them and the target was written
+            // with the other, and they are the same type -- comparing them with
+            // `==` made every constructor of an imported type reject the type
+            // itself.
+            let receiver_referent = receiver.referent().unwrap_or(&receiver);
+            let same_receiver = self.same_type_named_apart(receiver_referent, target);
             self.substitution = previous;
             if !same_receiver {
                 continue;

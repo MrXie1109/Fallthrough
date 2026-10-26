@@ -140,15 +140,11 @@ pub enum SpecialMethod {
     /// several steps, each produced by this method.
     Pointer,
     /// `__getitem__` — `a[i]`.
-    GetItem,
-    /// `__setitem__` — `a[i] = v`.
     ///
-    /// The writing counterpart of `__getitem__`. It is a *method* rather than
-    /// an assignment through the address `__getitem__` returns, because a type
-    /// may not have an element to address: a hash table's `a[k] = v` inserts,
-    /// and there is no storage to hand out. A type that does have one can write
-    /// `__setitem__` to store through it.
-    SetItem,
+    /// Returning a reference is what makes `a[i] = v` writable: the subscript
+    /// names a place, and assignment writes through it. There is no separate
+    /// writing method, because a place is enough.
+    GetItem,
     /// `__call__` — `a(..)`.
     Call,
     /// `__bool__` — `a` in a condition.
@@ -197,7 +193,6 @@ impl SpecialMethod {
             SpecialMethod::Deref => "__deref__",
             SpecialMethod::Pointer => "__pointer__",
             SpecialMethod::GetItem => "__getitem__",
-            SpecialMethod::SetItem => "__setitem__",
             SpecialMethod::Call => "__call__",
             SpecialMethod::Bool => "__bool__",
             SpecialMethod::As => "__as__",
@@ -423,7 +418,6 @@ pub static SPECIAL_METHODS: &[SpecialMethod] = &[
     SpecialMethod::Pos,
     SpecialMethod::Pow,
     SpecialMethod::Repr,
-    SpecialMethod::SetItem,
     SpecialMethod::Shl,
     SpecialMethod::Shr,
     SpecialMethod::Str,
@@ -508,7 +502,6 @@ mod tests {
             SpecialMethod::Assign,
             SpecialMethod::Str,
             SpecialMethod::Repr,
-            SpecialMethod::SetItem,
             SpecialMethod::Format,
             SpecialMethod::Eq,
             SpecialMethod::Ne,
