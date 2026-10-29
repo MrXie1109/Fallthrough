@@ -33,14 +33,14 @@ arrives, the corresponding code is filled in and the row is marked done. The
 | 1.7a | Raw and interpolated strings; escape sequences in strings | **Partly answered.** Escapes are decoded in literals and strings. Raw strings are settled: `r"..."` and `r#tag"..."tag#`, where the tag may hold no whitespace or `"`, is at most 64 bytes, and is repeated at the closing delimiter; no escape is processed and a newline is an ordinary character. Multi-line strings are `""".."""`: the text may span lines, escapes still apply, and no indentation is trimmed. Interpolated strings remain open. |
 | 1.8 | Comment syntax | **Answered.** `//` and non-nesting `/* */`. Whether they are preserved as trivia is still open. |
 | 1.9 | Non-ASCII identifiers | **Answered.** UAX #31 `XID_Start` / `XID_Continue` (plus `_`); no normalization is performed. |
-| 1.10 | Contextual vs reserved keywords | **Answered.** Only `dynamic` and `delete` are contextual, recognised by position; every other keyword in `KEYWORDS` is reserved. |
+| 1.10 | Contextual vs reserved keywords | **Answered.** `dynamic` and `static` are contextual: they mean something only after `link`, where they choose the kind of library, and are ordinary names everywhere else. `delete` is contextual too, recognised by position. Every keyword in `KEYWORDS` is reserved. |
 | 1.11 | Preprocessor, shebang, other non-token text | **Partly answered.** Macros are C-style: `define NAME body` to the end of the line (`\` continues it), `export define` exports, invocation is `$NAME` or `$NAME(args)` wherever an expression or a token may appear, expansion is recursive with a depth limit, `#param` stringifies, `a ## b` pastes, and `...` / `__VA_LIST__` are variadic. A shebang and other non-token text remain open. |
 
 ### 2. Grammar — `crates/fallc-parser/`, `crates/fallc-ast/src/node/`
 
 | # | Question | Blocks |
 | - | -------- | ------ |
-| 2.1 | Top-level constructs | **Partly answered.** Functions (with `extern "ABI"` and `export`), `import`, `link`, `type`, macros (`define` / `export define`), attributes (`@name` / `@name(args)`), module-level variables (including `extern "ABI"` external variables), constants, and `traits` are specified, as are templates (2.12). |
+| 2.1 | Top-level constructs | **Partly answered.** Functions (with `@extern_C` and `export`), `import`, `link`, `type`, macros (`define` / `export define`), attributes (`@name` / `@name(args)`), module-level variables (including `@extern_C` external variables), constants, and `traits` are specified, as are templates (2.12). |
 | 2.2 | Visibility/export syntax | **Answered.** `export` before a module-level declaration makes it visible to importers; without it the declaration is private to the module. |
 | 2.3 | Attributes and where they may appear | **Answered.** Written before the declaration they describe, one or more of them: `@inline` and `@noreturn` on a function, `@deprecated` on a function or a module-level variable, `@align(...)` on a variable. A `@noreturn` function may not declare a return value. |
 | 2.4 | **Control flow** (if/while/for/for-each/switch/break/continue/return/raise/try) | **Answered** — see below |
@@ -631,7 +631,7 @@ construct becomes LLVM IR. Directory: `crates/fallc-ir/src/codegen/`.
 | 5.2 | The LLVM type each Fallthrough type maps to | **Answered.** A struct maps to the LLVM struct its fields give, and `sizeof`/`alignof` agree with that layout including padding. Integers map to `iN`, `float`/`double` to `f32`/`f64`, and `[N]T` to an LLVM array. |
 | 5.3 | Whether integers are signed, and where signedness selects the instruction (`sdiv` vs `udiv`) | types.rs, codegen |
 | 5.4 | Aggregate passing/returning conventions (by value vs by pointer) | types.rs, codegen |
-| 5.5 | Globals and constants | **Answered.** A module-level variable is one object initialised once and emitted as a global; an external variable (`extern "ABI"`) is emitted as a declaration of the library's symbol, not a definition; a `const` binding supplies a compile-time constant where one is required. |
+| 5.5 | Globals and constants | **Answered.** A module-level variable is one object initialised once and emitted as a global; an external variable (`@extern_C`) is emitted as a declaration of the library's symbol, not a definition; a `const` binding supplies a compile-time constant where one is required. |
 | 5.6 | **`fallthrough`** and control-flow lowering | **Answered.** if/else → blocks and `br`; loop `else` = normal-termination edge, `break` = end block; `switch` arms get an automatic break, `fallthrough` branches to the next arm. |
 | 5.7 | Calling conventions and the `main` ABI | codegen |
 | 5.8 | Evaluation order and short-circuit semantics (LLVM guarantees no evaluation order, so if Fallthrough does, lowering must encode it) | codegen |
@@ -779,7 +779,7 @@ observe.
 | 45 | 新增 `std.toml`（注释/表/键值子集，`TomlDocument` + `get`，不支持项明确报错） | 完成（serialization 测试） |
 | 46 | 新增 `std.xml`（节点文档 + 句柄、元素/属性/文本/实体、序列化，CDATA/DTD 明确不支持） | 完成（serialization 测试） |
 | 43 | 新增 `std.json`（索引式 JsonDocument + 可复制 JsonValue 句柄、解析/读取/序列化、`\u` 转义） | 完成（json 测试） |
-| 42 | 新增 `std.iter`（区间位置工具与谓词 `Even`/`Odd`）与 `std.range`（`IntRange`，含不整除步长的终点语义） | 完成（iter_range 测试） |
+| 42 | 新增 `std.iter`（区间位置工具与谓词 `Even`/`Odd`）与 `std.range`（`Range`，含不整除步长的终点语义） | 完成（iter_range 测试） |
 | 41 | 修正：可抛函数返回聚合体（`Bytes` 等）时的移动构造未初始化成员导致崩溃；`(x as T).method()` 接收者无类型记录时按值临时处理 | 完成（utilities/encoding 测试覆盖） |
 | 39 | 新增 `std.Bitset`、`std.Ring<T>`、`std.List<T>`（含 ListIterator 供 for 遍历） | 完成（collections_extra 测试） |
 | 38 | 新增 `std.concurrent`：`Promise`/`Future`、`Channel`、`ThreadPool`（构造后 start，worker 用指针接收者） | 完成（concurrent 测试） |

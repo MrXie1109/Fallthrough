@@ -124,13 +124,20 @@ export fn __getitem__(this &const Bytes, index usize) &const u8 {
     return this._data[index];
 }
 
-// Appends one byte.
+// Adds one byte at the end.
 export fn push(this &Bytes, value byte) void {
     this._data.push(value as u8);
 }
 
-// Appends a run of bytes.
-export fn append(this &Bytes, other &const Bytes) void {
+// Adds one byte at the end.
+//
+// The same operation as `push`, under the name a generic sequence expects.
+export fn push_back(this &Bytes, value byte) void {
+    this.push(value);
+}
+
+// Adds the bytes of `other` at the end.
+export fn push_bytes(this &Bytes, other &const Bytes) void {
     index usize = 0;
     while (index < other.length()) {
         this._data.push(other._data[index]);
@@ -138,8 +145,8 @@ export fn append(this &Bytes, other &const Bytes) void {
     }
 }
 
-// Appends text's bytes.
-export fn append_string(this &Bytes, text &const String) void {
+// Adds the bytes of `text` at the end.
+export fn push_text(this &Bytes, text &const String) void {
     index usize = 0;
     while (index < text.length()) {
         this._data.push(text[index] as u8);
@@ -219,4 +226,14 @@ export fn __eq__(this &const Bytes, other &const Bytes) bool {
 // Whether two byte sequences differ.
 export fn __ne__(this &const Bytes, other &const Bytes) bool {
     return !(this == other);
+}
+
+// The first position, read only, named as C++ names it.
+export fn cbegin(this &const Bytes) *const u8 {
+    return this._data.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export fn cend(this &const Bytes) *const u8 {
+    return this._data.end();
 }

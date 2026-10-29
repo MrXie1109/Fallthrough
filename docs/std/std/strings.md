@@ -1,0 +1,177 @@
+# `std.strings`
+
+Text helpers that are about a sequence of strings, not about one `String`.
+
+`String` has the operations a string itself owns -- characters, length, find,
+compare. Joining several strings, repeating one, replacing text inside one and
+padding one to a width are about strings *and* a rule, so they live here as
+free functions over `String`.
+
+    line String = strings.join(&parts, ", ")??;
+    stars String = strings.repeat(String("*"), 10)??;
+
+## Declarations
+
+### `export fn join(parts &const Array<String>, separator &const String) String {`
+
+Joins `parts` with `separator` between them.
+
+```
+export fn join(parts &const Array<String>, separator &const String) String {
+    result String = String();
+    index usize = 0;
+    while (index < parts.length()) {
+        if (index > 0) {
+            result.push(separator);
+        }
+        result.push(parts[index]);
+        index += 1;
+    }
+    return result;
+}
+```
+
+### `export fn repeat(text &const String, count usize) String {`
+
+Repeats `text` `count` times.
+
+```
+export fn repeat(text &const String, count usize) String {
+    result String = String();
+    index usize = 0;
+    while (index < count) {
+        result.push(text);
+        index += 1;
+    }
+    return result;
+}
+```
+
+### `export fn replace_all(text &const String, pattern &const String, to &const String) String {`
+
+Replaces every occurrence of `from` with `to`.
+
+An empty `from` matches nothing: a search for an empty string would succeed at
+every position without consuming any, so it is treated as text that does not
+occur rather than as an infinite loop.
+
+```
+export fn replace_all(text &const String, pattern &const String, to &const String) String {
+    if (pattern.empty()) {
+        return String(text);
+    }
+    result String = String();
+    index usize = 0;
+    while (index < text.length()) {
+        if (index + pattern.length() <= text.length() && text.substring(index, pattern.length()) == pattern) {
+            result.push(to);
+            index += pattern.length();
+        } else {
+            result.push(text[index]);
+            index += 1;
+        }
+    }
+    return result;
+}
+```
+
+### `export fn lines(text &const String) Array<String> {`
+
+The lines of `text`: split on `\n`, keeping empty lines.
+
+```
+export fn lines(text &const String) Array<String> {
+    parts Array<String> = Array<String>();
+    start usize = 0;
+    index usize = 0;
+    while (index < text.length()) {
+        if (text[index] == '\n') {
+            parts.push(text.substring(start, index - start));
+            start = index + 1;
+        }
+        index += 1;
+    }
+    parts.push(text.substring(start, text.length() - start));
+    return parts;
+}
+```
+
+### `export fn pad_start(text &const String, width usize, fill char) String {`
+
+Pads `text` on the left to `width` characters with `fill`.
+
+```
+export fn pad_start(text &const String, width usize, fill char) String {
+    if (text.length() >= width) {
+        return String(text);
+    }
+    result String = String();
+    missing usize = width - text.length();
+    index usize = 0;
+    while (index < missing) {
+        result.push(fill);
+        index += 1;
+    }
+    result.push(text);
+    return result;
+}
+```
+
+### `export fn pad_end(text &const String, width usize, fill char) String {`
+
+Pads `text` on the right to `width` characters with `fill`.
+
+```
+export fn pad_end(text &const String, width usize, fill char) String {
+    if (text.length() >= width) {
+        return String(text);
+    }
+    result String = String(text);
+    while (result.length() < width) {
+        result.push(fill);
+    }
+    return result;
+}
+```
+
+### `export fn upper(text &const String) String {`
+
+The English letters of `text`, uppercased; other characters are unchanged.
+
+```
+export fn upper(text &const String) String {
+    result String = String();
+    index usize = 0;
+    while (index < text.length()) {
+        character char = text[index];
+        if (character >= 'a' && character <= 'z') {
+            result.push((((character as int) - ('a' as int)) + ('A' as int)) as char);
+        } else {
+            result.push(character);
+        }
+        index += 1;
+    }
+    return result;
+}
+```
+
+### `export fn lower(text &const String) String {`
+
+The English letters of `text`, lowercased; other characters are unchanged.
+
+```
+export fn lower(text &const String) String {
+    result String = String();
+    index usize = 0;
+    while (index < text.length()) {
+        character char = text[index];
+        if (character >= 'A' && character <= 'Z') {
+            result.push((((character as int) - ('A' as int)) + ('a' as int)) as char);
+        } else {
+            result.push(character);
+        }
+        index += 1;
+    }
+    return result;
+}
+```

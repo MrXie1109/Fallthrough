@@ -241,6 +241,15 @@ pub const ASSIGNMENT_PRECEDENCE: u8 = 0;
 /// `a ? b : c ? d : e` is `a ? b : (c ? d : e)`.
 pub const CONDITIONAL_PRECEDENCE: u8 = 0;
 
+/// Binding power of `..` and `..=`.
+///
+/// A range is not an operator in the arithmetic sense: its two ends are
+/// integers and its result is a `Range`. It is parsed at the lowest level, below
+/// `?:`, so `1 .. n > 0 ? a : b` reads the range's high end as the whole
+/// conditional -- but above nothing, since a range is written where a value is
+/// expected rather than around one.
+pub const RANGE_PRECEDENCE: u8 = 0;
+
 /// Looks up the parsing behaviour of an infix operator.
 #[must_use]
 pub fn infix(kind: TokenKind) -> Option<OpInfo> {

@@ -64,6 +64,9 @@ fn new_control() *PromiseControl<T> {
 }
 
 // Drops one reference, freeing the state when the last one goes.
+//
+// - `control`: the shared state to drop a reference to; it must be a live
+//   block and never null, because the count lives inside it
 template <T type>
 fn release_control(control *PromiseControl<T>) void {
     control._refs.fetch_sub(1);
@@ -107,6 +110,9 @@ fn future(this &Promise<T>) Future<T> {
 //
 // Setting a promise twice is a no-op: the first value is the answer, and a
 // second one would silently break the rule that a future waits for one.
+//
+// - `value`: the value the future will receive; it is copied into a fresh
+//   allocation, and on a second call it is ignored and never stored
 export
 template <T type>
 fn set(this &Promise<T>, value T) void except {
@@ -147,6 +153,9 @@ fn __init__(this &Future<T>) void {
 }
 
 // Binds a future to an existing state, taking one reference.
+//
+// - `control`: the state to bind to, or null for an unbound future; the
+//   reference this future holds is taken by the caller, not counted here
 export
 template <T type>
 fn __init__(this &Future<T>, control *PromiseControl<T>) void {
@@ -223,6 +232,9 @@ fn __init__(this &Channel<T>) void {
 }
 
 // Appends a value and wakes one reader.
+//
+// - `value`: the value to queue; it moves into the channel, and is not stored
+//   at all when the channel is already closed (which raises `ChannelClosed`)
 export
 template <T type>
 fn send(this &Channel<T>, value T) void except {
@@ -294,7 +306,7 @@ fn closed(this &Channel<T>) bool {
 // One job: what to call and what to hand it.
 type Job {
     // The function to call.
-    task *fn(*byte) u32;
+    task *fn(*byte) uint;
     // Its argument.
     argument *byte;
 }
@@ -340,13 +352,16 @@ export fn start(this &ThreadPool) void except {
 }
 
 // The workers' body: take jobs until told to stop.
-fn worker_entry(argument *byte) u32 {
+//
+// - `argument`: the address of the pool the worker serves, passed through the
+//   thread as a `*byte` and cast back here; never null
+fn worker_entry(argument *byte) uint {
     pool *ThreadPool = argument as *ThreadPool;
     return pool.work();
 }
 
 // One worker's loop.
-fn work(this &ThreadPool) u32 {
+fn work(this &ThreadPool) uint {
     while (true) {
         this._mutex.lock();
         while (this._queue.empty() && !this._stopping) {
@@ -359,13 +374,13 @@ fn work(this &ThreadPool) u32 {
         job Job = this._queue[0];
         this._queue.erase(this._queue.begin());
         this._mutex.unlock();
-        task *fn(*byte) u32 = job.task;
+        task *fn(*byte) uint = job.task;
         task(job.argument);
     }
 }
 
 // Queues a job and wakes one worker.
-export fn submit(this &ThreadPool, task *fn(*byte) u32, argument *byte) void {
+export fn submit(this &ThreadPool, task *fn(*byte) uint, argument *byte) void {
     this._mutex.lock();
     job Job = .{ task, argument };
     this._queue.push(job);

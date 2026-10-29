@@ -51,7 +51,7 @@ type IsInteger<i16> {
 }
 
 template <>
-type IsInteger<i32> {
+type IsInteger<int> {
     VALUE const bool = true;
 }
 
@@ -76,7 +76,7 @@ type IsInteger<u16> {
 }
 
 template <>
-type IsInteger<u32> {
+type IsInteger<uint> {
     VALUE const bool = true;
 }
 
@@ -92,7 +92,7 @@ type IsInteger<u128> {
 
 // `isize` and `usize` are aliases for the pointer-width integer types, not
 // types of their own, so they reach the specialisations for `i64` and `u64`
-// above. `int` and `uint` likewise name `i32` and `u32`; writing a
+// above. `int` and `uint` likewise name `int` and `uint`; writing a
 // specialisation for an alias as well would make the query ambiguous, because
 // two identical patterns match equally well.
 
@@ -140,7 +140,7 @@ type IsNumeric<i16> {
 }
 
 template <>
-type IsNumeric<i32> {
+type IsNumeric<int> {
     VALUE const bool = true;
 }
 
@@ -165,7 +165,7 @@ type IsNumeric<u16> {
 }
 
 template <>
-type IsNumeric<u32> {
+type IsNumeric<uint> {
     VALUE const bool = true;
 }
 
@@ -276,7 +276,7 @@ type IsBool<bool> {
 
 // Whether the type is a character type.
 //
-// `char` is `c8`, so the three character widths cover every spelling.
+// `char` is `char`, so the three character widths cover every spelling.
 export
 template <T type>
 type IsCharacter {
@@ -284,7 +284,7 @@ type IsCharacter {
 }
 
 template <>
-type IsCharacter<c8> {
+type IsCharacter<char> {
     VALUE const bool = true;
 }
 

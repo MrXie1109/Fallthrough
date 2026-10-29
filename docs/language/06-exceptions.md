@@ -34,25 +34,76 @@ not raise.
 3.1 `except` is written after the return type.
 
 ```ft
+import C;
+
 fn risky(n int) int except {
     if (n < 0) {
         raise "ValueError": "negative";
     }
     return n * 2;
 }
+
+fn main() int {
+    C.printf("%d\n", risky(3)!!);
+    return 0;
+}
 ```
+
+This program prints `6`: the call is marked `!!`, which stops the program if the raise
+happens.
 
 3.2 A condition may follow `except`: a constant expression stating that the function may
 raise only when the condition holds.
 
 ```ft
-fn check(n int) int except(n < 0) { ... }
+import C;
+
+fn check(n int) int except(n < 0) {
+    if (n < 0) {
+        raise "ValueError": "negative";
+    }
+    return n;
+}
+
+fn main() int {
+    C.printf("%d\n", check(5)!!);
+    return 0;
+}
 ```
+
+This program prints `5`. The condition `n < 0` is folded at each call site: with a
+constant argument it decides the site, so `check(5)` needs no handler.
 
 3.3 The condition is written in terms of the parameters. At the call site, the condition
 is folded into a constant using the arguments: when all arguments are constants, the
 implementation **must** decide on the spot; when the arguments are not constants, the
 call is treated as possibly raising.
+
+3.3.1 `except(auto)` states no condition: the function raises exactly when its body can
+raise. The body is what decides, so a function whose body contains no raising operation
+does not raise, and a caller writing `!!` on such a call is told so (`S0083`).
+
+```ft
+import C;
+
+fn risky(n int) int except(auto) {
+    if (n < 0) { raise "ValueError": "negative"; }
+    return n * 2;
+}
+
+fn calm(n int) int except(auto) {
+    return n + 1;
+}
+
+fn main() int except {
+    C.printf("%d %d\n", risky(3)!!, calm(1)!!);
+    return 0;
+}
+```
+
+3.3.2 `except(auto)` and a written `except` are the same question asked two ways, and
+either may be used for the same function. `!!` does not count as a possible raise: the
+mark stops the program at that call, so nothing leaves the function through it.
 
 3.4 Any operation in a function body that may raise (a direct `raise`, a call that may
 raise, an implicit call that may raise) requires the function to declare `except`;
@@ -78,16 +129,31 @@ exception; its type and message remain unchanged.
 ### Forms
 
 ```ft
-try {
-    ...
-} except {
-    ...
-} else {
-    ...
-} finally {
-    ...
+import C;
+
+fn half(n int) int except {
+    if (n % 2 != 0) {
+        raise "ValueError": "odd";
+    }
+    return n / 2;
+}
+
+fn main() int {
+    try {
+        C.printf("%d\n", half(4)!!);
+    } except {
+        C.printf("caught\n");
+    } else {
+        C.printf("no raise\n");
+    } finally {
+        C.printf("done\n");
+    }
+    return 0;
 }
 ```
+
+This program prints `2`, `no raise`, `done`: the body produced a value, so `else` runs,
+and `finally` runs whatever happened.
 
 | Clause | Semantics |
 | ---- | ---- |
@@ -114,18 +180,38 @@ on a raise, → `except` → `finally`.
 the block of the first matching clause runs:
 
 ```ft
-try {
-    ...
-} except ("KeyError") {
-    ...
-} except ("IOError", "FileError") {
-    ...
-} except {
-    ...                         // everything else
-} finally {
-    ...
+import C;
+
+fn lookup(key int) int except {
+    if (key == 1) { raise "KeyError": "missing"; }
+    if (key == 2) { raise "FileError": "bad"; }
+    return key;
+}
+
+fn classify(key int) int except {
+    try {
+        return lookup(key)??;
+    } except ("KeyError") {
+        return -1;
+    } except ("IOError", "FileError") {
+        return -2;
+    } except {
+        return -3;
+    } finally {
+        C.printf("done %d\n", key);
+    }
+}
+
+fn main() int except {
+    C.printf("%d %d %d\n", classify(0)!!, classify(1)!!, classify(2)!!);
+    return 0;
 }
 ```
+
+This program prints `done 0`, `done 1`, `done 2`, then `0 -1 -2`: the clauses are tried in
+the order written, a clause with several names accepts any of them (`FileError`, the
+second name of the second clause, is what `classify(2)` raises), and `finally` runs on
+every path.
 
 A clause is written in one of two ways:
 

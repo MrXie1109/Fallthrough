@@ -29,10 +29,17 @@
 返回的类型，即标准字符串。
 
 ```ft
-n int = 42;
-s String = f"n is {n}";          // std.format("n is {}", n)
-h String = f"{n:#x}";            // std.format("{:#x}", n)
+import std;
+
+fn main() int except {
+    n int = 42;
+    std.print("{}\n", f"n is {n}")??;    // std.format("n is {}", n)
+    std.print("{}\n", f"{n:#x}")??;      // std.format("{:#x}", n)
+    return 0;
+}
 ```
+
+该程序依次输出 `n is 42` 与 `0x2a`。
 
 2.1.2 占位符写作 `{表达式}` 或 `{表达式:说明符}`。`说明符` 就是普通的格式说明符：
 `{:>8}`、`{:08}`、`{:.2f}`、`{:#x}` 以及转换 `{!s}`/`{!r}` 的行为与手写格式串完全一致，
@@ -80,6 +87,28 @@ h String = f"{n:#x}";            // std.format("{:#x}", n)
 4.2 `sizeof...(pack)` 是参数包元素个数，不是字节数。
 
 4.3 `sizeof`/`alignof` 可以出现在要求编译期常量的位置。
+
+4.4 函数类型的宽度与指针相同：`sizeof(fn(int) int)` 就是一个地址的大小，因为函数值就是一
+个地址。数组量的是它的**元素**，所以 `sizeof([4]int)` 是四个 `int`，而不是指向它们的指针。
+
+```ft
+import C;
+import std;
+
+fn f(x int) int { return x; }
+
+fn main() int except {
+    C.printf("%zu %zu %zu %zu\n", sizeof(int) as usize, sizeof(*int) as usize,
+        sizeof([4]int) as usize, sizeof(fn(int) int) as usize);
+    return 0;
+}
+```
+
+该程序在 64 位机器上输出 `4 8 16 8`：`int` 四字节，指针八字节，四个 `int` 的数组十六
+字节，函数类型是一个地址。
+
+4.5 操作数可以是类型参数：在 `template <T type>` 里，`sizeof(T)` 就是实例化所给类型的大小。
+对大小尚未确定的类型——不完整类型——取 `sizeof` 是错误。
 
 ## 运算符
 
@@ -131,17 +160,72 @@ h String = f"{n:#x}";            // std.format("{:#x}", n)
 
 7.1 下列表达式在编译期求值，可以出现在要求常量的位置：
 
-```ft
+```text
 sizeof(T)
 alignof(T)
 sizeof...(pack)
 except(expr)
 TraitName(TypeArgs…)
+@meta.defined(name)
+@meta.compilable(name)
 ```
 
 7.2 `except(expr)` 只分析表达式是否可能抛出，不求值。
 
 7.3 trait 查询与内建类型特征的规则见 [03 声明](03-declarations.zh.md#traits)。
+
+### 本次构建是否有某个名字
+
+7.4 `@meta.defined(name)` 询问 `name` 在本次构建中是否指称任何东西：已导入的模块、
+已声明或导入的类型与类型族、本模块的函数与常量、语言自带而无需声明的类型（`int`、
+`bool`、`String`），以及平台名。结果类型为 `bool`。
+
+7.5 `@meta.compilable(name)` 回答同一个问题，是含义为“这样写能不能编译”时读起来更
+顺的写法。两者由同一份代码回答，因此 `@meta.defined(X)` 与 `@meta.compilable(X)`
+永不相互矛盾。
+
+7.6 平台名是 `linux`、`windows`、`macos`、`unix`。对一次给定构建，前三个中恰有一个
+成立；`unix` 在 Linux 和 macOS 上成立。
+
+7.7 `@meta.NAME` 与 `@__builtin_NAME` 是同一个问题：`@meta.defined` 与
+`@__builtin_defined` 可互换，`compilable` 同理。
+
+```ft
+import std;
+
+fn main() int except {
+    std.print("{} {}\n", sizeof(int), alignof(int))??;
+    std.print("{} {}\n", @meta.defined(linux), @meta.defined(no_such_type))??;
+    std.print("{} {}\n", @meta.compilable(int), @meta.compilable(no_such_type))??;
+    std.print("{} {}\n", @__builtin_defined(String), @__builtin_compilable(bool))??;
+    return 0;
+}
+```
+
+该程序依次输出 `4 4`、`true false`、`true false`、`true true`。
+
+7.8 查询只接受单个标识符，不接受类型表达式。它在编译期即为常量，因此可以作
+`if (cond) @constexpr` 与 `@enable_if` 的条件，这正是让程序只在能编译它的构建中
+保留某个分支的手段：
+
+```ft
+import std;
+
+if (@meta.defined(linux)) @constexpr {
+    fn build_kind() int { return 1; }
+} else {
+    fn build_kind() int { return 2; }
+}
+
+fn main() int except {
+    std.print("{}\n", build_kind())??;
+    return 0;
+}
+```
+
+7.9 `@meta.compilable(T)` 回答的是名字 `T` 是否存在，而不是由它构成的任意表达式是否
+能编译。要问一个块能否编译，用 `if (auto) @constexpr`，见
+[05 语句](05-statements.zh.md)。
 
 ## 特殊方法
 

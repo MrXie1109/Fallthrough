@@ -1,0 +1,292 @@
+# `std.net`
+
+TCP over IPv4: connect, listen, read and write.
+
+    stream TcpStream = net.connect(&String("127.0.0.1"), 8080)??;
+    net.write_all(&stream, &request)??;
+    answer String = net.read_text(&stream, 4096)??;
+
+# Shape
+
+`TcpStream` and `TcpListener` each hold one socket handle, and their `__drop__`
+closes it, so a connection is not leaked by forgetting `close`. The handle is
+an `i64` on both platforms: POSIX file descriptors and Windows `SOCKET`s fit,
+and the platform module converts.
+
+# The subset
+
+IPv4 only, with a dotted-quad address or `localhost`. That is stated rather
+than half-implemented: DNS resolution, IPv6 and UDP are separate pieces of
+work, and a connection API that silently handles only some names is worse than
+one that says which.
+
+# Errors
+
+Every operation that talks to the network raises `NetworkError` on failure,
+and a failed `accept` or `connect` closes nothing the caller did not close.
+
+## Declarations
+
+### `export fn __setup__() void {`
+
+Starts the platform's socket layer once per process.
+
+```
+export fn __setup__() void {
+    try {
+        net_sys.startup()??;
+    } except {
+        // A process that never opens a socket does not need the layer; the
+        // failure is reported by the first `connect` or `listen` instead.
+    }
+}
+```
+
+### `export type TcpStream {`
+
+A connection.
+
+```
+export type TcpStream {
+    // The platform's socket handle.
+    _handle i64;
+}
+```
+
+### `export type TcpListener {`
+
+A socket waiting for connections.
+
+```
+export type TcpListener {
+    // The platform's socket handle.
+    _handle i64;
+}
+```
+
+### `type Ipv4 {`
+
+An IPv4 address split into its four bytes.
+
+```
+type Ipv4 {
+    first u8;
+    second u8;
+    third u8;
+    fourth u8;
+}
+```
+
+### `fn parse_address(host &const String) Ipv4 except`
+
+Parses a dotted-quad address; `localhost` means the loopback address.
+
+- `host`: the text to read, such as `127.0.0.1`
+
+```
+fn parse_address(host &const String) Ipv4 except
+```
+
+### `fn split(text &const String, separator char) Array<String> except`
+
+Splits `text` at `separator`.
+
+- `text`: the text to split
+- `separator`: the character each part is cut at
+
+```
+fn split(text &const String, separator char) Array<String> except
+```
+
+### `fn parse_byte(text &const String) u8 except`
+
+Parses one decimal byte.
+
+- `text`: the digits of the value, which must fit in a byte
+
+```
+fn parse_byte(text &const String) u8 except
+```
+
+### `export fn connect(host &const String, port u16) TcpStream except {`
+
+Connects to `host`:`port`.
+
+```
+export fn connect(host &const String, port u16) TcpStream except {
+    address Ipv4 = parse_address(host)??;
+    handle i64 = net_sys.open_stream()??;
+    if (!net_sys.connect_ipv4(handle, address.first, address.second, address.third, address.fourth, port)) {
+        net_sys.close_socket(handle);
+        raise "NetworkError": "the connection was refused";
+    }
+    stream TcpStream = .{ handle };
+    return stream;
+}
+```
+
+### `export fn listen(host &const String, port u16, backlog int) TcpListener except {`
+
+Listens on `host`:`port`; port zero asks the system for a free one, which
+`localport` reports.
+
+```
+export fn listen(host &const String, port u16, backlog int) TcpListener except {
+    address Ipv4 = parse_address(host)??;
+    handle i64 = net_sys.open_stream()??;
+    if (!net_sys.listen_ipv4(
+        handle,
+        address.first,
+        address.second,
+        address.third,
+        address.fourth,
+        port,
+        backlog as int
+    )) {
+        net_sys.close_socket(handle);
+        raise "NetworkError": "the socket could not listen";
+    }
+    listener TcpListener = .{ handle };
+    return listener;
+}
+```
+
+### `export fn localport(this &TcpListener) u16 except {`
+
+The port a listener is bound to.
+
+```
+export fn localport(this &TcpListener) u16 except {
+    return net_sys.bound_port(this._handle)??;
+}
+```
+
+### `export fn accept(this &TcpListener) TcpStream except {`
+
+Waits for one connection.
+
+```
+export fn accept(this &TcpListener) TcpStream except {
+    handle i64 = net_sys.accept_one(this._handle);
+    if (handle < 0) {
+        raise "NetworkError": "accept failed";
+    }
+    stream TcpStream = .{ handle };
+    return stream;
+}
+```
+
+### `export fn write_all(this &TcpStream, data &const Bytes) usize except {`
+
+Sends `data`, all of it.
+
+```
+export fn write_all(this &TcpStream, data &const Bytes) usize except {
+    sent usize = 0usize;
+    while (sent < data.length()) {
+        piece *const byte = (data.const_data() + sent) as *const byte;
+        count isize = net_sys.send_bytes(this._handle, piece, data.length() - sent);
+        if (count <= 0) {
+            raise "NetworkError": "send failed";
+        }
+        sent += count as usize;
+    }
+    return sent;
+}
+```
+
+### `export fn read_into(this &TcpStream, buffer &Bytes, maximum usize) usize except {`
+
+Reads up to `maximum` bytes, appending them to `buffer`; returns how many
+were read, zero meaning the other side closed.
+
+```
+export fn read_into(this &TcpStream, buffer &Bytes, maximum usize) usize except {
+    if (maximum == 0usize) {
+        return 0usize;
+    }
+    start usize = buffer.length();
+    buffer.resize(start + maximum, 0 as byte);
+    count isize = net_sys.recv_bytes(this._handle, buffer.data() + start, maximum);
+    if (count < 0) {
+        buffer.resize(start, 0 as byte);
+        raise "NetworkError": "recv failed";
+    }
+    buffer.resize(start + count as usize, 0 as byte);
+    return count as usize;
+}
+```
+
+### `export fn read_text(this &TcpStream, maximum usize) String except {`
+
+Reads up to `maximum` bytes into a fresh string.
+
+```
+export fn read_text(this &TcpStream, maximum usize) String except {
+    buffer Bytes = Bytes();
+    count usize = this.read_into(&buffer, maximum)??;
+    if (count == 0usize) {
+        return String();
+    }
+    text String = String();
+    index usize = 0;
+    while (index < count) {
+        value byte = buffer[index] as byte;
+        text.push(value as char);
+        index += 1;
+    }
+    return text;
+}
+```
+
+### `export fn close(this &TcpStream) void {`
+
+Closes the connection; the drop closes it too, so this is for early release.
+
+```
+export fn close(this &TcpStream) void {
+    if (this._handle >= 0) {
+        net_sys.close_socket(this._handle);
+        this._handle = -1i64;
+    }
+}
+```
+
+### `export fn close(this &TcpListener) void {`
+
+Closes the listener.
+
+```
+export fn close(this &TcpListener) void {
+    if (this._handle >= 0) {
+        net_sys.close_socket(this._handle);
+        this._handle = -1i64;
+    }
+}
+```
+
+### `export fn __drop__(this &TcpStream) void {`
+
+Closes the connection when it goes.
+
+```
+export fn __drop__(this &TcpStream) void {
+    if (this._handle >= 0) {
+        net_sys.close_socket(this._handle);
+        this._handle = -1i64;
+    }
+}
+```
+
+### `export fn __drop__(this &TcpListener) void {`
+
+Closes the listener when it goes.
+
+```
+export fn __drop__(this &TcpListener) void {
+    if (this._handle >= 0) {
+        net_sys.close_socket(this._handle);
+        this._handle = -1i64;
+    }
+}
+```

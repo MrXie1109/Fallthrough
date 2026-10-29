@@ -5,19 +5,29 @@
 `...` 在模板里有三种用法，同一个名字 `values` 三处都能读：
 
 ```ft
+@constexpr
 template <values ...int>
-@constexpr fn sum() int {
+fn sum() int {
     return (values + ...);          // 折叠：把元素依次合并
 }
 
+@constexpr
 template <values ...int>
-@constexpr fn count() usize {
+fn count() usize {
     return sizeof...(values);       // 计数：包里有几个元素
 }
 
+@constexpr
 template <values ...int>
-@constexpr fn second() int {
+fn second() int {
     return values[1];               // 取元素：下标必须是常量
+}
+
+import C;
+
+fn main() int {
+    C.printf("%d %zu %d\n", sum<1, 2, 3>(), count<1, 2, 3>(), second<10, 20, 30>());
+    return 0;
 }
 ```
 
@@ -60,11 +70,19 @@ template <values ...int>
 因为结果是编译期常量，它能直接当数组长度：
 
 ```ft
+@constexpr
 template <values ...int>
-@constexpr fn buffer() int {
+fn buffer() int {
     a [sizeof...(values)]int;       // 三个元素就是 3 个 i32
     a[2] = 5;
     return a[2];
+}
+
+import C;
+
+fn main() int {
+    C.printf("%d\n", buffer<1, 2, 3>());   // 5
+    return 0;
 }
 ```
 
@@ -96,8 +114,9 @@ values[i]                         // i 是运行期参数 → 报错
 `constexpr` 模板的调用就是常量，所以它能直接站在要求常量的地方：
 
 ```ft
+@constexpr
 template <values ...int>
-@constexpr fn sum() int {
+fn sum() int {
     return (values + ...);
 }
 
@@ -130,6 +149,13 @@ fn total(values ...Ts) int {
     sum int = 0;
     (sum += values, ...);
     return sizeof...(values) as int + sum;
+}
+
+import C;
+
+fn main() int {
+    C.printf("%d\n", total(1, 2, 3));   // 9：三个实参，加上 1 + 2 + 3
+    return 0;
 }
 ```
 

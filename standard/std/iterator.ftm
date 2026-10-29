@@ -1,39 +1,19 @@
 // What a range loop asks of a type, and the hierarchy of positions.
 //
-// A trait is a named set of *requirements*: operations that must compile for a
+// A trait is a named set of requirements: operations that must compile for a
 // type, written as expressions against a parameter. A type models the trait
-// exactly when every requirement compiles with the parameter standing for it --
-// there is no list of which types model what, because the answer is a question
-// about the type rather than a claim about it.
+// when every requirement compiles with the parameter standing for it.
 //
-// The chain below is the classical one: each trait adds one ability to the one
-// above it. A position that can be read, moved forward, and compared for
-// inequality is an `InputIterator`; one that can also be copied and re-compared
-// is a `ForwardIterator`; and so on up to `RandomAccessIterator`, which can be
-// moved by a count rather than one step at a time.
-//
-// There is no `ContiguousIterator`. Adjacency is a claim about *addresses*
-// rather than about the position: `it + 1` being the next element in memory
-// cannot be written as an operation, because every operation a position has
-// works the same whether the elements are adjacent or not. C++20 states it with
-// `to_address`, a function about the storage rather than about the position. A
-// trait that only says "and also this, which I cannot check" would be a name
-// that answers yes for anything a pointer happened to satisfy, so it is not
-// here.
-//
-// "Adds to the one above it" is written the way every other requirement is
-// written: a question asked of the same parameter, `InputIterator(it) -> true`.
-// There is no inheritance clause, and none is needed -- a requirement another
-// trait holds is a requirement like any other.
+// Each trait adds one ability to the one above it, written as a question about
+// the same parameter: `InputIterator(it) -> true`. There is no inheritance
+// clause, and none is needed.
 //
 // Nothing here is emitted: a trait describes what a type can already do.
 
 // Something bounded by `begin()` and `end()`.
 //
-// Both must yield something, because the range loop compares them: a `void`
-// `end()` would leave the loop with nothing to test against. What they yield is
-// an iterator, which is what the traits below name -- so that is a requirement
-// too, written as a question: `begin()`'s type must model `InputIterator`.
+// Both must yield something, because the range loop compares them. What they
+// yield must model `InputIterator`.
 export traits Iterable(it Iter) {
     it.begin() -> !void,
     it.end() -> !void,
@@ -42,22 +22,16 @@ export traits Iterable(it Iter) {
 
 // A position in a sequence that can be walked once.
 //
-// The three operations are the ones a loop performs on the position it holds:
-// it moves to the next element, reads the current one, and stops when it has
-// reached the end. Written against `it` as a *place*, which is why `++it` is
-// legal here: `__inc__` takes `&this` and modifies the receiver.
+// `it` is written as a place, which is why `++it` is legal: `__inc__` takes
+// `&this` and modifies the receiver.
 export traits InputIterator(it Iter) {
     ++it,
     *it -> !void,
     it != it -> bool,
 }
 
-// A position that can be walked more than once.
-//
-// What separates it from an input iterator is that two positions can be
-// compared for *equality* as well as inequality, and that a position can be
-// copied by `it++` while the copy stays usable -- so a sequence may be walked
-// twice.
+// A position that can be walked more than once: two positions compare for
+// equality, and a copy made by `it++` stays usable.
 export traits ForwardIterator(it Iter) {
     it == it -> bool,
     it++ -> !void,
@@ -72,11 +46,8 @@ export traits BidirectionalIterator(it Iter) {
 
 // A position that can be moved by an arbitrary count in one step.
 //
-// The offset is a `usize`, the same one indexing takes, so the literal in
-// `it + 1` is what the requirement uses: it adopts the offset's type at the
-// call site, exactly as `it[1]` does. `+=` and `-=` are required as well,
-// because they are the form a walk uses -- `it += n` in one step rather than
-// `n` increments.
+// The offset is a `usize`, the type indexing takes, so `it + 1` adopts it at
+// the call site. `+=` and `-=` are required as well, because a walk uses them.
 export traits RandomAccessIterator(it Iter) {
     it + 1,
     it - 1,

@@ -103,6 +103,36 @@ pub struct BinaryExpr {
     pub rhs: ExprId,
 }
 
+/// An array literal: `{1, 2, 3}`.
+///
+/// The length is the number of elements, so it is not written: `{1, 2, 3}` is a
+/// `[3]int` once the element type is known. It is written with braces rather
+/// than `.{ .. }`, which is the aggregate initialiser and takes its type from
+/// where it is written.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ArrayLiteral {
+    /// The elements, in source order.
+    pub elements: Vec<ExprId>,
+}
+
+/// A range: `low .. high` or `low ..= high`.
+///
+/// It is sugar for the standard library's `Range` construction: `1 .. 10` is
+/// `Range(1, 10, 1)` and `1 ..= 10` is `Range(1, 11, 1)`, so the high end is
+/// excluded in the first form and included in the second. Written here as its
+/// own expression rather than a call so that the two ends are checked as
+/// integers and the range can be recognised in the positions where it means a
+/// walk -- a `for` header, or an argument that expects a `Range`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct RangeExpr {
+    /// The low end.
+    pub low: ExprId,
+    /// The high end, as written.
+    pub high: ExprId,
+    /// Whether the high end is included.
+    pub inclusive: bool,
+}
+
 /// A prefix operation.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct UnaryExpr {
@@ -579,6 +609,10 @@ pub enum ExprKind {
     Comma(CommaExpr),
     /// A binary operation: `lhs op rhs`.
     Binary(BinaryExpr),
+    /// A range: `low .. high` or `low ..= high`.
+    Range(RangeExpr),
+    /// An array literal: `{1, 2, 3}`.
+    ArrayLiteral(ArrayLiteral),
     /// A prefix operation: `op operand`.
     Unary(UnaryExpr),
     /// An assignment: `target = value`, or `target op= value`.
@@ -690,6 +724,26 @@ pub enum ExprKind {
     Alignof(TypeSyntax),
     /// `lambda(args) -> expr` or `lambda(args) { .. }` — an anonymous function.
     Lambda(LambdaExpr),
+    /// `@__builtin_defined(X)` and its kind: a question put to the compiler
+    /// while compiling.
+    ///
+    /// It is a constant, so it decides `if @constexpr` and `@enable_if`. The
+    /// argument is written as a name and read by the builtin, which is why it
+    /// is kept as text rather than resolved like a value.
+    Builtin(BuiltinQuery),
+    /// `if (cond) { .. } else { .. }` standing where a value is wanted.
+    ///
+    /// Both branches are blocks, and the value is whichever branch ran. The
+    /// two must have the same type; an `if` with no `else` has no value to
+    /// give when the condition is false, so it produces nothing.
+    IfValue(IfValueExpr),
+    /// `{ .. expr }` — a block standing where a value is wanted.
+    ///
+    /// Its value is its last expression when that one leaves the `;` out, and
+    /// it produces nothing otherwise. The block runs its statements in order,
+    /// so it is also the way to compute a value through a few temporary steps:
+    /// `v int = { t int = 3; t * 2 };`.
+    Block(BlockId),
     /// An expression the parser could not recognise.
     Unresolved(Unresolved),
 }
@@ -734,6 +788,28 @@ pub enum LambdaBody {
     Expression(ExprId),
     /// `{ .. }`: a body like a function's, which returns with `return`.
     Block(BlockId),
+}
+
+/// A compile-time question: `@__builtin_defined(X)`, `@meta.defined(X)`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct BuiltinQuery {
+    /// The builtin's name, without the `@`.
+    pub name: String,
+    /// What it asks about, as written.
+    pub argument: String,
+    /// The whole expression's source range.
+    pub span: Span,
+}
+
+/// `if (cond) { .. } else { .. }` used as an expression.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct IfValueExpr {
+    /// The condition, tested for truth.
+    pub condition: ExprId,
+    /// The branch taken when the condition holds.
+    pub then_block: BlockId,
+    /// The branch taken otherwise, when there is one.
+    pub else_block: Option<BlockId>,
 }
 
 /// `cond ? then : otherwise`.

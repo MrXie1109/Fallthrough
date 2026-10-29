@@ -243,20 +243,11 @@ impl Parser {
             return self.parse_link(stream, ast);
         }
 
-        // `__setup__ { .. }`: the block a module runs before `main`.
-        //
-        // The name is an ordinary identifier rather than a keyword, and it is
-        // recognised by position -- `__setup__` followed by a brace at the top
-        // level -- because a keyword would collide with the name a program may
-        // have used before this form existed.
-        if stream.at(TokenKind::Ident)
-            && self.token_text(stream, stream.peek(0)) == "__setup__"
-            && stream.peek_kind(1) == TokenKind::Punct(Punctuation::OpenBrace)
-        {
-            stream.advance();
-            let block = self.parse_block(stream, ast)?;
-            let span = ast.block(block).span;
-            return Some(ast.builder().alloc_item(ItemKind::Setup(block), span));
+        // `if (cond) @constexpr { .. } else { .. }` around declarations. The
+        // `@constexpr` is what tells this apart from a statement, which cannot
+        // appear at the top level at all.
+        if stream.at(TokenKind::Keyword(Keyword::If)) {
+            return self.parse_conditional_items(stream, ast);
         }
 
         // `static_assert(cond);` at module level: a claim checked where it is
@@ -1853,14 +1844,12 @@ impl Parser {
         // is the only place it can mean anything, so an identifier that says
         // `dynamic` there is the link kind, and a program may still name
         // something `dynamic` anywhere else.
-        let kind = if stream.at(TokenKind::Keyword(Keyword::Dynamic)) {
+        let kind = if stream.at(TokenKind::Ident) && self.token_text(stream, stream.peek(0)) == "dynamic"
+        {
             stream.advance();
             LinkKind::Dynamic
         } else if stream.at(TokenKind::Ident) && self.token_text(stream, stream.peek(0)) == "static"
         {
-            // `static` is no longer a reserved word; in the link-kind position
-            // it is read as the word it is, exactly as `dynamic` was before it
-            // became reserved.
             stream.advance();
             LinkKind::Static
         } else {
@@ -1932,6 +1921,9 @@ impl Parser {
                 // then failed on the `&&`.
                 | TokenKind::Punct(Punctuation::AmpAmp)
                 | TokenKind::Punct(Punctuation::OpenBracket)
+                // `f fn(int) int`: `fn` begins a type, so the identifier
+                // before it was the parameter's name.
+                | TokenKind::Keyword(Keyword::Fn)
                 // `values ...Ts`: the dots start the type part, so the
                 // identifier before them was the parameter's name.
                 | TokenKind::Punct(Punctuation::DotDotDot)
@@ -1957,4 +1949,78 @@ fn named_type(path: &str, span: Span) -> fallc_ast::TypeSyntax {
         is_expansion: false,
         span,
     })
+}
+
+impl Parser {
+    /// Parses `if (cond) @constexpr { decl .. } else { decl .. }`.
+    ///
+    /// Both branches are read, and the checker keeps the one the condition
+    /// selects. Reading them is not the same as accepting them: the branch not
+    /// taken is never checked, so it may name a type this build does not have.
+    fn parse_conditional_items(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ItemId> {
+        let start = stream.advance().span; // `if`
+        self.expect_punct(stream, Punctuation::OpenParen, "`(`")?;
+        let condition = self.parse_expr(stream, ast)?;
+        self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
+        // The attribute after the condition is what marks the form; without it
+        // an `if` at the top level is a statement in the wrong place.
+        if !stream.eat(TokenKind::Punct(Punctuation::At)).is_some() {
+            self.push_diagnostic(
+                Diagnostic::error("a top-level `if` needs `@constexpr`")
+                    .with_code(DiagnosticCode::parser(2))
+                    .with_span(stream.current_span())
+                    .with_note("write `if (cond) @constexpr { .. } else { .. }`"),
+            );
+            return None;
+        }
+        let attr = self.parse_ident(stream, "an attribute name")?;
+        if self.token_text(stream, &attr) != "constexpr" {
+            self.push_diagnostic(
+                Diagnostic::error("a top-level `if` needs `@constexpr`")
+                    .with_code(DiagnosticCode::parser(2))
+                    .with_span(attr.span),
+            );
+            return None;
+        }
+        let then_items = self.parse_item_block(stream, ast)?;
+        let else_items = if stream.at(TokenKind::Keyword(Keyword::Else)) {
+            stream.advance();
+            self.parse_item_block(stream, ast)?
+        } else {
+            Vec::new()
+        };
+        let end = stream.current_span();
+        Some(ast.builder().alloc_item(
+            ItemKind::Conditional(fallc_ast::ConditionalItems {
+                condition,
+                then_items,
+                else_items,
+            }),
+            start.to(end),
+        ))
+    }
+
+    /// Parses `{ declarations }` at the top level.
+    fn parse_item_block(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<Vec<ItemId>> {
+        self.expect_punct(stream, Punctuation::OpenBrace, "`{`")?;
+        let mut items = Vec::new();
+        while !stream.at(TokenKind::Punct(Punctuation::CloseBrace)) && !stream.at_eof() {
+            let before = stream.position();
+            if let Some(item) = self.parse_item(stream, ast) {
+                items.push(item);
+            } else if stream.position() == before && !stream.at_eof() {
+                stream.advance();
+            }
+        }
+        self.expect_punct(stream, Punctuation::CloseBrace, "`}`")?;
+        Some(items)
+    }
 }

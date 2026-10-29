@@ -5,6 +5,28 @@
 //! its own below it.
 
 use super::*;
+use crate::types::IntType;
+
+/// The type an array literal's element gets when nothing else says.
+fn fallc_sema_type_auto() -> Type {
+    Type::unspecified("?", fallc_span::Span::SYNTHETIC)
+}
+
+impl crate::typeck::TypeChecker {
+    /// The `Range` type a range literal has.
+    ///
+    /// The standard library declares it, so it is found in `nominal_types` by
+    /// its bare name; a program that never imports `std.range` gets no type,
+    /// which is reported where the range is used rather than here.
+    pub(super) fn nominal_range_type(&mut self) -> Option<Type> {
+        let name = self
+            .nominal_types
+            .keys()
+            .find(|name| name.rsplit('.').next() == Some("Range"))
+            .cloned()?;
+        self.nominal_types.get(&name).cloned().map(Type::Nominal)
+    }
+}
 
 impl TypeChecker {
     /// Infers the type of an expression, recording it in `types`.
@@ -26,6 +48,136 @@ impl TypeChecker {
             self.expected_types.insert(expr, (node.span, expected));
         }
         let inferred = match &node.kind {
+            // A compile-time question: is this module imported, is this type
+            // declared. The answer is a constant, which is what lets it decide
+            // `if @constexpr` and `@enable_if`.
+            fallc_ast::ExprKind::Builtin(query) => {
+                let answer = self.answer_builtin(query);
+                self.constant_values.insert(node.span, i64::from(answer));
+                Some(Type::BOOL)
+            }
+            // `{a, b, c}`: an array whose length is how many elements there are.
+            // The element type comes from the position, like an aggregate
+            // initialiser's, so `x [3]int = {1, 2, 3};` needs nothing else and
+            // `{1, 2, 3}.begin()` finds the methods of `[3]int`.
+            fallc_ast::ExprKind::ArrayLiteral(literal) => {
+                let previous = self.expected.take();
+                let element_type = previous.as_ref().and_then(|wanted| {
+                    match wanted.unqualified() {
+                        Type::Array { element, .. } => Some((**element).clone()),
+                        _ => None,
+                    }
+                });
+                let mut inferred = Vec::with_capacity(literal.elements.len());
+                for &element in &literal.elements {
+                    let slot = self.expected.replace(element_type.clone().unwrap_or_else(|| {
+                        fallc_sema_type_auto()
+                    }));
+                    inferred.push(self.infer_expr(ast, resolutions, types, element));
+                    self.expected = slot;
+                }
+                self.expected = previous;
+                let element = element_type
+                    .or_else(|| inferred.iter().flatten().next().cloned())
+                    .unwrap_or_else(fallc_sema_type_auto);
+                let length = u64::try_from(literal.elements.len()).ok()?;
+                Some(Type::Array {
+                    element: Box::new(element),
+                    len: length,
+                })
+            }
+            // `low .. high` and `low ..= high`: the ends are integers and the
+            // value is the standard library's `Range`, which is what a `for`
+            // walks. The ends are asked for `i64`, the element type `Range`
+            // holds, so `1 .. 10` needs no suffix at either end.
+            fallc_ast::ExprKind::Range(node) => {
+                let element = Type::Int(IntType::I64);
+                let previous = self.expected.replace(element.clone());
+                let low = self.infer_expr(ast, resolutions, types, node.low);
+                let high = self.infer_expr(ast, resolutions, types, node.high);
+                self.expected = previous;
+                for (side, inferred, span) in [
+                    ("low", low, ast.expr(node.low).span),
+                    ("high", high, ast.expr(node.high).span),
+                ] {
+                    let Some(found) = inferred else { continue };
+                    if found.is_integer() || found.is_unspecified() {
+                        continue;
+                    }
+                    self.diagnostics.push(
+                        Diagnostic::error(format!(
+                            "the {side} end of a range must be an integer, found `{}`",
+                            found.spelling()
+                        ))
+                        .with_code(DiagnosticCode::sema(37))
+                        .with_span(span)
+                        .with_note(
+                            "a range walks a series of integers; its two ends name where the \
+                             walk starts and where it stops",
+                        ),
+                    );
+                }
+                self.nominal_range_type()
+            }
+            // `if (cond) { a } else { b }` used as a value: whatever branch ran
+            // gives the value, so both must give the same type. An `if` with
+            // no `else` gives nothing when the condition is false, and produces
+            // no value at all.
+            fallc_ast::ExprKind::IfValue(value) => {
+                let node = value;
+                let whole_span = node.condition;
+                let _ = whole_span;
+                let previous = self.expected.take();
+                let _ = self.infer_expr(ast, resolutions, types, node.condition);
+                self.expected = previous;
+                let then_ty = self.block_value_type(ast, resolutions, types, node.then_block);
+                let Some(else_block) = node.else_block else {
+                    // No `else`: nothing is produced when the condition is
+                    // false, so the whole has no value.
+                    return Some(Type::unspecified(String::new(), ast.expr(node.condition).span));
+                };
+                let else_ty = self.block_value_type(ast, resolutions, types, else_block);
+                match (then_ty, else_ty) {
+                    (Some(a), Some(b)) if self.is_compatible(&b, &a) => Some(a),
+                    (Some(a), Some(b)) => {
+                        self.diagnostics.push(
+                            Diagnostic::error(format!(
+                                "the two branches of this `if` have different types: `{}` and `{}`",
+                                a.spelling(),
+                                b.spelling()
+                            ))
+                            .with_code(DiagnosticCode::sema(194))
+                            .with_span(ast.block(node.then_block).span),
+                        );
+                        None
+                    }
+                    (Some(a), None) | (None, Some(a)) => Some(a),
+                    (None, None) => Some(Type::unspecified(
+                        String::new(),
+                        ast.block(node.then_block).span,
+                    )),
+                }
+            }
+            // A block is an expression whose value is its last expression when
+            // that one is written without a `;`. A block with no such
+            // expression produces nothing, and its type is `void`.
+            fallc_ast::ExprKind::Block(block) => {
+                self.check_block(ast, resolutions, types, *block);
+                let statements = &ast.block(*block).statements;
+                let tail = statements.last().copied().filter(|stmt| {
+                    matches!(
+                        &ast.stmt(*stmt).kind,
+                        fallc_ast::StmtKind::Expr(node) if node.yields_value
+                    )
+                });
+                match tail {
+                    Some(stmt) => match &ast.stmt(stmt).kind {
+                        fallc_ast::StmtKind::Expr(node) => types.get(node.expr).cloned(),
+                        _ => None,
+                    },
+                    None => Some(Type::unspecified(String::new(), node.span)),
+                }
+            }
             // These two exist only inside a function that takes a parameter
             // pack; the expansion replaces them before the body is checked, so
             // meeting one here means it was written where no pack is in scope.
@@ -486,12 +638,18 @@ impl TypeChecker {
                     // The method's return type is what the cast produces, which
                     // lets a conversion return something other than the type
                     // its selector named.
+                    //
+                    // It leaves through the same `Some` the built-in casts do
+                    // rather than returning early, so that the type table keeps
+                    // this expression's type: a cast nested in another cast is
+                    // lowered as an operand, and lowering looks its type up.
                     let returns = method.returns.clone();
                     self.note_throwing_call(node.span, &method.signature, ast, None);
                     self.conversion_methods.insert(node.span, method);
-                    return Some(returns);
-                }
-                if !source.is_castable_to(&target) {
+                    Some(returns)
+                } else if source.is_castable_to(&target) {
+                    Some(target)
+                } else {
                     self.diagnostics.push(
                         Diagnostic::error(format!(
                             "cannot convert `{}` to `{}`",
@@ -506,9 +664,8 @@ impl TypeChecker {
                             target.spelling()
                         )),
                     );
-                    return None;
+                    None
                 }
-                Some(target)
             }
             // `sizeof(T)` and `alignof(T)` are compile-time constants. They are
             // folded here so that the expression has a value like any other,
@@ -828,6 +985,29 @@ impl TypeChecker {
         target: &Type,
     ) {
         if !self.require_complete(target, init.span, "an initialiser") {
+            return;
+        }
+        // An array is initialised by position, one element per slot: it has no
+        // field names to give, and its length is part of its type, so the
+        // number of values is not a matter of choice.
+        if let Type::Array { element, len } = target.unqualified() {
+            let element = element.unqualified().clone();
+            if init.elements.len() as u64 != *len {
+                self.diagnostics.push(
+                    Diagnostic::error(format!(
+                        "`{}` has {} element(s), but {} initialiser(s) were given",
+                        target.spelling(),
+                        len,
+                        init.elements.len()
+                    ))
+                    .with_code(DiagnosticCode::sema(64))
+                    .with_span(init.span)
+                    .with_note("an array is initialised by position, one value per element"),
+                );
+            }
+            for &value in &init.elements {
+                let _ = self.check_expr(ast, resolutions, types, value, &element);
+            }
             return;
         }
         let Some(nominal) = target.as_nominal() else {
@@ -1994,4 +2174,105 @@ impl TypeChecker {
         )
     }
 
+}
+
+impl TypeChecker {
+    /// The type a block gives as a value, checking its statements.
+    ///
+    /// A block's value is its last expression written without a `;`. A block
+    /// with no such expression produces nothing, which is not the same as
+    /// producing a `void` value: `None` says so.
+    pub(super) fn block_value_type(
+        &mut self,
+        ast: &Ast,
+        resolutions: &Resolutions,
+        types: &mut TypeTable,
+        block: fallc_ast::BlockId,
+    ) -> Option<Type> {
+        self.check_block(ast, resolutions, types, block);
+        let statements = &ast.block(block).statements;
+        let tail = statements.last().copied()?;
+        let fallc_ast::StmtKind::Expr(node) = &ast.stmt(tail).kind else {
+            return None;
+        };
+        if !node.yields_value {
+            return None;
+        }
+        types.get(node.expr).cloned()
+    }
+}
+
+impl TypeChecker {
+    /// Answers a compile-time question: `@__builtin_defined(X)` and its kind.
+    ///
+    /// `defined` asks whether `X` names something this build has: an imported
+    /// module, a declared type, a function, or a platform name. The two
+    /// spellings differ only in how they are written -- `@__builtin_defined`
+    /// and `@meta.defined` are one question -- so both are answered here.
+    ///
+    /// `compilable` asks whether the text could be compiled; the answer is
+    /// `true` for a name that resolves, which is the same fact `defined`
+    /// reports for a single name. A construct that is not a name is not asked
+    /// about this way.
+    pub(super) fn answer_builtin(&mut self, query: &fallc_ast::BuiltinQuery) -> bool {
+        let name = query.name.as_str();
+        let known = matches!(
+            name,
+            "__builtin_defined"
+                | "__builtin_compilable"
+                | "meta.defined"
+                | "meta.compilable"
+        );
+        if !known {
+            self.diagnostics.push(
+                Diagnostic::error(format!("`@{name}` is not a compile-time question"))
+                    .with_code(DiagnosticCode::sema(195))
+                    .with_span(query.span)
+                    .with_note(
+                        "the questions are `@__builtin_defined(X)`, \
+                         `@__builtin_compilable(X)`, `@meta.defined(X)` and \
+                         `@meta.compilable(X)`",
+                    ),
+            );
+            return false;
+        }
+        self.builtin_defined(&query.argument)
+    }
+
+    /// Whether a written name denotes something this build has.
+    fn builtin_defined(&mut self, argument: &str) -> bool {
+        // A module: `import std;` puts `std` in this set.
+        if self.modules.contains(argument) {
+            return true;
+        }
+        // A type, under either spelling: `String` and `std.String` are one.
+        let bare = argument.rsplit('.').next().unwrap_or(argument);
+        if self.nominal_types.contains_key(argument) || self.nominal_types.contains_key(bare) {
+            return true;
+        }
+        if self.aliases.contains_key(argument) {
+            return true;
+        }
+        if self.type_templates.contains_key(argument) || self.type_templates.contains_key(bare) {
+            return true;
+        }
+        // A function or a constant of this module.
+        if let Some(resolutions) = self.fallback_resolutions.clone() {
+            let found = resolutions
+                .defs
+                .iter()
+                .any(|def| def.name == argument || def.name == bare);
+            if found {
+                return true;
+            }
+        }
+        // A type the language supplies without a declaration. `int` is a name
+        // this build has exactly as `String` is, and it is not in the nominal
+        // table because nothing declares it.
+        if crate::types::Type::from_name(argument).is_some() {
+            return true;
+        }
+        // A build fact the platform supplies.
+        matches!(argument, "linux" | "windows" | "macos" | "unix")
+    }
 }

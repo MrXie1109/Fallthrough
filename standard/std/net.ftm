@@ -62,6 +62,8 @@ type Ipv4 {
 }
 
 // Parses a dotted-quad address; `localhost` means the loopback address.
+//
+// - `host`: the text to read, such as `127.0.0.1`
 fn parse_address(host &const String) Ipv4 except {
     if (host == String("localhost")) {
         return .{ 127 as u8, 0 as u8, 0 as u8, 1 as u8 };
@@ -79,6 +81,9 @@ fn parse_address(host &const String) Ipv4 except {
 }
 
 // Splits `text` at `separator`.
+//
+// - `text`: the text to split
+// - `separator`: the character each part is cut at
 fn split(text &const String, separator char) Array<String> except {
     parts Array<String> = Array<String>();
     current String = String();
@@ -98,18 +103,20 @@ fn split(text &const String, separator char) Array<String> except {
 }
 
 // Parses one decimal byte.
+//
+// - `text`: the digits of the value, which must fit in a byte
 fn parse_byte(text &const String) u8 except {
     if (text.empty()) {
         raise "NetworkError": "an address part is empty";
     }
-    value u32 = 0u32;
+    value uint = 0u32;
     index usize = 0;
     while (index < text.length()) {
         character char = text[index];
-        if (character < '0' as char || character > '9' as char) {
+        if (character < '0' || character > '9') {
             raise "NetworkError": "an address part is not a number";
         }
-        value = value * 10u32 + ((character as int) - ('0' as int)) as u32;
+        value = value * 10u32 + ((character as int) - ('0' as int)) as uint;
         index += 1;
     }
     if (value > 255u32) {
@@ -131,7 +138,7 @@ export fn connect(host &const String, port u16) TcpStream except {
 }
 
 // Listens on `host`:`port`; port zero asks the system for a free one, which
-// `local_port` reports.
+// `localport` reports.
 export fn listen(host &const String, port u16, backlog int) TcpListener except {
     address Ipv4 = parse_address(host)??;
     handle i64 = net_sys.open_stream()??;
@@ -142,7 +149,7 @@ export fn listen(host &const String, port u16, backlog int) TcpListener except {
         address.third,
         address.fourth,
         port,
-        backlog as i32
+        backlog as int
     )) {
         net_sys.close_socket(handle);
         raise "NetworkError": "the socket could not listen";
@@ -152,7 +159,7 @@ export fn listen(host &const String, port u16, backlog int) TcpListener except {
 }
 
 // The port a listener is bound to.
-export fn local_port(this &TcpListener) u16 except {
+export fn localport(this &TcpListener) u16 except {
     return net_sys.bound_port(this._handle)??;
 }
 

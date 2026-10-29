@@ -171,7 +171,7 @@ export type Thread {
 }
 
 // Starts `entry` on a new thread, with `argument` handed to it.
-export fn __init__(this &Thread, entry *fn(*byte) u32, argument *byte) void except {
+export fn __init__(this &Thread, entry *fn(*byte) uint, argument *byte) void except {
     this._handle = nullptr;
     if (!sync_sys.thread_start(&this._handle, entry, argument)) {
         raise "ThreadError": "the thread could not be started";
@@ -229,6 +229,9 @@ DEFAULT_ATOMIC_ORDER const AtomicOrder = AtomicOrder.SEQ_CST;
 // operation runs as `SEQ_CST` whatever was asked. That is stronger than any
 // argument here, so a program that passes a weaker order is still correct; the
 // parameter is what the real atomic path will read.
+//
+// - `order`: the order the caller asked for; it is validated and otherwise
+//   ignored, because the mutex already gives `SEQ_CST`
 fn ensure_order(order AtomicOrder) void {
     // The current implementation is a mutex, whose lock and unlock are already
     // sequentially consistent, so every order is honoured at least as strongly
@@ -252,6 +255,8 @@ type Atomic {
 }
 
 // Creates the value.
+//
+// - `value`: the value to store; its storage moves into the atomic
 export
 template <T type>
 fn __im_init__(this &Atomic<T>, value T) void {
@@ -260,6 +265,9 @@ fn __im_init__(this &Atomic<T>, value T) void {
 }
 
 // Returns the value.
+//
+// - `order`: the order requested; it is validated, and the read is `SEQ_CST`
+//   whatever is asked
 export
 template <T type>
 fn load(this &Atomic<T>, order AtomicOrder = DEFAULT_ATOMIC_ORDER) T {
@@ -271,6 +279,11 @@ fn load(this &Atomic<T>, order AtomicOrder = DEFAULT_ATOMIC_ORDER) T {
 }
 
 // Stores a new value.
+//
+// - `value`: the value to store; its storage moves into the atomic, so the
+//   caller does not read it afterwards
+// - `order`: the order requested; it is validated, and the write is `SEQ_CST`
+//   whatever is asked
 export
 template <T type>
 fn store(this &Atomic<T>, value T, order AtomicOrder = DEFAULT_ATOMIC_ORDER) void {
@@ -281,6 +294,11 @@ fn store(this &Atomic<T>, value T, order AtomicOrder = DEFAULT_ATOMIC_ORDER) voi
 }
 
 // Adds `delta` and returns the value it had before.
+//
+// - `delta`: the amount to add, of the atomic's own type; a negative value
+//   subtracts, and an unsigned type wraps on overflow
+// - `order`: the order requested; it is validated, and the update is `SEQ_CST`
+//   whatever is asked
 export
 template <T type>
 fn fetch_add(this &Atomic<T>, delta T, order AtomicOrder = DEFAULT_ATOMIC_ORDER) T {
@@ -293,6 +311,11 @@ fn fetch_add(this &Atomic<T>, delta T, order AtomicOrder = DEFAULT_ATOMIC_ORDER)
 }
 
 // Subtracts `delta` and returns the value it had before.
+//
+// - `delta`: the amount to subtract, of the atomic's own type; a negative value
+//   adds, and an unsigned type wraps on underflow
+// - `order`: the order requested; it is validated, and the update is `SEQ_CST`
+//   whatever is asked
 export
 template <T type>
 fn fetch_sub(this &Atomic<T>, delta T, order AtomicOrder = DEFAULT_ATOMIC_ORDER) T {
@@ -306,6 +329,11 @@ fn fetch_sub(this &Atomic<T>, delta T, order AtomicOrder = DEFAULT_ATOMIC_ORDER)
 
 // Stores `wanted` when the value still equals `expected`, returning whether it
 // did.
+//
+// - `expected`: the value the atomic must still hold; it is compared and not
+//   written back, so a failed exchange leaves the caller's copy alone
+// - `wanted`: the value stored when the comparison matches; it moves into the
+//   atomic, and is untouched when it does not
 export
 template <T type>
 fn compare_exchange(this &Atomic<T>, expected T, wanted T) bool {
@@ -313,6 +341,13 @@ fn compare_exchange(this &Atomic<T>, expected T, wanted T) bool {
 }
 
 // Stores `wanted` when the value still equals `expected`, under the given order.
+//
+// - `expected`: the value the atomic must still hold; it is compared and not
+//   written back, so a failed exchange leaves the caller's copy alone
+// - `wanted`: the value stored when the comparison matches; it moves into the
+//   atomic, and is untouched when it does not
+// - `order`: the order requested; it is validated, and the exchange is
+//   `SEQ_CST` whatever is asked
 export
 template <T type>
 fn compare_exchange(
@@ -332,6 +367,11 @@ fn compare_exchange(
 }
 
 // Exchanges the value for `wanted`, and returns what it held.
+//
+// - `wanted`: the value to store; its storage moves into the atomic, and the
+//   value it replaced is returned as a copy
+// - `order`: the order requested; it is validated, and the exchange is
+//   `SEQ_CST` whatever is asked
 export
 template <T type>
 fn exchange(this &Atomic<T>, wanted T, order AtomicOrder = DEFAULT_ATOMIC_ORDER) T {
@@ -357,11 +397,11 @@ export type RwLock {
     // Wakes the other side when the counters change.
     _changed CondVar;
     // How many readers hold the lock.
-    _readers u32;
+    _readers uint;
     // Whether a writer holds the lock.
     _writer bool;
     // How many writers are waiting for it.
-    _waiting_writers u32;
+    _waiting_writers uint;
 }
 
 // Creates an unlocked read-write lock.
@@ -428,11 +468,11 @@ export type Semaphore {
     // Wakes one waiter per release.
     _available CondVar;
     // How many permits are free.
-    _count u32;
+    _count uint;
 }
 
 // Creates a semaphore with `initial` permits.
-export fn __init__(this &Semaphore, initial u32) void {
+export fn __init__(this &Semaphore, initial uint) void {
     (&this._mutex)->__init__();
     (&this._available)->__init__();
     this._count = initial;
@@ -457,9 +497,9 @@ export fn release(this &Semaphore) void {
 }
 
 // The number of free permits, without waiting.
-export fn available(this &Semaphore) u32 {
+export fn available(this &Semaphore) uint {
     this._mutex.lock();
-    count u32 = this._count;
+    count uint = this._count;
     this._mutex.unlock();
     return count;
 }
@@ -523,15 +563,15 @@ export type Barrier {
     // Wakes the parties of a round.
     _round CondVar;
     // How many parties a round has.
-    _parties u32;
+    _parties uint;
     // How many have arrived in this round.
-    _waiting u32;
+    _waiting uint;
     // Which round it is.
-    _generation u32;
+    _generation uint;
 }
 
 // Creates a barrier for `parties` parties.
-export fn __init__(this &Barrier, parties u32) void {
+export fn __init__(this &Barrier, parties uint) void {
     (&this._mutex)->__init__();
     (&this._round)->__init__();
     this._parties = parties;
@@ -542,7 +582,7 @@ export fn __init__(this &Barrier, parties u32) void {
 // Arrives at the barrier and waits until every other party has arrived.
 export fn wait(this &Barrier) void {
     this._mutex.lock();
-    generation u32 = this._generation;
+    generation uint = this._generation;
     this._waiting += 1;
     if (this._waiting == this._parties) {
         this._waiting = 0;

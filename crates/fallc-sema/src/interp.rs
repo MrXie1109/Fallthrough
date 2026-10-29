@@ -207,8 +207,15 @@ impl State<'_> {
         }
         match &self.ast.stmt(stmt).kind {
             StmtKind::Expr(node) => {
-                // Evaluated for its effect on the locals, if any.
-                self.eval(node.expr);
+                // Evaluated for its effect on the locals, if any. A statement
+                // this evaluator cannot run has an effect it cannot reproduce
+                // -- `C.printf(..)` writes a line -- so the whole body stops
+                // being foldable. Ignoring the failure folded the *rest* of the
+                // body as if the statement were not there, and the value that
+                // came out was returned in place of a call that should have run.
+                if self.eval(node.expr).is_none() {
+                    self.raised = true;
+                }
                 Flow::Normal
             }
             StmtKind::Bind(node) => {

@@ -11,7 +11,7 @@ link kernel32 dynamic from default;
 
 @extern_C fn _errno() *int;
 @extern_C fn strerror(code int) *const char;
-@extern_C fn GetLastError() u32;
+@extern_C fn GetLastError() uint;
 
 // The C runtime's error number for this thread.
 export fn last_error() int {
@@ -29,6 +29,6 @@ export fn error_text(code int) *const char {
 }
 
 // The Win32 error number of the last call that set one.
-export fn last_win32_error() u32 {
+export fn last_win32_error() uint {
     return GetLastError();
 }

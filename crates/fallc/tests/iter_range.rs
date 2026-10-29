@@ -99,7 +99,7 @@ fn main() int except {
     }
     std.print("{}\n", down)??;
     stepped i64 = 0i64;
-    range IntRange = std.step_range(0i64, 10i64, 3i64)??;
+    range Range = Range(0i64, 10i64, 3i64)??;
     for (value i64 : range) {
         stepped += 1i64;
     }

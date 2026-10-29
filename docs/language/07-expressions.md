@@ -31,10 +31,17 @@ expressions in the order written. The type of the whole is the type `format` ret
 which is the standard string.
 
 ```ft
-n int = 42;
-s String = f"n is {n}";          // std.format("n is {}", n)
-h String = f"{n:#x}";            // std.format("{:#x}", n)
+import std;
+
+fn main() int except {
+    n int = 42;
+    std.print("{}\n", f"n is {n}")??;    // std.format("n is {}", n)
+    std.print("{}\n", f"{n:#x}")??;      // std.format("{:#x}", n)
+    return 0;
+}
 ```
+
+This program prints `n is 42`, then `0x2a`.
 
 2.1.2 A placeholder is `{expr}` or `{expr:spec}`. The `spec` is the ordinary format
 specification ([06 Exceptions](06-exceptions.md) is not involved): `{:>8}`, `{:08}`,
@@ -89,6 +96,30 @@ conversion, not an error.
 bytes.
 
 4.3 `sizeof`/`alignof` may appear in a position that requires a compile-time constant.
+
+4.4 A function type has the width of a pointer: `sizeof(fn(int) int)` is the size of an
+address, because a function value is one. An array measures its **elements**, so
+`sizeof([4]int)` is four `int`s, not a pointer to them.
+
+```ft
+import C;
+import std;
+
+fn f(x int) int { return x; }
+
+fn main() int except {
+    C.printf("%zu %zu %zu %zu\n", sizeof(int) as usize, sizeof(*int) as usize,
+        sizeof([4]int) as usize, sizeof(fn(int) int) as usize);
+    return 0;
+}
+```
+
+This program prints `4 8 16 8` on a 64-bit machine: an `int` is four bytes, a pointer is
+eight, an array of four `int`s is sixteen, and a function type is one address.
+
+4.5 A type parameter may be the operand: inside `template <T type>`, `sizeof(T)` is the
+size of what the instantiation supplied. `sizeof` of a type whose size is not yet known —
+an incomplete type — is an error.
 
 ## Operators
 
@@ -145,12 +176,14 @@ member of a union, and integer overflow (in `--release` mode) are undefined beha
 7.1 The following expressions are evaluated at compile time and may appear in a position
 that requires a constant:
 
-```ft
+```text
 sizeof(T)
 alignof(T)
 sizeof...(pack)
 except(expr)
 TraitName(TypeArgs…)
+@meta.defined(name)
+@meta.compilable(name)
 ```
 
 7.2 `except(expr)` only analyses whether the expression may raise; it does not evaluate
@@ -158,6 +191,61 @@ it.
 
 7.3 The rules for trait queries and built-in type traits are given in
 [03 Declarations](03-declarations.md#traits).
+
+### Whether a build has a name
+
+7.4 `@meta.defined(name)` asks whether `name` denotes anything in this build: a module
+that was imported, a type or type family that was declared or imported, a function or
+constant of this module, a type the language supplies without a declaration (`int`,
+`bool`, `String`), or a platform name. It is `bool`.
+
+7.5 `@meta.compilable(name)` answers the same question, and is the spelling that reads
+better where the intent is "would this compile". Both are answered by the same code, so
+`@meta.defined(X)` and `@meta.compilable(X)` never disagree.
+
+7.6 The platform names are `linux`, `windows`, `macos` and `unix`. Exactly one of the
+first three holds for a given build, and `unix` holds on Linux and macOS.
+
+7.7 The two spellings `@meta.NAME` and `@__builtin_NAME` are one question: `@meta.defined`
+and `@__builtin_defined` are interchangeable, and likewise for `compilable`.
+
+```ft
+import std;
+
+fn main() int except {
+    std.print("{} {}\n", sizeof(int), alignof(int))??;
+    std.print("{} {}\n", @meta.defined(linux), @meta.defined(no_such_type))??;
+    std.print("{} {}\n", @meta.compilable(int), @meta.compilable(no_such_type))??;
+    std.print("{} {}\n", @__builtin_defined(String), @__builtin_compilable(bool))??;
+    return 0;
+}
+```
+
+This program prints `4 4`, then `true false`, then `true false`, then `true true`.
+
+7.8 A query names a single identifier; it does not take a type expression. It is constant
+at compile time, so it may stand in `if (cond) @constexpr` and in `@enable_if`, which is
+what lets a program keep a branch only for the builds that can compile it:
+
+```ft
+import std;
+
+if (@meta.defined(linux)) @constexpr {
+    fn build_kind() int { return 1; }
+} else {
+    fn build_kind() int { return 2; }
+}
+
+fn main() int except {
+    std.print("{}\n", build_kind())??;
+    return 0;
+}
+```
+
+7.9 `@meta.compilable(T)` answers whether the *name* `T` exists, not whether an
+arbitrary expression built from it compiles. To ask whether a block compiles, use
+`if (auto) @constexpr`, which is specified in
+[05 Statements](05-statements.md#probing-whether-a-block-compiles).
 
 ## Special methods
 

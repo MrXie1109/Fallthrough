@@ -30,6 +30,9 @@ type Pair {
 }
 
 // Creates a pair from its values.
+//
+// - `first`: the first element; an owning element is copied rather than taken
+// - `second`: the second element, copied the same way
 export
 template <A type, B type>
 fn __init__(this &Pair<A, B>, first A, second B) void {
@@ -38,6 +41,8 @@ fn __init__(this &Pair<A, B>, first A, second B) void {
 }
 
 // Copies another pair, element by element.
+//
+// - `other`: the pair to copy; it keeps what it holds
 export
 template <A type, B type>
 fn __init__(this &Pair<A, B>, other &const Pair<A, B>) void {
@@ -46,6 +51,8 @@ fn __init__(this &Pair<A, B>, other &const Pair<A, B>) void {
 }
 
 // Takes another pair's elements.
+//
+// - `other`: the pair to take from, left with moved-from elements
 export
 template <A type, B type>
 fn __init__(this &Pair<A, B>, other &&Pair<A, B>) void {
@@ -54,6 +61,8 @@ fn __init__(this &Pair<A, B>, other &&Pair<A, B>) void {
 }
 
 // Copies another pair into this one.
+//
+// - `other`: the pair to copy; it keeps what it holds
 export
 template <A type, B type>
 fn __assign__(this &Pair<A, B>, other &const Pair<A, B>) void {
@@ -62,6 +71,8 @@ fn __assign__(this &Pair<A, B>, other &const Pair<A, B>) void {
 }
 
 // Moves another pair's elements into this one.
+//
+// - `other`: the pair to take from, left with moved-from elements
 export
 template <A type, B type>
 fn __assign__(this &Pair<A, B>, other &&Pair<A, B>) void {
@@ -78,6 +89,8 @@ fn __drop__(this &Pair<A, B>) void {
 }
 
 // Whether two pairs hold equal elements.
+//
+// - `other`: the pair to compare against, element by element
 export
 template <A type, B type>
 fn __eq__(this &const Pair<A, B>, other &const Pair<A, B>) bool {
@@ -85,6 +98,8 @@ fn __eq__(this &const Pair<A, B>, other &const Pair<A, B>) bool {
 }
 
 // Whether two pairs differ.
+//
+// - `other`: the pair to compare against; any differing element makes it true
 export
 template <A type, B type>
 fn __ne__(this &const Pair<A, B>, other &const Pair<A, B>) bool {
@@ -104,6 +119,10 @@ type Triple {
 }
 
 // Creates a triple from its values.
+//
+// - `first`: the first element; an owning element is copied rather than taken
+// - `second`: the second element, copied the same way
+// - `third`: the third element, copied the same way
 export
 template <A type, B type, C type>
 fn __init__(this &Triple<A, B, C>, first A, second B, third C) void {
@@ -113,6 +132,8 @@ fn __init__(this &Triple<A, B, C>, first A, second B, third C) void {
 }
 
 // Copies another triple, element by element.
+//
+// - `other`: the triple to copy; it keeps what it holds
 export
 template <A type, B type, C type>
 fn __init__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
@@ -122,6 +143,8 @@ fn __init__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
 }
 
 // Takes another triple's elements.
+//
+// - `other`: the triple to take from, left with moved-from elements
 export
 template <A type, B type, C type>
 fn __init__(this &Triple<A, B, C>, other &&Triple<A, B, C>) void {
@@ -131,6 +154,8 @@ fn __init__(this &Triple<A, B, C>, other &&Triple<A, B, C>) void {
 }
 
 // Copies another triple into this one.
+//
+// - `other`: the triple to copy; it keeps what it holds
 export
 template <A type, B type, C type>
 fn __assign__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
@@ -140,6 +165,8 @@ fn __assign__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
 }
 
 // Moves another triple's elements into this one.
+//
+// - `other`: the triple to take from, left with moved-from elements
 export
 template <A type, B type, C type>
 fn __assign__(this &Triple<A, B, C>, other &&Triple<A, B, C>) void {
@@ -158,6 +185,8 @@ fn __drop__(this &Triple<A, B, C>) void {
 }
 
 // Whether two triples hold equal elements.
+//
+// - `other`: the triple to compare against, element by element
 export
 template <A type, B type, C type>
 fn __eq__(this &const Triple<A, B, C>, other &const Triple<A, B, C>) bool {

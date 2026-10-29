@@ -51,6 +51,9 @@ impl TypeChecker {
             text_calls: std::collections::HashMap::new(),
             call_symbols: std::collections::HashMap::new(),
             must_use_functions: std::collections::HashSet::new(),
+            declared_template_types: std::collections::HashSet::new(),
+            template_parameter_names: std::collections::HashSet::new(),
+            overridable_functions: std::collections::HashSet::new(),
             must_use_calls: std::collections::HashSet::new(),
             templated_methods: std::collections::HashSet::new(),
             lambda_raise_stack: Vec::new(),
@@ -83,6 +86,7 @@ impl TypeChecker {
             in_place_by_address: std::collections::HashMap::new(),
             init_calls: std::collections::HashMap::new(),
             method_calls: std::collections::HashMap::new(),
+            indirect_receivers: std::collections::HashMap::new(),
             throwing_calls: std::collections::HashSet::new(),
             propagating_calls: std::collections::HashSet::new(),
             throws_allowed: Vec::new(),
@@ -111,6 +115,10 @@ impl TypeChecker {
             instantiation_constants: std::collections::HashMap::new(),
             constants_by_name: std::collections::HashMap::new(),
             compile_time_ifs: std::collections::HashMap::new(),
+            throws_auto: false,
+            auto_seen_raise: false,
+            throwing_functions: std::collections::HashSet::new(),
+            except_auto_functions: std::collections::HashSet::new(),
             pointer_bits,
             aliases: std::collections::HashMap::new(),
             enum_bases: std::collections::HashMap::new(),
@@ -171,6 +179,13 @@ impl TypeChecker {
         // length to build the array type and the length expression has no type
         // context of its own.
         self.index_constants(ast);
+        // Every template's parameters, before any signature is resolved. A
+        // signature is a *pattern*: `[N]T` writes `N` where a type would
+        // otherwise stand, and the array's length has to know that `N` is a
+        // parameter rather than a constant of the module. Reading the lengths
+        // happens while the signatures are resolved, which is before
+        // `check_items` -- so the names are collected here.
+        self.collect_template_parameter_names(ast);
         // Declared types are collected before anything is checked, so that a
         // function may use a type declared after it. Declarations are
         // order-independent in every language that has them, and collecting
@@ -326,6 +341,7 @@ impl TypeChecker {
             in_place_by_address: std::mem::take(&mut self.in_place_by_address),
             init_calls: std::mem::take(&mut self.init_calls),
             method_calls: std::mem::take(&mut self.method_calls),
+            indirect_receivers: std::mem::take(&mut self.indirect_receivers),
             throwing_calls: std::mem::take(&mut self.throwing_calls),
             propagating_calls: std::mem::take(&mut self.propagating_calls),
             assign_methods: std::mem::take(&mut self.assign_methods),
@@ -2604,6 +2620,22 @@ impl TypeChecker {
     ///
     /// A template is the one form skipped here: its body names types that do
     /// not exist until it is instantiated, so it is checked once per use.
+    /// Records the name of every template parameter the file declares.
+    ///
+    /// Types, values and packs alike: `[N]T` writes a *value* parameter where a
+    /// type would otherwise be expected, so a length that names one has to be
+    /// recognised before any signature is resolved.
+    pub(super) fn collect_template_parameter_names(&mut self, ast: &Ast) {
+        for &item in &ast.items {
+            let fallc_ast::ItemKind::Function(function) = &ast.item(item).kind else {
+                continue;
+            };
+            for param in &function.template_params {
+                self.template_parameter_names.insert(param.name.clone());
+            }
+        }
+    }
+
     pub(super) fn check_items(&mut self, ast: &Ast, resolutions: &Resolutions, types: &mut TypeTable) {
         // A method written against a type family's parameters is a *template*
         // too -- `fn __init__(this &Box<T>, v T)` -- and there is no member for
@@ -2612,7 +2644,40 @@ impl TypeChecker {
         for &item in &ast.items {
             let item_ref = ast.item(item);
             match &item_ref.kind {
+                // A top-level `if @constexpr` keeps one branch, decided before
+                // checking: a literal, or a question about the build, which
+                // this compiler can answer without the program's tables. What
+                // is left here was not decided, and its branches were
+                // therefore never checked -- so the condition is reported
+                // rather than the item being dropped in silence. A program that
+                // depended on one of the branches would otherwise compile to
+                // nothing and fail nowhere.
+                fallc_ast::ItemKind::Conditional(node) => {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "the condition of a top-level `if @constexpr` is not a constant",
+                        )
+                        .with_code(DiagnosticCode::sema(196))
+                        .with_span(ast.expr(node.condition).span)
+                        .with_note(
+                            "a branch is chosen before anything is resolved, so the condition \
+                             must be a literal, `true`/`false`, or a question about the build \
+                             such as `@meta.defined(linux)`",
+                        ),
+                    );
+                }
                 fallc_ast::ItemKind::Function(function) => {
+                    // A template's parameters are *patterns*, not names: the
+                    // `T` of `template <T type> fn f(this &const T)` stands for
+                    // whatever the receiver is, so it must be known as a
+                    // parameter before the signature that mentions it is
+                    // resolved. Recorded for the length of this declaration.
+                    let _saved_types = std::mem::take(&mut self.declared_template_types);
+                    for param in &function.template_params {
+                        if param.kind == fallc_ast::TemplateParamKind::Type {
+                            self.declared_template_types.insert(param.name.clone());
+                        }
+                    }
                     // A receiver is always a reference: `this &T` or
                     // `this &const T`. A pointer receiver would be a second
                     // spelling of the same thing, and the two disagreed about
@@ -2643,6 +2708,7 @@ impl TypeChecker {
                         ast,
                         &item_ref.attrs,
                         &function.name,
+                        function.name_span,
                         &function.return_type,
                     );
                     // A template is not checked here. Its body names types that
@@ -2651,6 +2717,24 @@ impl TypeChecker {
                     // per instantiation instead, with the parameters replaced
                     // by what they stand for; see `check_instantiation`.
                     if !function.template_params.is_empty() || function.has_pack() {
+                        continue;
+                    }
+                    // An `@overridable` default that a program has replaced is
+                    // not this program's function at all: it is not checked,
+                    // and no symbol is emitted for it. Two definitions of one
+                    // name would otherwise both claim the symbol, and the call
+                    // would find whichever was emitted first.
+                    if item_ref.attrs.iter().any(|attr| attr.name == "overridable")
+                        && resolutions.defs.iter().any(|def| {
+                            def.name == function.name
+                                && !def.is_overridable
+                                && def.signature.as_ref().is_some_and(|signature| {
+                                    signature.template_params.is_empty()
+                                        && signature.pack.is_none()
+                                })
+                        })
+                    {
+                        self.disabled_functions.insert(function.name_span);
                         continue;
                     }
                     // A declaration whose `@enable_if` condition is false does
@@ -2763,6 +2847,23 @@ impl TypeChecker {
                     // the body, so an `auto` binding with a literal initialiser
                     // picks up the function's type rather than the fallback.
                     let previous = self.expected.replace(expected);
+                    // A destructor runs while the program is unwinding or
+                    // leaving a scope, and there is no caller at that point to
+                    // handle what it would raise. A type that frees a resource
+                    // in `__drop__` therefore cannot also report a failure
+                    // there; the report belongs in the operation that failed.
+                    if function.name == fallc_ast::special::SpecialMethod::Drop.name()
+                        && let Some(throws) = &function.throws
+                    {
+                        self.diagnostics.push(
+                            Diagnostic::error("`__drop__` cannot be declared `except`")
+                                .with_code(DiagnosticCode::sema(193))
+                                .with_span(throws.span)
+                                .with_note(
+                                    "a destructor runs where no caller can handle an                                      exception; report the failure where it happens instead",
+                                ),
+                        );
+                    }
                     // `raise` and `??` are allowed only where the function says
                     // it may raise, so that is part of checking its body.
                     self.throws_allowed.push(function.throws.is_some());
@@ -2771,10 +2872,32 @@ impl TypeChecker {
                     // checked when it was built. A deduced return type is the
                     // exception -- it *is* the signature, and it is read from
                     // the body -- so that body is checked either way.
+                    // `except(auto)` makes no claim of its own: the body is
+                    // checked as if it may raise, and whether anything
+                    // actually leaves it becomes the answer.
+                    let throws_auto = function
+                        .throws
+                        .as_ref()
+                        .is_some_and(|throws| throws.is_auto);
+                    let saved_auto = (self.throws_auto, self.auto_seen_raise);
+                    self.throws_auto = throws_auto;
+                    self.auto_seen_raise = false;
                     if let Some(body) = function.body
                         && (!self.declarations_only || auto_span.is_some())
                     {
                         self.check_block(ast, resolutions, types, body);
+                    }
+                    let deduced_throws = self.auto_seen_raise;
+                    self.throws_auto = saved_auto.0;
+                    self.auto_seen_raise = saved_auto.1;
+                    if throws_auto {
+                        self.except_auto_functions.insert(function.name.clone());
+                        // The answer is recorded where every other raising
+                        // fact is, so callers see this function as raising
+                        // only when something really can leave it.
+                        if deduced_throws {
+                            self.throwing_functions.insert(function.name.clone());
+                        }
                     }
                     self.throws_allowed.pop();
                     self.expected = previous;

@@ -55,6 +55,8 @@ fn __init__(this &Heap<T, Cmp, A>) void {
 }
 
 // Creates a heap with the caller's order and allocator.
+// - `order`: the comparison that decides which element is on top
+// - `memory`: the allocator the buffer is grown from
 export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn __init__(this &Heap<T, Cmp, A>, order Cmp, memory A) void {
@@ -66,6 +68,7 @@ fn __init__(this &Heap<T, Cmp, A>, order Cmp, memory A) void {
 }
 
 // Creates a heap with a copy of every element of `other`.
+// - `other`: the heap to copy
 export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn __init__(this &Heap<T, Cmp, A>, other &const Heap<T, Cmp, A>) void {
@@ -116,12 +119,15 @@ fn empty(this &const Heap<T, Cmp, A>) bool {
 }
 
 // Whether `a` belongs above `b` under the heap's order.
+// - `a`: the element asking for priority
+// - `b`: the element it is compared with
 fn before(this &Heap<T, Cmp, A>, a &const T, b &const T) bool {
     order Cmp = this.cmp;
     return order(a, b);
 }
 
 // Makes room for `wanted` elements.
+// - `wanted`: how many elements room must be made for
 export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn reserve(this &Heap<T, Cmp, A>, wanted usize) void {
@@ -157,6 +163,8 @@ fn reserve(this &Heap<T, Cmp, A>, wanted usize) void {
 // and assigning over a value that is already alive would drop a buffer the other
 // side still points at. Each slot is destroyed first and constructed again, so
 // every buffer has exactly one owner.
+// - `a`: one slot
+// - `b`: the other slot
 fn swap(this &Heap<T, Cmp, A>, a usize, b usize) void {
     keep T = this._data[a];
     gone_a *T = &this._data[a];
@@ -168,6 +176,7 @@ fn swap(this &Heap<T, Cmp, A>, a usize, b usize) void {
 }
 
 // Walks the element at `index` up until its parent belongs above it.
+// - `index`: the element to walk up
 fn sift_up(this &Heap<T, Cmp, A>, index usize) void {
     position usize = index;
     while (position > 0) {
@@ -204,6 +213,8 @@ fn sift_down(this &Heap<T, Cmp, A>, index usize) void {
 }
 
 // Adds `value`, which then finds its place in the order.
+//
+// - `value`: the element to add, moved in
 export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn push(this &Heap<T, Cmp, A>, value T) void {
@@ -284,6 +295,10 @@ fn __init__(this &PriorityQueue<T, Cmp, A>) void {
     (&this.heap)->__init__();
 }
 
+// Creates an empty queue with the caller's order and allocator.
+//
+// - `order`: the comparison that decides which value comes first
+// - `memory`: the allocator the buffer is grown from
 export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn __init__(this &PriorityQueue<T, Cmp, A>, order Cmp, memory A) void {
@@ -297,6 +312,8 @@ fn __drop__(this &PriorityQueue<T, Cmp, A>) void {
 }
 
 // Adds `value` with its priority.
+//
+// - `value`: the element to add, moved in
 export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn push(this &PriorityQueue<T, Cmp, A>, value T) void {

@@ -764,6 +764,9 @@ pub struct InstantiationRecords {
     pub lambda_values: std::collections::HashMap<Span, LambdaInstance>,
     /// Which method each call reached.
     pub method_calls: std::collections::HashMap<Span, String>,
+    /// The `__deref__` or `__pointer__` call a member call makes first, for a
+    /// receiver reached through an indirection.
+    pub indirect_receivers: std::collections::HashMap<Span, String>,
     /// Which `__call__` each call of a value reached.
     ///
     /// A record like the one above: a body that calls a comparator is checked
@@ -1431,6 +1434,9 @@ pub struct TypeCheckResult {
     /// fell back to searching every known symbol for a match -- guesswork
     /// rather than resolution.
     pub method_calls: std::collections::HashMap<Span, String>,
+    /// The `__deref__` or `__pointer__` call a member call makes first, for a
+    /// receiver reached through an indirection.
+    pub indirect_receivers: std::collections::HashMap<Span, String>,
     /// The symbol each plain assignment resolved to, by the statement's span.
     ///
     /// Empty when the type defines no `__assign__`, in which case the
@@ -1618,6 +1624,27 @@ pub struct TypeChecker {
     /// overload is chosen; the call checker then notes calls whose result must
     /// be used, by the call's span.
     must_use_functions: std::collections::HashSet<String>,
+    /// The type parameters of the template whose signature is being read.
+    ///
+    /// A parameter is not a declared type, so resolving `this &const T` in a
+    /// template's own signature would report an unknown name. Knowing which
+    /// names are parameters is what lets that resolution answer "a parameter"
+    /// rather than "not found".
+    declared_template_types: std::collections::HashSet<String>,
+    /// Every type-parameter name any template in the program declares.
+    ///
+    /// A template's signature is a pattern: `this &const T` binds `T` to the
+    /// receiver rather than naming a type, so a signature resolved before the
+    /// instantiation exists must read `T` as a pattern variable. Collecting the
+    /// names once is what tells an unbound pattern variable from a misspelt
+    /// type name.
+    template_parameter_names: std::collections::HashSet<String>,
+    /// The `@overridable` definitions, by the span of their name: default
+    /// implementations a program's own definition replaces.
+    ///
+    /// A span rather than a name, because two definitions may share the name
+    /// and only one of them is the default.
+    overridable_functions: std::collections::HashSet<fallc_span::Span>,
     /// Calls whose result must be used, by the call's span.
     must_use_calls: std::collections::HashSet<Span>,
     /// Whether each lambda body being checked has raised, and the exception
@@ -1709,6 +1736,7 @@ pub struct TypeChecker {
     literal_construction_types: std::collections::HashMap<Span, Type>,
     /// The symbol each method call resolved to, by the call's span.
     method_calls: std::collections::HashMap<Span, String>,
+    indirect_receivers: std::collections::HashMap<Span, String>,
     /// The calls whose callee may raise.
     throwing_calls: std::collections::HashSet<Span>,
     /// Those of them written with `??`, which leave the function rather than
@@ -1808,6 +1836,25 @@ pub struct TypeChecker {
     constants_by_name: std::collections::HashMap<String, i64>,
     /// Every compile-time-decided `if`. See [`CheckedProgram::compile_time_ifs`].
     compile_time_ifs: std::collections::HashMap<Span, bool>,
+    /// Whether the function being checked was declared `except(auto)`.
+    ///
+    /// The declaration makes no claim, so a raise reaching the end of the body
+    /// is recorded rather than reported, and the record becomes the answer.
+    pub throws_auto: bool,
+    /// Whether a raise has reached the end of an `except(auto)` body.
+    pub auto_seen_raise: bool,
+    /// The functions whose `except(auto)` body really can raise.
+    ///
+    /// The declaration does not say, so the answer is read from the body and
+    /// filed here; a call reaches it the same way it reaches a declared
+    /// `except`.
+    pub throwing_functions: std::collections::HashSet<String>,
+    /// The functions whose declaration was written `except(auto)`.
+    ///
+    /// They need both halves: this set says the caller must consult the body's
+    /// answer rather than the declaration, and `throwing_functions` is that
+    /// answer.
+    pub except_auto_functions: std::collections::HashSet<String>,
     /// What each `type Name = Other;` alias stands for, by name.
     ///
     /// An alias is not a type of its own: resolving one yields the type it

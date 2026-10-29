@@ -33,7 +33,7 @@ export fn read_dir_names(path *const char, names *Array<String>) bool {
             break;
         }
         name *const char = entry_name(entry);
-        if (name[0] == '.' as c8 && (name[1] == 0 as c8 || (name[1] == '.' as c8 && name[2] == 0 as c8))) {
+        if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'))) {
             continue;
         }
         names.push(String(name));

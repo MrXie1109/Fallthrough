@@ -208,16 +208,20 @@ fn main() int {
 ```ft
 import std;
 fn main() int {
-    short String = "hi";                 // 内联，没有 malloc
-    long String = "this text is long enough to allocate for sure";
-    C.printf("%lu %lu\n", short.capacity(), long.capacity());   // 23 46
-    short.shrink_to_fit();               // 已经内联，什么也不做
-    long.clear();
-    long.push('a');
-    long.shrink_to_fit();                // 短到能进对象，于是搬回对象里
+    small String = "hi";                 // 内联，没有 malloc
+    large String = "this text is long enough to allocate for sure";
+    C.printf("%lu %lu\n", small.capacity(), large.capacity());   // 23 46
+    small.shrink_to_fit();               // 已经内联，什么也不做
+    large.clear();
+    large.push('a');
+    large.shrink_to_fit();               // 短到能进对象，于是搬回对象里
+    C.printf("%lu\n", large.capacity());  // 23
     return 0;
 }
 ```
+
+该程序先输出 `23 46`，再输出 `23`：`String` 在对象内部自带二十二字节，所以 `"hi"`
+从不分配；长的那条清空并收缩后又搬回对象内部。
 
 | 成员 | 说明 |
 | ---- | ---- |
@@ -354,9 +358,9 @@ value.set_second(String("text"));
 
 ```ft
 a Any = Any(42);
-std.print("{} {}\n", a.type_name(), a.to_int()??)??;   // int 42
+std.print("{} {}\n", a.type_name(), a as int??)??;    // int 42
 b Any = Any(String("hi"));
-std.print("{}\n", b.to_text()??)??;                    // hi
+std.print("{}\n", b as String??)??;                   // hi
 ```
 
 支持 `bool`/`int`/`f64`/`String`（以及字面量与 C 字符串）；`present()`/`if (a)`、
@@ -556,7 +560,10 @@ fn main() int {
 ```ft
 // thing.ftm
 export type Thing { v int; }
-export fn __drop__(this &Thing) void { /* ... */ }
+export fn make_thing(v int) Thing {
+    return .{ v };
+}
+export fn __drop__(this &Thing) void { }
 ```
 
 ```ft

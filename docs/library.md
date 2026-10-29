@@ -161,6 +161,26 @@ Which level holds is a fact about each type rather than a table of categories:
 - `Array<T>`'s `begin()`/`end()` **are pointers**, so random access is pointer
   arithmetic; walking backwards uses `rbegin()`/`rend()`, whose iterators have
   `+`/`-`/`[]` and satisfy `RandomAccessIterator`.
+- A fixed-length array is walked by the same two names. `std.array` declares them once
+  for every element type and length, and the length is deduced from the argument:
+
+```ft
+import C;
+import std;
+
+fn main() int except {
+    a [4]int = {1, 2, 3, 4};
+    total int = 0;
+    for (x int : a) {
+        total = total + x;
+    }
+    C.printf("%d\n", total);
+    return 0;
+}
+```
+
+Its iterators are `*const T`, so `end()` is `begin() + N`. A string literal is a
+`[N]c8` and is walked the same way.
 
 ## Ordered containers: `std.tree`
 
@@ -707,11 +727,12 @@ std.print("{} {} {}\n", took.nanos(), took.millis(), took)??;  // 0.005s
 
 d Duration = time.from_millis(1500);   // from_nanos / from_seconds too
 stamp SystemTime = time.unix_now();
-std.print("{}\n", stamp.to_utc())??;   // 2026-10-20 16:54:58
+dt DateTime = stamp as DateTime;
+std.print("{}\n", dt)??;   // 2026-10-20 16:54:58
 ```
 
 `Duration` supports `+`/`-`/comparison and renders as `1.500s`;
-`SystemTime.to_utc()` gives a `DateTime` (`year()`/`month()`/`day()`/`hour()`/
+`SystemTime` converts to a `DateTime` with `as` (`year()`/`month()`/`day()`/`hour()`/
 `minute()`/`second()` and the `YYYY-MM-DD HH:MM:SS` text); `time.sleep(&duration)`
 sleeps. The platform differences live in `std/internal/time_sys.ftm` (POSIX `clock_gettime`)
 and `std/internal/time_sys.windows.ftm` (`GetSystemTimeAsFileTime`).
@@ -773,8 +794,8 @@ says so instead of quietly handling a part.
   the specification and checked against the standard vectors (`"abc"`, the empty
   message, RFC 4231). It is explicitly not a cryptography library: no
   constant-time comparisons and no key management, and SHA-1/MD5 are absent.
-- **uuid** ([`std/uuid.ftm`](../../../standard/std/uuid.ftm)): `v4()??` (version and
-  RFC 4122 variant bits set), `to_string()`/`__str__`, `parse_uuid(&text)??`,
+- **uuid** ([`std/uuid.ftm`](../../../standard/std/uuid.ftm)): `Uuid()??` (version 4 and
+  RFC 4122 variant bits set), `as String`/`__str__`, `parse_uuid(&text)??`,
   `version()`, `variant()` and `==`/`!=`; two `u64` fields, so copying, comparing
   and returning one needs no ownership.
 - **rand_dist** ([`std/rand_dist.ftm`](../../../standard/std/rand_dist.ftm)): the
@@ -826,7 +847,7 @@ says so instead of quietly handling a part.
   `[table]`, `key = value` and strings/integers/reals/booleans are supported;
   arrays, inline tables, dates and multi-line strings are refused with
   `ValueError` rather than guessed. `get(&table, &key)` is a `?TomlValue`, and a
-  value is `as_string`/`as_int`/`as_real`/`as_bool`.
+  value is read with `as String`/`as i64`/`as f64`/`as bool`.
 - **XML** ([`std/xml.ftm`](../../../standard/std/xml.ftm)): `parse_xml(&text)` gives
   an `XmlDocument` (an array of nodes plus child indices, the same ownership shape
   as JSON), and an `XmlValue` handle offers `name`/`text`/`child_count`/`child(i)`/
@@ -846,14 +867,14 @@ not outlive its document ([`std/json.ftm`](../../../standard/std/json.ftm)):
 document JsonDocument = std.parse(&text)??;
 root JsonValue = document.root();
 key String = String("name");
-name String = root.member(&key).value()??.as_text()??;
+name String = root.member(&key).value()?? as String??;
 written String = std.serialize(&root)??;
 ```
 
 `kind()` returns `NULL_VALUE`/`BOOLEAN`/`NUMBER`/`TEXT`/`ARRAY`/`OBJECT`; an
 array uses `length()`/`at(i)`, an object `length()`/`member(&key)` (a
 `?JsonValue`, because a missing key is an absence rather than a failure) and
-`member_key(i)`/`member_value(i)`; scalars use `as_bool`/`as_number`/`as_text`,
+`member_key(i)`/`member_value(i)`; scalars are read with `as Bool`/`as f64`/`as String`,
 which raise `ValueError` on the wrong kind, plus `is_null()`. Parsing failures
 raise `ValueError` too. A number is always an `f64`.
 
@@ -894,7 +915,7 @@ cursor *int = std.advance(values.begin(), values.end(), 2usize);
 
 `std.range` ([`std/range.ftm`](../../../standard/std/range.ftm)) gives integer
 ranges: `to(n)` (0..n), `up_to(low, high)`, `down_to(low, high)` and
-`step_range(low, high, step)` (a zero step raises `ValueError`). `IntRange` is
+`step_range(low, high, step)` (a zero step raises `ValueError`). `Range` is
 both the container and its own position, so `for (value i64 : std.to(5i64))`
 works; the stop is **exclusive**, and a step that does not divide the span ends
 at the first position past the stop.

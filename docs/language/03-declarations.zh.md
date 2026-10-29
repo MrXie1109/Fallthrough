@@ -35,9 +35,19 @@ fn / type / union / enum / interface / traits / NAME …
 3.4 `auto` 从初始化器推断类型：
 
 ```ft
-n auto = 7;
-r auto = *p;        // 值为类型：auto 推断的是值
+import C;
+
+fn main() int {
+    v int = 5;
+    p *int = &v;
+    n auto = 7;
+    r auto = *p;        // 值为类型：auto 推断的是值
+    C.printf("%d %d\n", n, r);
+    return 0;
+}
 ```
+
+该程序输出 `7 5`：`n` 是 `int`，`r` 是指针所指的那个 `int`，而不是指针本身。
 
 3.4.1 `auto` 推断**值**的类型：初始化器为引用时，结果为被引用值的类型。
 
@@ -56,11 +66,22 @@ r auto = *p;        // 值为类型：auto 推断的是值
 位置与含义见第 9 节：
 
 ```ft
+import C;
+
 count int @static = 0;          // 静态存储期
 seen int @thread_local = 0;     // 每个线程一个对象
 buf [16]byte @align(64);        // 抬高对齐
-export fn visible() void { }   // 导出函数
+export fn visible() void { }    // 导出函数
+
+fn main() int {
+    count = 3;
+    buf[0] = 1;
+    C.printf("%d %d %d\n", count, seen, buf[0] as int);
+    return 0;
+}
 ```
+
+该程序输出 `3 0 1`：`count` 保留赋给它的值，`seen` 从零开始，`buf` 的首字节可写。
 
 4.2 类型限定词 `*`、`&`、`&&`、`const`、`volatile` 写在类型之前；`mutable` 写在
 字段类型之后，表示该字段可以在 `const` 成员函数中写入。
@@ -78,15 +99,33 @@ export fn visible() void { }   // 导出函数
 5.4 未标记 `export` 的模块级变量只在其定义模块内可见；`export` 的规则见
 [08 模块](08-modules.zh.md#导出表)。
 
-### 外部变量
+### 外部变量与外部函数
 
-5.5 `extern "ABI"` 加在模块级变量上，声明一个由外部库提供的对象。
+5.5 模块级变量标上 `@extern_C`，就声明了一个由外部库提供的对象；函数声明同理。语言里
+没有 `extern` 关键字：属性说明这个名字来自别处，写在类型之后——与其他声明属性同一个位置。
+
+```ft
+import C;
+
+@extern_C
+fn getenv(name *const c8) *c8;
+
+fn main() int {
+    path *c8 = getenv("PATH");
+    C.printf("%d\n", (path != nullptr) as int);
+    return 0;
+}
+```
+
+在设置了 `PATH` 的环境里该程序输出 `1`：`getenv` 按它自己的名字在 C 库中查找、使用 C 调用
+约定，因为 `@extern_C` 是这么说的。
 
 5.6 外部变量**不得**有初始化器；读写该名字访问库提供的存储。
 
-5.7 `"ABI"` 与函数上的 `@extern_C` 含义相同：指定调用约定与符号来源。
+5.7 `@extern_C` 同时指定调用约定与符号来源：名字不加修饰地交给链接器，且不生成定义。
+没有函数体的函数声明，正是同一个道理。
 
-5.8 `export` 使外部变量对导入者可见。
+5.8 `export` 使外部变量或外部函数对导入者可见。
 
 ## 模块级常量
 
@@ -106,21 +145,42 @@ export fn visible() void { }   // 导出函数
 
 ## `__setup__`
 
-7.1 一个模块**至多**有一个 `__setup__ { … }` 块。
+7.1 一个模块**至多**有一个 `__setup__` 函数，声明为 `fn __setup__() void`。
 
-7.2 `__setup__` 在 `main` 之前运行一次。运行顺序按导入依赖：先运行被导入模块的
-`__setup__`，后运行导入者的。
+```ft
+import C;
 
-7.3 `__setup__` 的块体等价于一个 `void` 函数体：可以声明绑定、调用函数、以
-`return;` 提前结束；**不得**返回值或 `raise`。
+counter int = 0;
 
-7.4 `__setup__` 是普通标识符；仅在项起始处且后跟 `{` 时具有上述含义。
+fn __setup__() void {
+    counter = 41;
+}
+
+fn main() int {
+    C.printf("%d\n", counter + 1);
+    return 0;
+}
+```
+
+该程序输出 `42`：`main` 读到的是 setup 函数运行之后的 `counter`，所以 `__setup__`
+里的赋值就是 `main` 看到的值。
+
+7.2 它在 `main` 之前运行一次，顺序按导入依赖：先运行被导入模块的 `__setup__`，
+后运行导入者的。
+
+7.3 它是一个函数，所以函数体与任何 `void` 函数一样写：声明绑定、调用函数、可以
+用 `return;` 提前结束。它**不得**返回值或 `raise`，也不接受参数。
+
+7.4 `__setup__` 是普通标识符。只有当声明恰为 `fn __setup__()` 时它才是模块的
+setup 函数；其他签名只是没人调用的普通函数。
 
 ## 前置声明
 
 8.1 名义类型可以只声明、后定义：
 
 ```ft
+import C;
+
 type Node;
 union Value;
 enum Color u32;
@@ -130,7 +190,15 @@ type Node {
     value int;
     next *Node;
 }
+
+fn main() int {
+    n Node = .{7, nullptr};
+    C.printf("%d %d\n", n.value, (n.next == nullptr) as int);
+    return 0;
+}
 ```
+
+该程序输出 `7 1`：`Node` 在被写出字段之前先被命名，而到构造值时该类型已经完整。
 
 8.2 定义出现之前，该类型是不完整类型：只能用于指针、引用与声明；按值定义、
 `sizeof`、`alignof`、成员访问与按值传参**必须**要求完整类型。
@@ -213,12 +281,22 @@ traits、interface、enum、伞模块 re-export 与宏定义。
 10.1 宏是记号替换，定义在模块层：
 
 ```ft
+import C;
+
 define MAX(a, b) ((a) > (b) ? (a) : (b))
-define SHOW(x) puts(#x)
-define FIELD(name) get_ ## name
-define LOG(fmt, ...) C.printf(fmt, __VA_LIST__)
+define SHOW(x) #x
 export define VERSION 3
+
+fn main() int {
+    C.printf("%d\n", $MAX(3, 7));
+    C.printf("%s\n", $SHOW(hello));
+    C.printf("%d\n", $VERSION);
+    return 0;
+}
 ```
+
+该程序依次输出 `7`、`hello`、`3`：`MAX` 就是它被定义成的那个条件表达式，`#x` 把实参
+变成文本 `hello`，`VERSION` 就是它被定义成的数。每处使用都带着 10.4 要求的 `$`。
 
 10.2 `define NAME body` 的定义延伸到逻辑行尾；行尾的 `\` 使定义延续到下一行。
 
@@ -297,8 +375,10 @@ export define VERSION 3
 类型写一条显式特化回答 `true`。
 
 ```ft
+import C;
+
 template <T type>
-export type IsInteger {
+type IsInteger {
     VALUE const bool = false;
 }
 
@@ -306,7 +386,15 @@ template <>
 type IsInteger<int> {
     VALUE const bool = true;
 }
+
+fn main() int {
+    C.printf("%d %d\n", IsInteger(int) as int, IsInteger(f64) as int);
+    return 0;
+}
 ```
+
+该程序输出 `1 0`：`IsInteger(int)` 选中特化，其 `VALUE` 为 `true`；`IsInteger(f64)`
+回落到通用版本，其 `VALUE` 为 `false`。
 
 11.4.2 查询 `IsInteger(int)` 实例化家族；特化机制（完整特化或偏特化，最具体者胜）
 选择回答的成员，常量成员 `VALUE` 折叠为答案，因此查询仍是编译期常量。程序可以
@@ -337,8 +425,29 @@ type IsInteger<int> {
 `except(..)` 查询；因此 `std.util` 提供一个包装宏：
 
 ```ft
-if ($MOVES(T)) @constexpr { .. }
+import C;
+import std;
+import std.util;
+
+template <T type>
+fn move_path() int {
+    if ($MOVES(T)) @constexpr {
+        C.printf("move may raise, so the element is copied\n");
+    } else {
+        C.printf("move cannot raise, so the element is moved\n");
+    }
+    return 0;
+}
+
+fn main() int except {
+    move_path<int>();
+    move_path<String>();
+    return 0;
+}
 ```
+
+该程序两次输出 `move cannot raise, so the element is moved`：`int` 与 `String` 的移动都
+不会抛异常，所以两者都走移动路径。
 
 `$MOVES(T)` 展开为查询本身 `except(T(util.fake<&&T>()))`，所以条件在书写处即可
 折叠。使用它需要 `import std.util;`。

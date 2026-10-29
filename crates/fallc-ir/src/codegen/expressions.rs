@@ -33,6 +33,11 @@ impl<'ctx> Lowerer<'ctx> {
                         .to_owned(),
                 ))
             }
+            // A range is lowered by the parser to the `Range` construction it
+            // stands for, so reaching one here means that did not happen.
+            fallc_ast::ExprKind::Range(_) => Err(CodegenError::Emit(
+                "internal error: a range was not lowered to a construction".to_owned(),
+            )),
             // A lambda that captures nothing is a function, so its value is the
             // address of the function its body was emitted as.
             ExprKind::Lambda(lambda) => {
@@ -254,6 +259,136 @@ impl<'ctx> Lowerer<'ctx> {
             }
             // A fold or a pack count is a constant: the checker combined or
             // counted the pack's elements, and what is left is the number.
+            // A compile-time question, already answered: its value is the
+            // constant the checker recorded, so nothing is emitted for it.
+            ExprKind::Builtin(_) => {
+                let value = self.constant_values.get(&node.span).copied().unwrap_or(0);
+                Ok(Some(
+                    self.backend
+                        .context()
+                        .bool_type()
+                        .const_int(u64::from(value != 0), false)
+                        .as_basic_value_enum(),
+                ))
+            }
+            // `if (cond) { a } else { b }` standing where a value is wanted.
+            // The whole has a type the checker recorded, so the slot both arms
+            // write is allocated before either runs; the join reads it back.
+            ExprKind::IfValue(node) => {
+                let context = self.backend.context();
+                let function = self
+                    .current_function
+                    .ok_or_else(|| CodegenError::Emit("internal error: no function".to_owned()))?;
+                let value_ty = types.get(expr).cloned();
+                let Some(llvm_ty) = value_ty
+                    .as_ref()
+                    .and_then(|ty| TypeMapper::new(context).map(ty))
+                else {
+                    // No value to produce: the arms run for their effects.
+                    let condition = self.lower_condition(ast, types, builder, node.condition)?;
+                    let then_block = context.append_basic_block(function, "if.then");
+                    let join_block = context.append_basic_block(function, "if.end");
+                    builder
+                        .build_conditional_branch(condition, then_block, join_block)
+                        .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                    let bindings = self.current_bindings.clone();
+                    builder.position_at_end(then_block);
+                    self.lower_if_branch_into(ast, types, &bindings, builder, node.then_block, None)?;
+                    if !Self::is_terminated(builder) {
+                        builder
+                            .build_unconditional_branch(join_block)
+                            .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                    }
+                    builder.position_at_end(join_block);
+                    return Ok(None);
+                };
+                let entry = function
+                    .get_first_basic_block()
+                    .ok_or_else(|| CodegenError::Emit("internal error: no body".to_owned()))?;
+                let slot = self.create_entry_alloca(builder, entry, "if.value", llvm_ty);
+
+                let condition = self.lower_condition(ast, types, builder, node.condition)?;
+                let then_block = context.append_basic_block(function, "if.val.then");
+                let else_block = context.append_basic_block(function, "if.val.else");
+                let join_block = context.append_basic_block(function, "if.val.end");
+                builder
+                    .build_conditional_branch(condition, then_block, else_block)
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                let bindings = self.current_bindings.clone();
+
+                builder.position_at_end(then_block);
+                self.lower_if_branch_into(ast, types, &bindings, builder, node.then_block, Some(slot))?;
+                self.branch_to(builder, join_block)?;
+                builder.position_at_end(else_block);
+                match node.else_block {
+                    Some(block) => {
+                        self.lower_if_branch_into(ast, types, &bindings, builder, block, Some(slot))?;
+                    }
+                    None => {
+                        // No `else`: the condition was false and there is no
+                        // value to store, so the slot keeps what it had.
+                        let _ = builder.build_store(slot, llvm_ty.const_zero());
+                    }
+                }
+                self.branch_to(builder, join_block)?;
+
+                builder.position_at_end(join_block);
+                if !self.is_reachable(join_block) {
+                    builder
+                        .build_unreachable()
+                        .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                    return Ok(None);
+                }
+                let value = builder
+                    .build_load(llvm_ty, slot, "if.value")
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                Ok(Some(value))
+            }
+            // A block standing where a value is wanted: its statements run in
+            // their own scope, and the last expression -- the one written
+            // without a `;` -- is the value. A block with no such expression
+            // produces nothing.
+            ExprKind::Block(block) => {
+                let bindings = self.current_bindings.clone();
+                let statements = ast.block(*block).statements.clone();
+                let (tail, rest) = match statements.split_last() {
+                    Some((tail, rest)) => (Some(*tail), rest),
+                    None => (None, &[][..]),
+                };
+                let yields = tail.is_some_and(|stmt| {
+                    matches!(
+                        &ast.stmt(stmt).kind,
+                        fallc_ast::StmtKind::Expr(node) if node.yields_value
+                    )
+                });
+                self.binding_scopes.push(std::collections::HashMap::new());
+                self.drop_scopes.push(Vec::new());
+                self.defer_scopes.push(Vec::new());
+                for &stmt in rest {
+                    self.lower_stmt(ast, types, &bindings, builder, stmt)?;
+                }
+                let value = if yields {
+                    let Some(stmt) = tail else {
+                        return Ok(None);
+                    };
+                    let fallc_ast::StmtKind::Expr(node) = &ast.stmt(stmt).kind else {
+                        return Ok(None);
+                    };
+                    self.lower_expr(ast, types, builder, node.expr)?
+                } else {
+                    if let Some(stmt) = tail {
+                        self.lower_stmt(ast, types, &bindings, builder, stmt)?;
+                    }
+                    None
+                };
+                if !Self::is_terminated(builder) {
+                    self.emit_drops(ast, types, &bindings, builder)?;
+                }
+                self.defer_scopes.pop();
+                self.drop_scopes.pop();
+                self.binding_scopes.pop();
+                Ok(value)
+            }
             // `call()?` -- the call knows it is propagating from the record
             // the checker made, so this only has to produce its value.
             ExprKind::Propagate(node) => self.lower_expr(ast, types, builder, node.value),
@@ -365,6 +500,9 @@ impl<'ctx> Lowerer<'ctx> {
             }
             ExprKind::NestedInit(init) => {
                 self.lower_nested_init(ast, types, builder, init, node.span)
+            }
+            ExprKind::ArrayLiteral(literal) => {
+                self.lower_array_literal(ast, types, builder, expr, literal, node.span)
             }
             ExprKind::Field(field) => {
                 // `C.stdin` is an `extern` variable of another module: a name
@@ -1079,4 +1217,63 @@ impl<'ctx> Lowerer<'ctx> {
             .map_err(|error| CodegenError::Emit(error.to_string()))
     }
 
+}
+
+impl<'ctx> Lowerer<'ctx> {
+    /// Lowers one arm of an `if` used as a value.
+    ///
+    /// The arm is a block: its statements run in a scope of their own, and its
+    /// last expression -- written without a `;` -- is stored into `slot`, which
+    /// both arms share. An arm with no such expression stores nothing, and the
+    /// slot keeps what the other arm put there.
+    pub(super) fn lower_if_branch_into(
+        &mut self,
+        ast: &Ast,
+        types: &TypeTable,
+        bindings: &BindingTypes,
+        builder: &Builder<'static>,
+        block: BlockId,
+        slot: Option<inkwell::values::PointerValue<'static>>,
+    ) -> Result<(), CodegenError> {
+        let statements = ast.block(block).statements.clone();
+        let (tail, rest) = match statements.split_last() {
+            Some((tail, rest)) => (Some(*tail), rest),
+            None => (None, &[][..]),
+        };
+        let yields = tail.is_some_and(|stmt| {
+            matches!(
+                &ast.stmt(stmt).kind,
+                StmtKind::Expr(node) if node.yields_value
+            )
+        });
+        self.binding_scopes.push(std::collections::HashMap::new());
+        self.drop_scopes.push(Vec::new());
+        self.defer_scopes.push(Vec::new());
+        for &stmt in rest {
+            self.lower_stmt(ast, types, bindings, builder, stmt)?;
+        }
+        match (yields, tail, slot) {
+            (true, Some(stmt), Some(storage)) => {
+                let StmtKind::Expr(node) = &ast.stmt(stmt).kind else {
+                    return Ok(());
+                };
+                if let Some(value) = self.lower_expr(ast, types, builder, node.expr)? {
+                    builder
+                        .build_store(storage, value)
+                        .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                }
+            }
+            (_, Some(stmt), _) => {
+                self.lower_stmt(ast, types, bindings, builder, stmt)?;
+            }
+            _ => {}
+        }
+        if !Self::is_terminated(builder) {
+            self.emit_drops(ast, types, bindings, builder)?;
+        }
+        self.defer_scopes.pop();
+        self.drop_scopes.pop();
+        self.binding_scopes.pop();
+        Ok(())
+    }
 }

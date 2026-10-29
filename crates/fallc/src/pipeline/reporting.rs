@@ -301,7 +301,7 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
     register_imported_enums(&mut checker, &imported_enums);
     register_imported_interfaces(&mut checker, &imported_interfaces);
     // The third field says whether the object is one per thread; an
-    // `extern "C"` variable is a plain global.
+    // `@extern_C` variable is a plain global.
     let mut external_globals: std::collections::HashMap<
         String,
         (fallc_sema::Type, String, bool),
@@ -429,6 +429,7 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
         &checked.in_place_by_address,
         &checked.init_calls,
         &checked.method_calls,
+        &checked.indirect_receivers,
         &checked.assign_methods,
         &checked.deref_reads,
         &checked.pointer_targets,

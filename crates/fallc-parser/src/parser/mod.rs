@@ -410,9 +410,10 @@ mod tests {
 
 /// The prefixes a declaration may carry before its keyword.
 ///
-/// They read in a fixed order -- `extern "C"`, then `export`, then `constexpr`
-/// -- and each is optional. Grouped rather than passed separately because they
-/// travel together: every declaration form that accepts one accepts all three.
+/// `export` is a keyword written first, and the attributes that used to be
+/// keywords -- `@extern_C`, `@constexpr` and the rest -- follow it. Grouped
+/// rather than passed separately because they travel together: every
+/// declaration form that accepts one accepts all of them.
 #[derive(Clone, Debug, Default)]
 struct DeclarationPrefix {
     /// `export`

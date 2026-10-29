@@ -18,13 +18,29 @@ is still very young, and everything that follows from that is true:
   the shape of the products are still being decided.
 - **The CLI is not stable.** The spelling of options and the set of `--emit=` values may
   change without notice.
-- **Efficiency and compile speed are not the best.** The compiler is correctness-minded
-  rather than speed-minded: a cold build of a program that imports the standard library
-  is measured in seconds, not milliseconds, and memory use is not tuned.
+- **Generated code is not the best.** The compiler runs no optimisation passes by
+  default, so a program is as fast as the code the front end emits; memory use is not
+  tuned.
 - **There is no compatibility promise.** Until this section disappears, any build may
   break any program. Do not build anything you cannot afford to rewrite on top of it.
 
 For now, this is a toy compiler; in the future, I hope to see it flourish.
+
+## Build speed
+
+A module is compiled once and its products are cached: an interface, the compiled
+functions, and the list of templates that go with them. A second build of the same
+program reads those instead of reading the sources again.
+
+| program | first build | after the cache is warm |
+| --- | --- | --- |
+| `hello world` (`import C`) | 0.13 s | 0.05 s |
+| a program that imports the standard library | 8.3 s | 0.56 s |
+
+The first build of a program that imports the standard library is the slow case, and
+it is slow for the reason every compiler is: the standard library is 67 modules and
+the functions their bodies instantiate have to be compiled once. The cache is what
+keeps a program's own edit from paying that again.
 
 ## Philosophy
 
@@ -273,3 +289,13 @@ Adding a language feature keeps the tree compiling at every step:
 
 An observable rule is not done until a test pins it and the normative paragraph exists in
 `docs/language` -- in both languages, since the pair is the standard.
+
+## License
+
+Fallthrough is released under the [Apache License, Version 2.0](LICENSE). It is
+distributed in the hope that it will be useful, but **without any warranty**; without
+even the implied warranty of merchantability or fitness for a particular purpose.
+
+A program written in Fallthrough is not covered by this license at all. The compiler is
+licensed; the code it compiles is yours, under whatever terms you choose, and neither
+writing the language nor linking against its standard library changes that.

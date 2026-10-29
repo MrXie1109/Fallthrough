@@ -50,6 +50,11 @@ fn __init__(this &Deque<T, A>) void {
 }
 
 // Creates a deque of `count` copies of `value`.
+//
+// - `count`: how many copies to store, all at the back; zero makes an empty
+//   deque and allocates nothing
+// - `value`: the element each of the `count` slots is constructed from, so
+//   every element starts equal to it
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Deque<T, A>, count usize, value T) void {
@@ -67,6 +72,9 @@ fn __init__(this &Deque<T, A>, count usize, value T) void {
 }
 
 // Creates a deque with a copy of every element of `other`.
+//
+// - `other`: the deque to copy; its elements are copied front first, so the
+//   two deques share nothing afterwards
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Deque<T, A>, other &const Deque<T, A>) void {
@@ -85,6 +93,8 @@ fn __init__(this &Deque<T, A>, other &const Deque<T, A>) void {
 }
 
 // Creates a deque that takes the buffer of `other`.
+//
+// - `other`: the deque to take the buffer and allocator from, left empty
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Deque<T, A>, other &&Deque<T, A>) void {
@@ -100,6 +110,9 @@ fn __init__(this &Deque<T, A>, other &&Deque<T, A>) void {
 }
 
 // Copies the elements of `other` over this one.
+//
+// - `other`: the deque to copy; this deque's elements are destroyed first, so
+//   the result holds exactly `other`'s
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Deque<T, A>, other &const Deque<T, A>) void {
@@ -117,6 +130,8 @@ fn __assign__(this &Deque<T, A>, other &const Deque<T, A>) void {
 }
 
 // Takes the buffer of `other`, releasing what this deque held.
+//
+// - `other`: the deque to take the buffer from, left empty
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Deque<T, A>, other &&Deque<T, A>) void {
@@ -146,11 +161,19 @@ fn __drop__(this &Deque<T, A>) void {
 }
 
 // The slot holding the element at `index`.
+//
+// - `index`: the element's position, counted from the front as zero; it must
+//   be less than `length()`, and the slot is found by wrapping past the front
+//   index
 fn slot(this &Deque<T, A>, index usize) *T {
     return &this._data[(this._front + index) % this._cap];
 }
 
 // The slot holding the element at `index`, read through a constant deque.
+//
+// - `index`: the element's position, counted from the front as zero; it must
+//   be less than `length()`, and the slot is found by wrapping past the front
+//   index
 fn slot_of(this &const Deque<T, A>, index usize) *const T {
     return &this._data[(this._front + index) % this._cap];
 }
@@ -180,6 +203,9 @@ fn empty(this &const Deque<T, A>) bool {
 //
 // The elements are moved into the new buffer in order, so the front becomes
 // index zero again; a type whose move may raise is copied instead.
+//
+// - `wanted`: how many elements must fit without another allocation; the
+//   length is unchanged, so a value at or below `capacity()` does nothing
 export
 template <T type, A type = DefaultAllocator>
 fn reserve(this &Deque<T, A>, wanted usize) void {
@@ -211,6 +237,21 @@ fn reserve(this &Deque<T, A>, wanted usize) void {
 }
 
 // Adds `value` at the back.
+//
+// The same operation as `push_back`, under the shorter name a sequence uses.
+//
+// - `value`: the element to put at the back; it is moved out of the
+//   parameter's own storage rather than copied
+export
+template <T type, A type = DefaultAllocator>
+fn push(this &Deque<T, A>, value T) void {
+    this.push_back(value);
+}
+
+// Adds `value` at the back.
+//
+// - `value`: the element to put at the back; it is moved out of the
+//   parameter's own storage rather than copied
 export
 template <T type, A type = DefaultAllocator>
 fn push_back(this &Deque<T, A>, value T) void {
@@ -223,6 +264,9 @@ fn push_back(this &Deque<T, A>, value T) void {
 }
 
 // Adds `value` at the front.
+//
+// - `value`: the element to put at the front; it is moved out of the
+//   parameter's own storage rather than copied
 export
 template <T type, A type = DefaultAllocator>
 fn push_front(this &Deque<T, A>, value T) void {
@@ -306,6 +350,9 @@ fn back(this &Deque<T, A>) &T {
 }
 
 // Returns the element at `index`.
+//
+// - `index`: the element's position, counted from the front as zero; it is
+//   not checked, so the caller must keep it below `length()`
 export
 template <T type, A type = DefaultAllocator>
 fn __getitem__(this &const Deque<T, A>, index usize) &const T {
@@ -313,6 +360,9 @@ fn __getitem__(this &const Deque<T, A>, index usize) &const T {
 }
 
 // Returns the element at `index` as a place that can be written.
+//
+// - `index`: the element's position, counted from the front as zero; it is
+//   not checked, so the caller must keep it below `length()`
 export
 template <T type, A type = DefaultAllocator>
 fn __getitem__(this &Deque<T, A>, index usize) &T {
@@ -363,6 +413,15 @@ fn __init__(this &DequeIterator<T, A>) void {
     this.index = 0;
 }
 
+// Creates a position from the deque's own state.
+//
+// - `data`: the buffer to walk, which the iterator copies rather than holds a
+//   reference to
+// - `cap`: how many slots the buffer has, which the step arithmetic wraps at
+// - `front`: the slot holding the deque's first element, which is what makes
+//   index zero mean the front
+// - `index`: how far along the walk the position stands, counted from the
+//   front as zero; it is not wrapped, so `end()` passes it as the length
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(
@@ -393,6 +452,9 @@ fn __deref__(this &DequeIterator<T, A>) &T {
 // A position `offset` slots further on, which is what makes a deque a random
 // access range: the algorithms move by an index rather than stepping one at a
 // time.
+//
+// - `offset`: how many slots further along the walk to stand, added to the
+//   current index; it is not wrapped, so the caller stays within `end()`
 export
 template <T type, A type = DefaultAllocator>
 fn __add__(this &const DequeIterator<T, A>, offset usize) DequeIterator<T, A> {
@@ -400,6 +462,10 @@ fn __add__(this &const DequeIterator<T, A>, offset usize) DequeIterator<T, A> {
 }
 
 // A position `offset` slots before this one.
+//
+// - `offset`: how many slots back along the walk to stand, subtracted from the
+//   current index; it is not wrapped, so the caller stops no earlier than
+//   `begin()`
 export
 template <T type, A type = DefaultAllocator>
 fn __sub__(this &const DequeIterator<T, A>, offset usize) DequeIterator<T, A> {
@@ -414,6 +480,9 @@ fn __dec__(this &DequeIterator<T, A>) void {
 }
 
 // Moves forward by `offset` slots in one step.
+//
+// - `offset`: how many slots further along the walk to stand, added to the
+//   current index
 export
 template <T type, A type = DefaultAllocator>
 fn __iadd__(this &DequeIterator<T, A>, offset usize) void {
@@ -421,6 +490,9 @@ fn __iadd__(this &DequeIterator<T, A>, offset usize) void {
 }
 
 // Moves back by `offset` slots in one step.
+//
+// - `offset`: how many slots back along the walk to stand, subtracted from the
+//   current index
 export
 template <T type, A type = DefaultAllocator>
 fn __isub__(this &DequeIterator<T, A>, offset usize) void {
@@ -429,6 +501,9 @@ fn __isub__(this &DequeIterator<T, A>, offset usize) void {
 
 // The element `at` slots on, which is what makes `it[n]` read a random access
 // position the way a pointer does.
+//
+// - `at`: how many slots past this position to read, not including it, so
+//   zero is the element the position itself stands on
 export
 template <T type, A type = DefaultAllocator>
 fn __getitem__(this &DequeIterator<T, A>, at usize) &T {
@@ -436,18 +511,30 @@ fn __getitem__(this &DequeIterator<T, A>, at usize) &T {
 }
 
 // Whether this position comes before `other` in the walk.
+//
+// - `other`: the position to compare with; only the distance walked is
+//   compared, so an `end()` of one deque can order against a position of
+//   another
 export
 template <T type, A type = DefaultAllocator>
 fn __lt__(this &const DequeIterator<T, A>, other &const DequeIterator<T, A>) bool {
     return this.index < other.index;
 }
 
+// Whether two positions stand on the same slot of the same buffer.
+//
+// - `other`: the position to compare with, whose buffer and index must both
+//   match; two positions are never equal while they remain on one buffer
 export
 template <T type, A type = DefaultAllocator>
 fn __eq__(this &const DequeIterator<T, A>, other &const DequeIterator<T, A>) bool {
     return this.data == other.data && this.index == other.index;
 }
 
+// Whether two positions differ.
+//
+// - `other`: the position to compare with; this is the negation of `==`, so a
+//   different buffer alone makes the positions unequal
 export
 template <T type, A type = DefaultAllocator>
 fn __ne__(this &const DequeIterator<T, A>, other &const DequeIterator<T, A>) bool {
@@ -473,6 +560,15 @@ fn __init__(this &ConstDequeIterator<T, A>) void {
     this.index = 0;
 }
 
+// Creates a read-only position from the deque's own state.
+//
+// - `data`: the buffer to walk, which the iterator copies rather than holds a
+//   reference to
+// - `cap`: how many slots the buffer has, which the step arithmetic wraps at
+// - `front`: the slot holding the deque's first element, which is what makes
+//   index zero mean the front
+// - `index`: how far along the walk the position stands, counted from the
+//   front as zero; it is not wrapped, so `end()` passes it as the length
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(
@@ -501,6 +597,9 @@ fn __deref__(this &const ConstDequeIterator<T, A>) &const T {
 }
 
 // A position `offset` slots further on.
+//
+// - `offset`: how many slots further along the walk to stand, added to the
+//   current index; it is not wrapped, so the caller stays within `end()`
 export
 template <T type, A type = DefaultAllocator>
 fn __add__(
@@ -511,6 +610,10 @@ fn __add__(
 }
 
 // A position `offset` slots before this one.
+//
+// - `offset`: how many slots back along the walk to stand, subtracted from the
+//   current index; it is not wrapped, so the caller stops no earlier than
+//   `begin()`
 export
 template <T type, A type = DefaultAllocator>
 fn __sub__(
@@ -528,6 +631,9 @@ fn __dec__(this &ConstDequeIterator<T, A>) void {
 }
 
 // Moves forward by `offset` slots in one step.
+//
+// - `offset`: how many slots further along the walk to stand, added to the
+//   current index
 export
 template <T type, A type = DefaultAllocator>
 fn __iadd__(this &ConstDequeIterator<T, A>, offset usize) void {
@@ -535,6 +641,9 @@ fn __iadd__(this &ConstDequeIterator<T, A>, offset usize) void {
 }
 
 // Moves back by `offset` slots in one step.
+//
+// - `offset`: how many slots back along the walk to stand, subtracted from the
+//   current index
 export
 template <T type, A type = DefaultAllocator>
 fn __isub__(this &ConstDequeIterator<T, A>, offset usize) void {
@@ -542,6 +651,9 @@ fn __isub__(this &ConstDequeIterator<T, A>, offset usize) void {
 }
 
 // The element `at` slots on.
+//
+// - `at`: how many slots past this position to read, not including it, so
+//   zero is the element the position itself stands on
 export
 template <T type, A type = DefaultAllocator>
 fn __getitem__(this &const ConstDequeIterator<T, A>, at usize) &const T {
@@ -549,6 +661,10 @@ fn __getitem__(this &const ConstDequeIterator<T, A>, at usize) &const T {
 }
 
 // Whether this position comes before `other` in the walk.
+//
+// - `other`: the position to compare with; only the distance walked is
+//   compared, so an `end()` of one deque can order against a position of
+//   another
 export
 template <T type, A type = DefaultAllocator>
 fn __lt__(
@@ -558,6 +674,10 @@ fn __lt__(
     return this.index < other.index;
 }
 
+// Whether two positions stand on the same slot of the same buffer.
+//
+// - `other`: the position to compare with, whose buffer and index must both
+//   match; two positions are never equal while they remain on one buffer
 export
 template <T type, A type = DefaultAllocator>
 fn __eq__(
@@ -567,6 +687,10 @@ fn __eq__(
     return this.data == other.data && this.index == other.index;
 }
 
+// Whether two positions differ.
+//
+// - `other`: the position to compare with; this is the negation of `==`, so a
+//   different buffer alone makes the positions unequal
 export
 template <T type, A type = DefaultAllocator>
 fn __ne__(
@@ -621,6 +745,9 @@ fn __init__(this &Queue<T, A>) void {
 
 
 // Copies another queue, values included.
+//
+// - `other`: the queue to copy; its elements are copied front first, so the
+//   two queues share nothing afterwards
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Queue<T, A>, other &const Queue<T, A>) void {
@@ -628,6 +755,8 @@ fn __init__(this &Queue<T, A>, other &const Queue<T, A>) void {
 }
 
 // Takes another queue's storage.
+//
+// - `other`: the queue to take the buffer and allocator from, left empty
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Queue<T, A>, other &&Queue<T, A>) void {
@@ -635,6 +764,9 @@ fn __init__(this &Queue<T, A>, other &&Queue<T, A>) void {
 }
 
 // Copies another queue over this one.
+//
+// - `other`: the queue to copy; this queue's own elements are dropped first,
+//   so the result holds exactly `other`'s
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Queue<T, A>, other &const Queue<T, A>) void {
@@ -642,6 +774,8 @@ fn __assign__(this &Queue<T, A>, other &const Queue<T, A>) void {
 }
 
 // Takes another queue's storage over this one.
+//
+// - `other`: the queue to take the buffer from, left empty
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Queue<T, A>, other &&Queue<T, A>) void {
@@ -655,6 +789,9 @@ fn __drop__(this &Queue<T, A>) void {
 }
 
 // Adds `value` at the back of the queue.
+//
+// - `value`: the element to enqueue; it is moved out of the parameter's own
+//   storage rather than copied, and it will be the last one out
 export
 template <T type, A type = DefaultAllocator>
 fn push(this &Queue<T, A>, value T) void {
@@ -714,6 +851,9 @@ fn __init__(this &Stack<T, A>) void {
 
 
 // Copies another stack, values included.
+//
+// - `other`: the stack to copy, bottom first; the two stacks share nothing
+//   afterwards
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Stack<T, A>, other &const Stack<T, A>) void {
@@ -721,6 +861,8 @@ fn __init__(this &Stack<T, A>, other &const Stack<T, A>) void {
 }
 
 // Takes another stack's storage.
+//
+// - `other`: the stack to take the buffer and allocator from, left empty
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Stack<T, A>, other &&Stack<T, A>) void {
@@ -728,6 +870,9 @@ fn __init__(this &Stack<T, A>, other &&Stack<T, A>) void {
 }
 
 // Copies another stack over this one.
+//
+// - `other`: the stack to copy; this stack's own elements are dropped first,
+//   so the result holds exactly `other`'s
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Stack<T, A>, other &const Stack<T, A>) void {
@@ -735,6 +880,8 @@ fn __assign__(this &Stack<T, A>, other &const Stack<T, A>) void {
 }
 
 // Takes another stack's storage over this one.
+//
+// - `other`: the stack to take the buffer from, left empty
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Stack<T, A>, other &&Stack<T, A>) void {
@@ -748,6 +895,9 @@ fn __drop__(this &Stack<T, A>) void {
 }
 
 // Puts `value` on top of the stack.
+//
+// - `value`: the element to push; it is moved out of the parameter's own
+//   storage rather than copied, and it becomes the next one `pop` returns
 export
 template <T type, A type = DefaultAllocator>
 fn push(this &Stack<T, A>, value T) void {
@@ -790,4 +940,18 @@ export
 template <T type, A type = DefaultAllocator>
 fn clear(this &Stack<T, A>) void {
     this.items.clear();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <T type, A type>
+fn cbegin(this &const Deque<T, A>) ConstDequeIterator<T, A> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <T type, A type>
+fn cend(this &const Deque<T, A>) ConstDequeIterator<T, A> {
+    return this.end();
 }

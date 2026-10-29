@@ -306,6 +306,45 @@ impl TypeChecker {
         ast: &Ast,
         resolutions: &Resolutions,
     ) -> bool {
+        // A templated method's receiver is a *pattern*: `this &const [N]int`
+        // says the receiver is an array and binds `N` to its length. Without
+        // this the length would be undecided while the candidate is compared,
+        // and a method written against `[N]T` would fit no receiver at all.
+        if !candidate.template_params.is_empty() {
+            let previous = self.substitution.clone();
+            let mut deduced = std::collections::HashMap::new();
+            let mut values = std::collections::HashMap::new();
+            // A receiver is written `&T` or `&const T`; the deduction unwraps
+            // the reference itself, so the pattern is what is compared.
+            if let Some(pattern) = candidate.param_types.first() {
+                self.deduce_from_type(
+                    ast,
+                    pattern,
+                    receiver,
+                    &candidate.template_params,
+                    &mut deduced,
+                    &mut values,
+                );
+            }
+            let mut mine = crate::template::Substitution::default();
+            for (name, ty) in deduced {
+                mine.bind(name, crate::template::TemplateArgument::Type(ty));
+            }
+            for (name, value) in values {
+                mine.bind(name, crate::template::TemplateArgument::Int(value));
+            }
+            let merged = match previous.clone() {
+                Some(outer) => {
+                    let mut merged = outer;
+                    for (name, argument) in mine.int_bindings() {
+                        merged.bind(name, crate::template::TemplateArgument::Int(argument));
+                    }
+                    merged
+                }
+                None => mine,
+            };
+            self.substitution = Some(merged);
+        }
         let declared = candidate.param_types.len().saturating_sub(1);
         // Which parameter after `this` each written argument fills: a
         // positional one fills the parameter in its position, a named one the
@@ -369,6 +408,13 @@ impl TypeChecker {
             && short_name(&written) != short_name(given)
         {
             return false;
+        }
+        // A receiver written as a bare template parameter -- `this &const T` --
+        // is a pattern: it fits whatever the receiver is, and the instantiation
+        // binds `T` to it. The name is what says so, because the parameter is
+        // not a type family's and so has no family to compare against.
+        if self.written_names_a_template_parameter(this) {
+            return true;
         }
         let this_ty = self.resolve_type_syntax(this, true);
         if self.mentions_unspecified(&this_ty) {
@@ -772,13 +818,34 @@ impl TypeChecker {
                                 // Nothing to compare the name with: a receiver
                                 // written against a family's parameters is one
                                 // this table owns, because only the declaring
-                                // module wrote it.
-                                _ => self.mentions_template_parameter_syntax(written),
+                                // module wrote it. A receiver written against a
+                                // *value* parameter -- `this &const [N]const c8`
+                                // -- is the same case with a length instead of
+                                // a type: the declaration is a template, so no
+                                // member of the receiver exists yet and this
+                                // table is where the method came from.
+                                // A receiver written as a template parameter
+                                // -- `this &const T` -- names no type at all:
+                                // it is a pattern, and the call binds it. The
+                                // name is what has to be looked at, because
+                                // every undeclared name in a signature is one
+                                // of these and nothing else is.
+                                _ => self.mentions_template_parameter_syntax(written)
+                                    || self.written_mentions_a_value_parameter(written)
+                                    || self.written_names_a_template_parameter(written),
                             };
                         }
                         let expected = self.resolve_type_syntax(written, true);
-                        !self.mentions_unspecified(&expected)
-                            && self.receiver_fits(&receiver_ty, &expected)
+                        // A receiver written against a length the declaration
+                        // parameterised -- `this &const [N]const c8` -- cannot
+                        // be resolved until an instantiation supplies `N`, so
+                        // what is compared is the family it names, not its
+                        // shape. The instantiation re-checks the fit with `N`
+                        // in hand, which is where a wrong receiver is caught.
+                        (self.mentions_unspecified(&expected)
+                            && self.written_mentions_a_value_parameter(written))
+                            || (!self.mentions_unspecified(&expected)
+                                && self.receiver_fits(&receiver_ty, &expected))
                     })
                     .unwrap_or(false)
             });
@@ -837,7 +904,63 @@ impl TypeChecker {
             })
             .cloned()
             .collect();
-        let candidates = if members.is_empty() { candidates } else { members };
+        let mut candidates = if members.is_empty() { candidates } else { members };
+        // Nothing takes the call on the receiver as it stands, so `.` reaches
+        // through an indirection, exactly as `->` does: `it.length()` on an
+        // iterator is `it->length()`, which is the sugar this rule exists for.
+        //
+        // The referent is tried only now, after the receiver's own methods, so
+        // that a wrapper's own `size()` still means its own.
+        // "No candidate takes the receiver" is not the same as "no candidate
+        // exists": the name is declared for other receivers, so the list is
+        // full and every entry is filtered out later. The test has to be
+        // whether one of them fits, not whether the list is empty.
+        let original_candidates = candidates.clone();
+        // "Fits" includes "is a pattern": a receiver written `this &const T`
+        // belongs to every type, so the instantiation decides afterwards.
+        let any_fits = candidates.iter().any(|signature| {
+            signature.param_names.first().is_some_and(|name| name == "this")
+                && signature.param_types.first().is_some_and(|written| {
+                    if self.written_names_a_template_parameter(written) {
+                        return true;
+                    }
+                    let expected = self.resolve_type_syntax(written, true);
+                    self.receiver_fits(&receiver_ty, &expected)
+                })
+        });
+        if !any_fits
+            && let Some((inner, symbol)) = self.indirect_receiver_call(resolutions, &receiver_ty)
+        {
+            let lookup_inner = lookup.clone();
+            let referent_substitution = self.receiver_substitution(&inner);
+            let previous = match &referent_substitution {
+                Some(substitution) => self.substitution.replace(substitution.clone()),
+                None => self.substitution.take(),
+            };
+            candidates = self
+                .definitions_named_for_method(resolutions, &lookup_inner)
+                .into_iter()
+                .filter_map(|def| def.signature.clone())
+                .filter(|signature| {
+                    signature
+                        .param_names
+                        .first()
+                        .is_some_and(|name| name == "this")
+                        && signature.param_types.first().is_some_and(|written| {
+                            let expected = self.resolve_type_syntax(written, true);
+                            self.receiver_fits(&inner, &expected)
+                        })
+                })
+                .collect();
+            self.substitution = previous;
+            if candidates.is_empty() {
+                // Nothing on the referent either: the original list is what
+                // the diagnostic describes, so it is what the call keeps.
+                candidates = original_candidates;
+            } else {
+                self.indirect_receivers.insert(span, symbol);
+            }
+        }
         self.substitution = caller_substitution.clone();
         let Some(first) = candidates.first() else {
             // A primitive's lifetime methods are built in, and a declared type
@@ -953,6 +1076,12 @@ impl TypeChecker {
                             .param_types
                             .first()
                             .map(|written| {
+                                // A receiver written as a template parameter is
+                                // a pattern and takes any type, so it is not
+                                // "a method for other receivers".
+                                if self.written_names_a_template_parameter(written) {
+                                    return true;
+                                }
                                 let expected = self.resolve_type_syntax(written, true);
                                 self.receiver_fits(&receiver_ty, &expected)
                             })
@@ -1040,17 +1169,13 @@ impl TypeChecker {
             .map(|syntax| self.resolve_type_syntax(syntax, true))
             .collect();
         let expected = resolved_params.first().cloned()?;
-        if expected.pointee().is_none() {
-            self.diagnostics.push(
-                Diagnostic::error(format!(
-                    "`{}` is a member function, so its `this` must be a pointer",
-                    field.field
-                ))
-                .with_code(DiagnosticCode::sema(63))
-                .with_span(span),
-            );
-            return None;
-        }
+        // A receiver may be a pointer, a reference -- `&T`, `&const T`,
+        // `&volatile T` -- or the value itself. A value receiver gets a copy,
+        // so a method that modifies `this` through one does not change the
+        // object; the language allows it because reading through a copy is
+        // sometimes what a small type wants, and the alternative is forcing
+        // every caller to write an address.
+        let _ = &expected;
 
         // Calling on a value takes its address; calling on a pointer uses it
         // directly. Both reach the same `this`.
@@ -1061,7 +1186,48 @@ impl TypeChecker {
         // calling file and `String` inside the module are one type, and asking
         // for both spellings to match rejected every method call on an
         // imported type.
-        if !self.receiver_fits(receiver_ty, &expected) {
+        // `.` reaches through an indirection: a type that defines `__deref__`
+        // or `__pointer__` can be called on as the thing it points at, exactly
+        // as a pointer can. The method is looked up on the receiver first --
+        // that is the plain member rule, and it is what a type's own method
+        // means -- and the indirection is tried only when no method of the
+        // receiver's own type applies.
+        let dereferenced = if self.receiver_fits(receiver_ty, &expected) {
+            None
+        } else {
+            self.dereferenced_receiver(receiver_ty, resolutions)
+        };
+        let mut through_indirection = false;
+        if let Some(inner) = &dereferenced
+            && self.receiver_fits(inner, &expected)
+        {
+            through_indirection = true;
+            // The call that reaches the referent is recorded under the call's
+            // own span, so code generation can make it before it passes the
+            // receiver. Without this the receiver's own bits were handed to a
+            // method of another type, which read the wrapper's first word as
+            // the referent's.
+            for method in [
+                fallc_ast::special::SpecialMethod::Deref,
+                fallc_ast::special::SpecialMethod::Pointer,
+            ] {
+                if let Some(call) =
+                    self.special_method_call(resolutions, receiver_ty, method.name(), 1)
+                {
+            self.indirect_receivers.insert(span, call.symbol);
+                    break;
+                }
+            }
+        }
+        // A receiver written against a template parameter is a *pattern*: `this
+        // &const T` binds `T` to whatever the receiver is, and `this &const
+        // [N]T` binds `N` and `T` together. The check is therefore not "does it
+        // fit" but "this is the binding", and the instantiation then checks the
+        // body with the parameters standing for what they became. Something
+        // still unspecified anywhere inside is a parameter that has no binding
+        // yet, which is exactly the case a pattern describes.
+        let bound_by_pattern = self.mentions_unspecified(&expected);
+        if !through_indirection && !bound_by_pattern && !self.receiver_fits(receiver_ty, &expected) {
             self.diagnostics.push(
                 Diagnostic::error(format!(
                     "`{}` expects `this` to be `{}`, but `{}` was given",
@@ -1240,14 +1406,20 @@ impl TypeChecker {
                     // `T` bound by the receiver's member arguments be taken from
                     // the argument instead.
                     let mut names = std::collections::HashMap::new();
+                    let mut values = std::collections::HashMap::new();
                     self.deduce_from_type(
+                        ast,
                         expected_syntax,
                         &found,
                         &signature.template_params,
                         &mut names,
+                        &mut values,
                     );
                     for (name, ty) in names {
                         deduced.bind_type(name, ty);
+                    }
+                    for (name, value) in values {
+                        deduced.bind(name, crate::template::TemplateArgument::Int(value));
                     }
                 }
                 // The parameter may *wrap* the deduced name -- `value &T` is a
@@ -1296,6 +1468,30 @@ impl TypeChecker {
         // deduced: `sort_by(order Cmp)` is one function per comparator, and a
         // symbol mangled without `Cmp` made `Less<int>` and `Greater<int>`
         // share one body -- so whichever was emitted first sorted both ways.
+        // The receiver is a *pattern*: `this &const [N]int` says the receiver
+        // is an array and binds `N` to its length, which no argument supplies.
+        // Deduced before the symbol is built, because the symbol carries the
+        // receiver's type and an undecided `N` would give it `<invalid array
+        // length>` -- one symbol for every length, and a body whose `N` has no
+        // number.
+        if let Some(written) = signature.param_types.first() {
+            let mut names = std::collections::HashMap::new();
+            let mut values = std::collections::HashMap::new();
+            self.deduce_from_type(
+                ast,
+                written,
+                receiver_ty,
+                &signature.template_params,
+                &mut names,
+                &mut values,
+            );
+            for (name, ty) in names {
+                deduced.bind_type(name, ty);
+            }
+            for (name, value) in values {
+                deduced.bind(name, crate::template::TemplateArgument::Int(value));
+            }
+        }
         let mangling = if deduced.is_empty() {
             member_substitution.clone()
         } else {
@@ -1842,6 +2038,22 @@ impl TypeChecker {
         {
             return self.interface_of(behind_one_indirection(found)) == Some(interface);
         }
+        // A writable array satisfies a read-only one, which is the same
+        // widening a `*T` gets where a `*const T` is wanted: the callee may read
+        // the elements and cannot write them, so nothing the caller can observe
+        // changes. The other direction is refused -- a read-only array may not
+        // become writable.
+        if let (
+            Type::Array { element: found_element, len: found_len },
+            Type::Array { element: expected_element, len: expected_len },
+        ) = (found.unqualified(), expected.unqualified())
+            && found_len == expected_len
+            && matches!(**expected_element, Type::Const(_))
+            && !matches!(**found_element, Type::Const(_))
+            && found_element.unqualified() == expected_element.unqualified()
+        {
+            return true;
+        }
         // A function name used as a value decays to a pointer to it, exactly as
         // an array decays to a pointer to its first element. `p *fn(int) int =
         // inc;` is therefore a conversion and not a mistake, and `&inc` yields
@@ -2003,6 +2215,54 @@ impl TypeChecker {
         // `const` would let a caller write through a pointer the program
         // promised not to write through, so it needs an explicit `as`.
         is_const_widening(found, expected)
+    }
+
+    /// The type a `.` reaches through `__deref__` or `__pointer__`.
+    ///
+    /// A pointer is not the only type that stands in front of another: a
+    /// wrapper that defines `__deref__` names the same relationship, and `*w`
+    /// already reaches what it holds. This asks the same question for the
+    /// method-call spelling `w.m()`, which is the sugar for `w->m()`.
+    /// The referent of a receiver, and the call that reaches it.
+    ///
+    /// `__deref__` is preferred to `__pointer__` because it is the method that
+    /// says what the type *is*; `__pointer__` says what a member access
+    /// follows. Both reach one type, and a type that declares one has one
+    /// answer, so the order only matters for a type that declares both.
+    fn indirect_receiver_call(
+        &mut self,
+        resolutions: &Resolutions,
+        receiver: &Type,
+    ) -> Option<(Type, String)> {
+        for method in [
+            fallc_ast::special::SpecialMethod::Deref,
+            fallc_ast::special::SpecialMethod::Pointer,
+        ] {
+            if let Some(call) = self.special_method_call(resolutions, receiver, method.name(), 1) {
+                let referent = call
+                    .returns
+                    .referent()
+                    .cloned()
+                    .unwrap_or_else(|| call.returns.clone());
+                return Some((referent, call.symbol));
+            }
+        }
+        None
+    }
+
+    fn dereferenced_receiver(&mut self, receiver: &Type, resolutions: &Resolutions) -> Option<Type> {
+        for method in [
+            fallc_ast::special::SpecialMethod::Deref,
+            fallc_ast::special::SpecialMethod::Pointer,
+        ] {
+            if let Some(call) = self.special_method_call(resolutions, receiver, method.name(), 1) {
+                if let Some(referent) = call.returns.referent() {
+                    return Some(referent.clone());
+                }
+                return Some(call.returns);
+            }
+        }
+        None
     }
 
     /// Reports that `found` is not usable where `expected` was required.

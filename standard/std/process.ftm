@@ -27,7 +27,7 @@ import std.internal.process_sys;
 // A program started and not yet waited for.
 export type Process {
     // The POSIX process id, kept for signal calls and for `wait`.
-    _pid i32;
+    _pid int;
 }
 
 // Starts `program` with `arguments`, which do not include the program's name.
@@ -45,7 +45,7 @@ export fn spawn(program &const String, arguments &const Array<String>) Process e
         index += 1;
     }
     slots[count + 1] = nullptr;
-    pid i32 = process_sys.spawn(program.data(), slots)??;
+    pid int = process_sys.spawn(program.data(), slots)??;
     util.free(slots as *byte);
     started Process = .{ pid };
     return started;
@@ -57,7 +57,7 @@ export fn spawn(program &const String, arguments &const Array<String>) Process e
 export fn wait(this &Process) int except {
     // The two platforms hand back different things: a raw `waitpid` status on
     // POSIX, an exit code on Windows. Each is decoded where it is understood.
-    raw i32 = process_sys.wait(this._pid)??;
+    raw int = process_sys.wait(this._pid)??;
     // The process is reaped, so this handle no longer names a running program:
     // leaving the pid here made `running()` answer true after `wait`.
     this._pid = 0;
@@ -80,5 +80,5 @@ export fn signal(this &Process, number int) bool {
     if (this._pid == 0) {
         return false;
     }
-    return process_sys.send_signal(this._pid, number as i32);
+    return process_sys.send_signal(this._pid, number as int);
 }

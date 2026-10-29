@@ -16,7 +16,7 @@
 
 import C;
 import std.fs;
-// `cwd`, `temp_dir` and `home` return a `Path`, and a program that imported
+// `cwd`, `tempdir` and `home` return a `Path`, and a program that imported
 // only this module has to be able to name it. The rest of `std.fs` stays with
 // `std.fs`: a module exports what its own API needs, not everything its
 // dependencies happen to declare.
@@ -41,7 +41,7 @@ export fn exit(code int) void {
 
 // The value of the environment variable `name`.
 //
-// Raises `KeyError` when the variable is not set; `has_env` is the question form
+// Raises `KeyError` when the variable is not set; `hasenv` is the question form
 // for a program for which that is ordinary.
 export fn getenv(name *const char) String except {
     raw *const char = os_sys.env_raw(name);
@@ -52,7 +52,7 @@ export fn getenv(name *const char) String except {
 }
 
 // Whether the environment has a variable named `name`.
-export fn has_env(name *const char) bool {
+export fn hasenv(name *const char) bool {
     return os_sys.env_raw(name) != nullptr;
 }
 
@@ -60,8 +60,8 @@ export fn has_env(name *const char) bool {
 //
 // It is this process's environment: a child started afterwards sees it, and the
 // parent's environment does not change.
-export fn set_env(name *const char, value *const char) bool {
-    return os_sys.set_env(name, value);
+export fn setenv(name *const char, value *const char) bool {
+    return os_sys.setenv(name, value);
 }
 
 // The current working directory.
@@ -79,7 +79,7 @@ export fn chdir(path &const Path) bool {
 }
 
 // A temporary directory: `TMPDIR`, or the platform's own when it is unset.
-export fn temp_dir() Path {
+export fn tempdir() Path {
     name *const char = os_sys.env_raw("TMPDIR");
     if (name == nullptr) {
         name = os_sys.env_raw("TEMP");

@@ -94,6 +94,11 @@ fn __init__(this &Array<T>) void {
 }
 
 // Creates an array holding `count` copies of `value`.
+//
+// - `count`: how many copies to store; zero leaves an empty array and
+//   allocates nothing
+// - `value`: the element each of the `count` slots is constructed from, so
+//   every element starts equal to it
 export
 template <T type>
 fn __init__(this &Array<T>, count usize, value T) void {
@@ -118,6 +123,9 @@ fn __init__(this &Array<T>, count usize, value T) void {
 // The slots are raw storage, so each element is constructed rather than
 // assigned over: an assignment would expect a live destination, and a `String`
 // destination would free a buffer that was never allocated.
+//
+// - `other`: the array to copy, whose elements are copied one at a time; an
+//   empty source leaves an empty array and allocates nothing
 export
 template <T type>
 fn __init__(this &Array<T>, other &const Array<T>) void {
@@ -145,6 +153,9 @@ fn __init__(this &Array<T>, other &const Array<T>) void {
 //
 // Taking the buffer means the source must not be dropped afterwards, which is
 // what an rvalue reference promises: nothing else can name it.
+//
+// - `other`: the array to take the buffer from, left empty: no buffer, no
+//   elements, so its destructor frees nothing
 export
 template <T type>
 fn __init__(this &Array<T>, other &&Array<T>) void {
@@ -171,6 +182,9 @@ fn __init__(this &Array<T>, other &&Array<T>) void {
 // The receiver's old elements are destroyed before the new ones are
 // constructed: the new ones go into raw slots, and keeping the old ones alive
 // would leak whatever they own.
+//
+// - `other`: the array to copy; its buffer is left untouched, and a source
+//   that is this same array is ignored
 export
 template <T type>
 fn __assign__(this &Array<T>, other &const Array<T>) void {
@@ -198,6 +212,9 @@ fn __assign__(this &Array<T>, other &const Array<T>) void {
 // Declared *after* the copying form, deliberately: see the note there. The
 // checker takes this form when the source is dying, which is the only time the
 // buffer may be taken; the copying form is what a named source reaches.
+//
+// - `other`: the array to take the buffer from, left empty; a source that is
+//   this same array is ignored, since its buffer is the one just released
 export
 template <T type>
 fn __assign__(this &Array<T>, other &&Array<T>) void {
@@ -278,6 +295,9 @@ fn data(this &const Array<T>) *const T {
 //
 // An index past the end is a programming error, and aborts rather than
 // returning a reference to whatever follows the buffer.
+//
+// - `index`: the element's position, counted from zero; anything at or past
+//   `length()` aborts
 export
 template <T type>
 fn __getitem__(this &Array<T>, index usize) &T {
@@ -295,6 +315,9 @@ fn __getitem__(this &Array<T>, index usize) &T {
 //
 // An index past the end is a programming error, and aborts rather than
 // returning a reference to whatever follows the buffer.
+//
+// - `index`: the element's position, counted from zero; anything at or past
+//   `length()` aborts
 export
 template <T type>
 fn __getitem__(this &const Array<T>, index usize) &const T {
@@ -316,6 +339,10 @@ fn __getitem__(this &const Array<T>, index usize) &const T {
 // The new buffer is raw storage: each existing element is constructed into it,
 // then the old one is destroyed. The construction is a copy, for the reason
 // "Growth copies" gives at the top of the file.
+//
+// - `wanted`: how many elements must fit; the capacity grows to at least that
+//   many and the length is unchanged, so a value at or below `capacity()`
+//   does nothing
 export
 template <T type>
 fn reserve(this &Array<T>, wanted usize) void {
@@ -385,6 +412,11 @@ fn shrink_to_fit(this &Array<T>) void {
 //
 // A shrinking resize destroys the elements it removes; a growing one
 // constructs each new element from `filler`.
+//
+// - `wanted`: the new number of elements; if it is below the current length,
+//   the elements past it are destroyed, and zero empties the array
+// - `filler`: the element each new slot is constructed from, used only when
+//   `wanted` is greater than the current length
 export
 template <T type>
 fn resize(this &Array<T>, wanted usize, filler T) void {
@@ -438,6 +470,9 @@ fn clear(this &Array<T>) void {
 // would take the contents out of a named argument, and placed second it would
 // never be reached. A dead overload is worse than none: it reads as a promise
 // that appending a temporary is free.
+//
+// - `value`: the element to copy into the new last slot, which becomes
+//   `length() - 1` after the push
 export
 template <T type>
 fn push(this &Array<T>, value T) void {
@@ -445,6 +480,17 @@ fn push(this &Array<T>, value T) void {
     slot *T = &this._data[this._len];
     slot->__init__(value);
     this._len += 1;
+}
+
+// Adds `value` at the end.
+//
+// The same operation as `push`, under the name a generic sequence expects.
+//
+// - `value`: the element to copy into the new last slot
+export
+template <T type>
+fn push_back(this &Array<T>, value T) void {
+    this.push(value);
 }
 
 // Inserts a copy of `value` at `index`, moving the rest along.
@@ -476,6 +522,11 @@ fn push(this &Array<T>, value T) void {
 // take the contents out of a named argument or never be reached. An insertion
 // is linear either way: the tail has to move, and saving one element copy does
 // not change that.
+//
+// - `at`: a pointer to the element the new one goes before; `end()` appends,
+//   and a pointer outside the array aborts. It is read as an offset before the
+//   buffer may be reallocated, so the caller does not have to refresh it
+// - `value`: the element to copy into the new position
 export
 template <T type>
 fn insert(this &Array<T>, at *T, value T) void {
@@ -519,6 +570,9 @@ fn insert(this &Array<T>, at *T, value T) void {
 // The tail is shifted by assignment, because each destination is an element
 // that is still alive: `__assign__` decides what happens to the value already
 // there. The copy left at the end is destroyed once it is out of the length.
+//
+// - `at`: a pointer to the element to remove; it must point into this array,
+//   and `end()` is already past the end, so it aborts
 export
 template <T type>
 fn erase(this &Array<T>, at *T) T {
@@ -653,6 +707,11 @@ type ArrayReverseIterator {
     _at *T;
 }
 
+// Creates a reverse position whose pointer is one past the element it yields.
+//
+// - `at`: the pointer the position holds, which must be one past the element
+//   it should yield: `end()` points at the last element, `begin()` past the
+//   front
 export
 template <T type>
 fn __init__(this &ArrayReverseIterator<T>, at *T) void {
@@ -676,13 +735,18 @@ fn __dec__(this &ArrayReverseIterator<T>) void {
 // positions is the negative of the distance between their pointers -- the same
 // convention C++'s reverse iterators take, and the one that keeps `n + (rbegin()
 // - it)` equal to the forward index.
-
+//
+// - `offset`: how many elements towards the front to move, so the pointer goes
+//   down by that many
 export
 template <T type>
 fn __add__(this &const ArrayReverseIterator<T>, offset usize) ArrayReverseIterator<T> {
     return ArrayReverseIterator<T>(this._at - offset);
 }
 
+//
+// - `offset`: how many elements back along the walk to stand, which moves the
+//   pointer up by that many, towards the back of the array
 export
 template <T type>
 fn __sub__(this &const ArrayReverseIterator<T>, offset usize) ArrayReverseIterator<T> {
@@ -691,6 +755,9 @@ fn __sub__(this &const ArrayReverseIterator<T>, offset usize) ArrayReverseIterat
 
 // The difference of two positions, which is negative when the left one comes
 // later in the walk -- that is, earlier in the array.
+//
+// - `other`: the position to measure from; the result is positive when this
+//   one is reached earlier, counted in elements moved by `++`
 export
 template <T type>
 fn __sub__(
@@ -700,24 +767,42 @@ fn __sub__(
     return -(this._at - other._at);
 }
 
+// Moves forward by `offset` elements, which the reverse walk takes as a move
+// towards the array's front.
+//
+// - `offset`: how many elements towards the front to move, subtracting it from
+//   the pointer
 export
 template <T type>
 fn __iadd__(this &ArrayReverseIterator<T>, offset usize) void {
     this._at = this._at - offset;
 }
 
+// Moves back by `offset` elements, which the reverse walk takes as a move
+// towards the array's back.
+//
+// - `offset`: how many elements back along the walk to stand, adding it to the
+//   pointer
 export
 template <T type>
 fn __isub__(this &ArrayReverseIterator<T>, offset usize) void {
     this._at = this._at + offset;
 }
 
+// The element `at` elements on in the reverse walk.
+//
+// - `at`: how many elements further along the walk to read, not including
+//   this one, so zero is the element the position itself yields
 export
 template <T type>
 fn __getitem__(this &const ArrayReverseIterator<T>, at usize) &T {
     return (this._at - 1 - at)[0];
 }
 
+// Whether this position comes before `other` in the walk.
+//
+// - `other`: the position to compare with; it comes before when its pointer is
+//   higher, which is the reverse of the pointer order
 export
 template <T type>
 fn __lt__(
@@ -736,6 +821,10 @@ fn __le__(
     return this._at >= other._at;
 }
 
+// Whether this position comes after `other` in the walk.
+//
+// - `other`: the position to compare with; it comes after when its pointer is
+//   lower, which is the reverse of the pointer order
 export
 template <T type>
 fn __gt__(
@@ -745,6 +834,10 @@ fn __gt__(
     return this._at < other._at;
 }
 
+// Whether this position comes at or after `other` in the walk.
+//
+// - `other`: the position to compare with; it comes at or after when its
+//   pointer is no higher, which is the reverse of the pointer order
 export
 template <T type>
 fn __ge__(
@@ -760,12 +853,20 @@ fn __deref__(this &ArrayReverseIterator<T>) &T {
     return (this._at - 1)[0];
 }
 
+// Whether two positions differ.
+//
+// - `other`: the position to compare with; positions are unequal when the
+//   pointers they hold are, regardless of the buffer
 export
 template <T type>
 fn __ne__(this &const ArrayReverseIterator<T>, other &const ArrayReverseIterator<T>) bool {
     return this._at != other._at;
 }
 
+// Whether two positions hold the same pointer.
+//
+// - `other`: the position to compare with; two positions are equal when the
+//   pointers they hold are, so a position equals itself
 export
 template <T type>
 fn __eq__(this &const ArrayReverseIterator<T>, other &const ArrayReverseIterator<T>) bool {
@@ -779,6 +880,11 @@ type ArrayConstReverseIterator {
     _at *const T;
 }
 
+// Creates a read-only reverse position whose pointer is one past its element.
+//
+// - `at`: the pointer the position holds, which must be one past the element
+//   it should yield: `rend()` points at the first element, `rbegin()` past the
+//   last
 export
 template <T type>
 fn __init__(this &ArrayConstReverseIterator<T>, at *const T) void {
@@ -797,6 +903,10 @@ fn __dec__(this &ArrayConstReverseIterator<T>) void {
     this._at = this._at + 1;
 }
 
+// A position `offset` elements further on, which moves towards the front.
+//
+// - `offset`: how many elements towards the front to move, so the pointer goes
+//   down by that many
 export
 template <T type>
 fn __add__(
@@ -806,6 +916,10 @@ fn __add__(
     return ArrayConstReverseIterator<T>(this._at - offset);
 }
 
+// A position `offset` elements before this one, which moves towards the back.
+//
+// - `offset`: how many elements back along the walk to stand, which moves the
+//   pointer up by that many, towards the back of the array
 export
 template <T type>
 fn __sub__(
@@ -815,6 +929,11 @@ fn __sub__(
     return ArrayConstReverseIterator<T>(this._at + offset);
 }
 
+// The difference of two positions, which is negative when the left one comes
+// later in the walk -- that is, earlier in the array.
+//
+// - `other`: the position to measure from; the result is positive when this
+//   one is reached earlier, counted in elements moved by `++`
 export
 template <T type>
 fn __sub__(
@@ -824,24 +943,42 @@ fn __sub__(
     return -(this._at - other._at);
 }
 
+// Moves forward by `offset` elements, which the reverse walk takes as a move
+// towards the array's front.
+//
+// - `offset`: how many elements towards the front to move, subtracting it from
+//   the pointer
 export
 template <T type>
 fn __iadd__(this &ArrayConstReverseIterator<T>, offset usize) void {
     this._at = this._at - offset;
 }
 
+// Moves back by `offset` elements, which the reverse walk takes as a move
+// towards the array's back.
+//
+// - `offset`: how many elements back along the walk to stand, adding it to the
+//   pointer
 export
 template <T type>
 fn __isub__(this &ArrayConstReverseIterator<T>, offset usize) void {
     this._at = this._at + offset;
 }
 
+// The element this position yields, walking backwards.
+//
+// - `at`: how many elements further along the walk to read, not including
+//   this one, so zero is the element the position itself yields
 export
 template <T type>
 fn __getitem__(this &const ArrayConstReverseIterator<T>, at usize) &const T {
     return (this._at - 1 - at)[0];
 }
 
+// Whether this position comes before `other` in the walk.
+//
+// - `other`: the position to compare with; it comes before when its pointer is
+//   higher, which is the reverse of the pointer order
 export
 template <T type>
 fn __lt__(
@@ -851,6 +988,10 @@ fn __lt__(
     return this._at > other._at;
 }
 
+// Whether this position comes at or before `other` in the walk.
+//
+// - `other`: the position to compare with; it comes at or before when its
+//   pointer is no lower, which is the reverse of the pointer order
 export
 template <T type>
 fn __le__(
@@ -860,6 +1001,10 @@ fn __le__(
     return this._at >= other._at;
 }
 
+// Whether this position comes after `other` in the walk.
+//
+// - `other`: the position to compare with; it comes after when its pointer is
+//   lower, which is the reverse of the pointer order
 export
 template <T type>
 fn __gt__(
@@ -869,6 +1014,10 @@ fn __gt__(
     return this._at < other._at;
 }
 
+// Whether this position comes at or after `other` in the walk.
+//
+// - `other`: the position to compare with; it comes at or after when its
+//   pointer is no higher, which is the reverse of the pointer order
 export
 template <T type>
 fn __ge__(
@@ -884,6 +1033,10 @@ fn __deref__(this &ArrayConstReverseIterator<T>) &const T {
     return (this._at - 1)[0];
 }
 
+// Whether two read-only positions differ.
+//
+// - `other`: the position to compare with; positions are unequal when the
+//   pointers they hold are
 export
 template <T type>
 fn __ne__(
@@ -893,6 +1046,10 @@ fn __ne__(
     return this._at != other._at;
 }
 
+// Whether two read-only positions hold the same pointer.
+//
+// - `other`: the position to compare with; two positions are equal when the
+//   pointers they hold are, so a position equals itself
 export
 template <T type>
 fn __eq__(
@@ -900,21 +1057,6 @@ fn __eq__(
     other &const ArrayConstReverseIterator<T>
 ) bool {
     return this._at == other._at;
-}
-
-// Returns a reverse position at the last element.
-export
-template <T type>
-fn rbegin(this &Array<T>) ArrayReverseIterator<T> {
-    return ArrayReverseIterator<T>(this._data + this._len);
-}
-
-// Returns a reverse position before the first element, where a reverse walk
-// stops.
-export
-template <T type>
-fn rend(this &Array<T>) ArrayReverseIterator<T> {
-    return ArrayReverseIterator<T>(this._data);
 }
 
 // Returns a position at the *last* element, walked towards the front.
@@ -945,4 +1087,53 @@ export
 template <T type>
 fn rend(this &const Array<T>) ArrayConstReverseIterator<T> {
     return ArrayConstReverseIterator<T>(this._data);
+}
+
+// The read-only forward walk, named as C++ names it.
+export
+template <T type>
+fn cbegin(this &const Array<T>) *const T {
+    return this._data;
+}
+
+// The read-only walk's stop.
+export
+template <T type>
+fn cend(this &const Array<T>) *const T {
+    return this._data + this._len;
+}
+
+// The read-only reverse walk's start.
+export
+template <T type>
+fn crbegin(this &const Array<T>) ArrayConstReverseIterator<T> {
+    return ArrayConstReverseIterator<T>(this._data + this._len);
+}
+
+// The read-only reverse walk's stop.
+export
+template <T type>
+fn crend(this &const Array<T>) ArrayConstReverseIterator<T> {
+    return ArrayConstReverseIterator<T>(this._data);
+}
+
+// The start of a walk over a fixed-length array.
+//
+// The elements are in line and the length is part of the type, so the walk is a
+// pointer and its stop is that pointer plus `N`.
+//
+// - `this`: the array to walk
+export
+template <T type, N usize>
+fn begin(this &const [N]const T) *const T {
+    return &this[0];
+}
+
+// The stop of a walk over a fixed-length array: one past its last element.
+//
+// - `this`: the array to walk
+export
+template <T type, N usize>
+fn end(this &const [N]const T) *const T {
+    return &this[0] + N;
 }

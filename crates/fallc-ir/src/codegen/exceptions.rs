@@ -118,7 +118,15 @@ impl<'ctx> Lowerer<'ctx> {
                         )?
                         .as_basic_value_enum(),
                     )
-                } else if returns_reference && !value_is_reference {
+                // A pointer *is* an address, like a reference: its value is
+                // what to return, and taking its lvalue would hand back the
+                // slot that holds the pointer. `return this.p;` in a function
+                // returning `&Inner`, where `p` is `*Inner`, returned the
+                // address of the field instead of what the field points at.
+                } else if returns_reference
+                    && !value_is_reference
+                    && !types.get(value).is_some_and(Type::is_pointer)
+                {
                     match self.lower_lvalue(ast, types, builder, value) {
                         Some(binding) => Some(binding.storage.as_basic_value_enum()),
                         // Not a place: the checker let it through only when it
@@ -507,24 +515,6 @@ impl<'ctx> Lowerer<'ctx> {
             .map_err(|error| CodegenError::Emit(error.to_string()))?;
         builder
             .build_unreachable()
-            .map_err(|error| CodegenError::Emit(error.to_string()))?;
-        Ok(())
-    }
-
-    /// Publishes `slot` as the exception being handled.
-    ///
-    /// `std.exception()` reads the global this writes, so anything that wants
-    /// the caught value to be visible to the standard library -- a written
-    /// `except` block, or the panic an `expr!!` reaches -- has to call this
-    /// before it runs the code that looks.
-    pub(super) fn register_handled_exception(
-        &mut self,
-        builder: &Builder<'static>,
-        slot: inkwell::values::PointerValue<'static>,
-    ) -> Result<(), CodegenError> {
-        let global = self.handled_global();
-        builder
-            .build_store(global, slot)
             .map_err(|error| CodegenError::Emit(error.to_string()))?;
         Ok(())
     }

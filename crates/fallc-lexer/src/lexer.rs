@@ -388,7 +388,11 @@ impl Lexer {
         // A `.` begins a fractional part. There is no ambiguity with member
         // access, because an integer is not a value that has members: `1.foo`
         // is not a meaningful expression in this language.
-        if cursor.peek() == Some(b'.') {
+        //
+        // A second `.` is not a fraction: `1..5` is the range 1 through 4, and
+        // taking the first dot as a decimal point would leave `.5` behind and
+        // report the range as a syntax error.
+        if cursor.peek() == Some(b'.') && cursor.peek_at(1) != Some(b'.') {
             is_float = true;
             cursor.bump();
             self.scan_digits(cursor, |b| b.is_ascii_digit());

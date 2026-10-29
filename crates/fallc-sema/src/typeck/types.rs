@@ -232,6 +232,22 @@ impl TypeChecker {
                 referent_is_const: inner_const || referent_is_const,
                 is_rvalue: inner_rvalue && is_rvalue,
             },
+            // `&const [N]T`: an array has no layer for a qualifier to sit on,
+            // so a read-only reference to one says its *elements* are read-only.
+            // Left on the reference, the `const` had nothing to constrain -- the
+            // element type stayed writable, and `&const [4]T` did not match the
+            // `[4]const T` an argument actually has.
+            Type::Array { element, len } if referent_is_const => Type::Reference {
+                referent: Box::new(Type::Array {
+                    element: Box::new(match *element {
+                        Type::Const(inner) => Type::Const(inner),
+                        other => Type::Const(Box::new(other)),
+                    }),
+                    len,
+                }),
+                referent_is_const: false,
+                is_rvalue,
+            },
             other => Type::Reference {
                 referent: Box::new(other),
                 referent_is_const,
@@ -346,6 +362,14 @@ impl TypeChecker {
                 if self.type_template_parameter(&named.path) {
                     return Type::unspecified(named.path.clone(), named.span);
                 }
+                // A bare name that no declaration in scope introduces, used in
+                // a template's own signature, is that template's parameter:
+                // `template <T type> fn f(this &const T)` has no `T` to look up
+                // until a call supplies one. The signature is a *pattern*, and
+                // a pattern's variables are not looked up -- they are bound.
+                if self.template_parameter_names.contains(&named.path) {
+                    return Type::unspecified(named.path.clone(), named.span);
+                }
                 if !self.resolving_probe && !named.path.is_empty() && named.arguments.is_empty() {
                     self.diagnostics.push(
                         Diagnostic::error(format!("cannot find type `{}`", named.path))
@@ -375,10 +399,27 @@ impl TypeChecker {
                 // a value qualifier. When it is the whole declared type of a
                 // binding, it is binding immutability.
                 let inner_ty = self.resolve_type_syntax(inner, in_parameter);
-                if in_parameter || self.resolving_nested_type {
-                    Type::Const(Box::new(inner_ty))
-                } else {
-                    inner_ty
+                if !(in_parameter || self.resolving_nested_type) {
+                    return inner_ty;
+                }
+                // An array has no layer for a qualifier to sit on: its elements
+                // are the array. `const [4]int` therefore says the same thing
+                // as `[4]const int`, and the two are one type. Pushing the
+                // qualifier onto the element is what makes that true here
+                // rather than in every comparison that would otherwise have to
+                // know about it.
+                match inner_ty.unqualified() {
+                    Type::Array { element, len } => Type::Array {
+                        // Already read-only stays read-only: `const [N]const T`
+                        // and `[N]const T` are one type, and wrapping twice
+                        // would spell it `const const`.
+                        element: Box::new(match **element {
+                            Type::Const(_) => (**element).clone(),
+                            _ => Type::Const(element.clone()),
+                        }),
+                        len: *len,
+                    },
+                    _ => Type::Const(Box::new(inner_ty)),
                 }
             }
             // `fn(int) int` is a function type. A parameter list is a parameter
@@ -558,6 +599,45 @@ impl TypeChecker {
         // the array's size depend on an optimisation the program never asked
         // for, and the same source would then mean different things under
         // different compilers.
+        //
+        // A bare name is the exception, because a template's `[N]T` writes one:
+        // `N` is the instantiation's number, not a constant of the module, so it
+        // is decided by the substitution rather than looked up. Before any
+        // substitution exists -- a method is matched against its receiver before
+        // its call is known -- the length is *undecided*, which is not the same
+        // as wrong: the declaration says what a template's array looks like, and
+        // the call is where a number arrives.
+        let is_a_name = matches!(
+            self.const_exprs.get(len.as_raw() as usize),
+            Some(ConstExpr::Named { .. })
+        );
+        if is_a_name {
+            return self.const_eval_int(len).and_then(|value| u64::try_from(value).ok());
+        }
+        // A length this checker cannot see the shape of -- a module's own
+        // template, whose expressions were indexed against another tree -- is
+        // undecided rather than wrong while a template is what is being read.
+        // The instantiation resolves it, and a length that is really not a
+        // constant is reported then.
+        if !self.template_parameter_names.is_empty() && self.const_eval_int(len).is_none() {
+            return None;
+        }
+        // A length whose shape this checker cannot see -- a module's own
+        // template, whose expressions were indexed against another tree -- is
+        // undecided rather than wrong while a template is what is being read.
+        // The instantiation resolves it, and a length that is really not a
+        // constant is reported then.
+        if self.const_eval_int(len).is_none() && !self.template_parameter_names.is_empty() {
+            return None;
+        }
+        // An expression id outside this index belongs to *another* tree: an
+        // exported template's signature is read again by an importer, and the
+        // ids in it were numbered in the module that wrote it. The length is
+        // undecided here and the instantiation decides it, which is the same
+        // answer a bare name gets.
+        if (len.as_raw() as usize) >= self.const_exprs.len() {
+            return None;
+        }
         if !self.require_constant(len, self.const_span(len), "an array length", 40) {
             return None;
         }
@@ -602,19 +682,29 @@ impl TypeChecker {
     /// that what a program may rely on is written down rather than inferred
     /// from how clever the compiler happens to be.
     pub(super) fn constant_expression_problem(&self, expr: ExprId) -> Option<ConstantProblem> {
-        // Already folded for this expression: `constexpr` template calls are
-        // the case, and the value is what makes it a constant.
-        if let Some(span) = self.const_expr_spans.get(expr.as_raw() as usize)
-            && self.constant_values.contains_key(span)
-        {
-            return None;
-        }
+        // A form already folded to a number is a constant: `sizeof`, an
+        // `except(..)` query, and a call to a type family's predicate -- the
+        // answer is known while compiling, which is what the position asks.
+        //
+        // A *function* call is different only in that the language asks for the
+        // `constexpr` promise, so the folded value alone does not settle it and
+        // the declaration is consulted below. That is why the table is
+        // consulted first but not trusted for a call.
+        let folded = self
+            .const_expr_spans
+            .get(expr.as_raw() as usize)
+            .is_some_and(|span| self.constant_values.contains_key(span));
         let node = self.const_exprs.get(expr.as_raw() as usize)?;
         match node {
             ConstExpr::Call { callee, args } => {
-                // A call is constant only through a `constexpr` function.
+                // A call is constant through a `constexpr` function, or through
+                // a type family's predicate, whose answer the fold already has.
                 let Some(function) = self.evaluable_functions.get(callee) else {
-                    return Some(ConstantProblem::NotAFunction(callee.clone()));
+                    return if self.constants_by_name.contains_key(callee) || folded {
+                        None
+                    } else {
+                        Some(ConstantProblem::NotAFunction(callee.clone()))
+                    };
                 };
                 if !function.is_constexpr {
                     return Some(ConstantProblem::NotConstexpr(callee.clone()));
@@ -635,7 +725,14 @@ impl TypeChecker {
                 None
             }
             ConstExpr::Named { name, .. } => {
-                if self.constants_by_name.contains_key(name) {
+                // A template's value parameter is a constant by declaration:
+                // `template <N usize>` says the caller writes a number for it,
+                // which is what makes `[N]T` a length and not a variable. Its
+                // number is decided per instantiation, so the check is about
+                // what the name *is*, not about what it currently stands for.
+                if self.constants_by_name.contains_key(name)
+                    || self.template_value_types.contains_key(name)
+                {
                     None
                 } else {
                     Some(ConstantProblem::NotAConstantName(name.clone()))
@@ -987,6 +1084,84 @@ impl TypeChecker {
     /// parameter called `A`. Asking every template in the program made a
     /// function with such a receiver look like a family method, so its
     /// definition was never emitted and calls to it failed in code generation.
+    /// Whether a written type has an array whose length is a name.
+    ///
+    /// A name there is either a value parameter of the enclosing template or a
+    /// named constant; only the first can be undecidable while a method is
+    /// being matched, and the caller treats "undecidable" as "the family
+    /// matches, the instantiation will confirm the shape".
+    /// Whether a written type names a template's type parameter.
+    ///
+    /// Such a name is a *pattern variable*: `template <T type> fn f(this
+    /// &const T)` says the receiver may be any type, and the call supplies it.
+    /// The name is read from the program's own list of parameters, because a
+    /// signature resolved before its instantiation exists has no other way to
+    /// tell a pattern variable from a misspelt type.
+    pub(super) fn written_names_a_template_parameter(
+        &self,
+        ty: &fallc_ast::TypeSyntax,
+    ) -> bool {
+        use fallc_ast::TypeSyntax;
+        match ty {
+            TypeSyntax::Named(named) => self.template_parameter_names.contains(&named.path),
+            // `[N]T` has a length that may be a value parameter, which is one
+            // of the same template's parameters under another kind.
+            TypeSyntax::Array(array) => {
+                // A length this checker cannot read belongs to another tree --
+                // an imported template's signature is written in the module that
+                // declared it, and its ids were numbered there. Such a length is
+                // a parameter by construction: a fixed one would have been
+                // folded before the signature was published.
+                let unknown_length = (array.len.as_raw() as usize) >= self.const_exprs.len();
+                (unknown_length
+                    || matches!(
+                        self.const_exprs.get(array.len.as_raw() as usize),
+                        Some(ConstExpr::Named { name, .. })
+                            if self.template_parameter_names.contains(name)
+                                || self.template_value_types.contains_key(name)
+                    ))
+                    || self.written_names_a_template_parameter(&array.element)
+            }
+            TypeSyntax::UnsizedArray(inner)
+            | TypeSyntax::Pointer(inner)
+            | TypeSyntax::PointerToConst(inner)
+            | TypeSyntax::ConstPointer(inner)
+            | TypeSyntax::Reference(inner)
+            | TypeSyntax::ConstReference(inner)
+            | TypeSyntax::RvalueReference(inner)
+            | TypeSyntax::ConstRvalueReference(inner)
+            | TypeSyntax::Volatile(inner)
+            | TypeSyntax::Const(inner) => self.written_names_a_template_parameter(inner),
+            _ => false,
+        }
+    }
+
+    pub(super) fn written_mentions_a_value_parameter(
+        &self,
+        ty: &fallc_ast::TypeSyntax,
+    ) -> bool {
+        use fallc_ast::TypeSyntax;
+        match ty {
+            TypeSyntax::Array(array) => {
+                matches!(
+                    self.const_exprs.get(array.len.as_raw() as usize),
+                    Some(ConstExpr::Named { .. })
+                ) || self.written_mentions_a_value_parameter(&array.element)
+            }
+            TypeSyntax::UnsizedArray(inner)
+            | TypeSyntax::Pointer(inner)
+            | TypeSyntax::PointerToConst(inner)
+            | TypeSyntax::ConstPointer(inner)
+            | TypeSyntax::Reference(inner)
+            | TypeSyntax::ConstReference(inner)
+            | TypeSyntax::RvalueReference(inner)
+            | TypeSyntax::ConstRvalueReference(inner)
+            | TypeSyntax::Volatile(inner)
+            | TypeSyntax::Const(inner) => self.written_mentions_a_value_parameter(inner),
+            _ => false,
+        }
+    }
+
     pub(super) fn mentions_template_parameter_syntax(&self, ty: &fallc_ast::TypeSyntax) -> bool {
         use fallc_ast::TypeSyntax;
         match ty {

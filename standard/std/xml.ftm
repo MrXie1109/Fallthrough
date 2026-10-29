@@ -77,7 +77,7 @@ export type XmlNode {
     // The attributes, in document order.
     _attributes Array<XmlAttribute>;
     // The child elements, in document order.
-    _children Array<u32>;
+    _children Array<uint>;
     // The element's own text.
     _text String;
 }
@@ -123,7 +123,7 @@ export type XmlDocument {
     // The nodes.
     _nodes Array<XmlNode>;
     // The root element's index.
-    _root u32;
+    _root uint;
 }
 
 // Creates an empty document.
@@ -150,9 +150,9 @@ export fn root(this &XmlDocument) XmlValue {
 }
 
 // Makes room for one node and returns its index.
-fn add_node(this &XmlDocument) u32 {
+fn add_node(this &XmlDocument) uint {
     node XmlNode = XmlNode();
-    index u32 = this._nodes.length() as u32;
+    index uint = this._nodes.length() as uint;
     this._nodes.push(util.move(node));
     return index;
 }
@@ -162,11 +162,11 @@ export type XmlValue {
     // The document.
     _document *XmlDocument;
     // The node's index.
-    _index u32;
+    _index uint;
 }
 
 // Builds a handle.
-export fn __init__(this &XmlValue, document *XmlDocument, index u32) void {
+export fn __init__(this &XmlValue, document *XmlDocument, index uint) void {
     this._document = document;
     this._index = index;
 }
@@ -240,6 +240,11 @@ type Parser {
 }
 
 // Creates a parser over `text`.
+
+// - `text`: the whole XML text the parser reads from, copied into the
+//   parser
+// - `document`: the document nodes are added to, pointed at rather than
+//   copied, so it must outlive the parser
 fn __init__(this &Parser, text &const String, document *XmlDocument) void {
     (&this._text)->__init__(text);
     this._index = 0usize;
@@ -254,7 +259,7 @@ export fn parse_xml(text &const String) XmlDocument except {
     if (!parser.at('<')) {
         raise "ValueError": "XML must start with an element";
     }
-    root_index u32 = parser.parse_element()??;
+    root_index uint = parser.parse_element()??;
     parser.skip_miscellaneous()??;
     if (parser._index != parser._text.length()) {
         raise "ValueError": "trailing text after the root element";
@@ -280,6 +285,10 @@ fn skip_miscellaneous(this &Parser) void except {
 }
 
 // Advances past `closing`, raising when the text ends first.
+
+// - `closing`: a null-terminated C string to scan for, such as `"-->"`; it
+//   and every byte before it are skipped, so the position ends up just
+//   past it
 fn skip_until(this &Parser, closing *const char) void except {
     length usize = c_length(closing);
     while (this._index + length <= this._text.length()) {
@@ -293,6 +302,9 @@ fn skip_until(this &Parser, closing *const char) void except {
 }
 
 // Whether the text at the parser matches `word`.
+
+// - `word`: a null-terminated C string compared byte for byte with the text
+//   at the current position
 fn matches(this &Parser, word *const char) bool {
     length usize = c_length(word);
     if (this._index + length > this._text.length()) {
@@ -309,14 +321,17 @@ fn matches(this &Parser, word *const char) bool {
 }
 
 // Whether the text at the parser starts with `word`.
+
+// - `word`: a null-terminated C string compared byte for byte with the text
+//   at the current position
 fn starts_with(this &Parser, word *const char) bool {
     return this.matches(word);
 }
 
 // Reads one element, returning its node index.
-fn parse_element(this &Parser) u32 except {
+fn parse_element(this &Parser) uint except {
     this.expect('<')??;
-    index u32 = this._document->add_node();
+    index uint = this._document->add_node();
     node *XmlNode = &this._document->_nodes[index as usize];
     node._name = this.parse_name()??;
     this.parse_attributes(node)??;
@@ -348,7 +363,7 @@ fn parse_element(this &Parser) u32 except {
             continue;
         }
         if (this.at('<')) {
-            child u32 = this.parse_element()??;
+            child uint = this.parse_element()??;
             node._children.push(child);
             continue;
         }
@@ -358,6 +373,8 @@ fn parse_element(this &Parser) u32 except {
 }
 
 // Reads attributes into `node` until the tag's end.
+
+// - `node`: the element the attributes are appended to, in document order
 fn parse_attributes(this &Parser, node *XmlNode) void except {
     while (true) {
         this.skip_space();
@@ -369,7 +386,7 @@ fn parse_attributes(this &Parser, node *XmlNode) void except {
         this.expect('=')??;
         this.skip_space();
         character char = this._text[this._index];
-        if (character != '"' as char && character != '\'' as char) {
+        if (character != '"' && character != '\'') {
             raise "ValueError": "an attribute value must be quoted";
         }
         this._index += 1;
@@ -394,11 +411,11 @@ fn parse_name(this &Parser) String except {
     start usize = this._index;
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if ((character >= 'a' as char && character <= 'z' as char)
-            || (character >= 'A' as char && character <= 'Z' as char)
-            || (character >= '0' as char && character <= '9' as char)
-            || character == '_' as char || character == '-' as char || character == ':' as char
-            || character == '.' as char)
+        if ((character >= 'a' && character <= 'z')
+            || (character >= 'A' && character <= 'Z')
+            || (character >= '0' && character <= '9')
+            || character == '_' || character == '-' || character == ':'
+            || character == '.')
         {
             this._index += 1;
         } else {
@@ -422,19 +439,22 @@ fn parse_text_run(this &Parser) String except {
 }
 
 // Decodes the entities a text or attribute value may contain.
+
+// - `raw`: text as the document has it, entities still written out, with
+//   each `&` running to its `;`
 fn decode_entities(raw &const String) String except {
     result String = String();
     index usize = 0;
     while (index < raw.length()) {
         current char = raw[index];
-        if (current != '&' as char) {
+        if (current != '&') {
             result.push(current);
             index += 1;
             continue;
         }
         // Find the semicolon after the ampersand.
         end usize = index + 1;
-        while (end < raw.length() && raw[end] != ';' as char) {
+        while (end < raw.length() && raw[end] != ';') {
             end += 1;
         }
         if (end >= raw.length()) {
@@ -448,6 +468,9 @@ fn decode_entities(raw &const String) String except {
 }
 
 // Decodes one entity name or number.
+
+// - `entity`: the bytes between the `&` and the `;`, so `lt` or `#x41` with
+//   neither the ampersand nor the terminator
 fn decode_entity(entity &const String) String except {
     if (entity == String("lt")) {
         return String("<");
@@ -464,9 +487,9 @@ fn decode_entity(entity &const String) String except {
     if (entity == String("apos")) {
         return String("'");
     }
-    if (entity.length() > 1 && entity[0] == '#' as char) {
-        value u32 = 0u32;
-        if (entity[1] == 'x' as char) {
+    if (entity.length() > 1 && entity[0] == '#') {
+        value uint = 0u32;
+        if (entity[1] == 'x') {
             index usize = 2;
             while (index < entity.length()) {
                 value = value * 16u32 + hex_digit(entity[index])??;
@@ -475,7 +498,7 @@ fn decode_entity(entity &const String) String except {
         } else {
             index usize = 1;
             while (index < entity.length()) {
-                value = value * 10u32 + ((entity[index] as int) - ('0' as int)) as u32;
+                value = value * 10u32 + ((entity[index] as int) - ('0' as int)) as uint;
                 index += 1;
             }
         }
@@ -485,15 +508,18 @@ fn decode_entity(entity &const String) String except {
 }
 
 // The value of one hex digit.
-fn hex_digit(character char) u32 except {
-    if (character >= '0' as char && character <= '9' as char) {
-        return ((character as int) - ('0' as int)) as u32;
+
+// - `character`: one hex digit, `0`-`9`, `a`-`f` or `A`-`F`; anything else
+//   raises `ValueError`
+fn hex_digit(character char) uint except {
+    if (character >= '0' && character <= '9') {
+        return ((character as int) - ('0' as int)) as uint;
     }
-    if (character >= 'a' as char && character <= 'f' as char) {
-        return (((character as int) - ('a' as int)) + 10) as u32;
+    if (character >= 'a' && character <= 'f') {
+        return (((character as int) - ('a' as int)) + 10) as uint;
     }
-    if (character >= 'A' as char && character <= 'F' as char) {
-        return (((character as int) - ('A' as int)) + 10) as u32;
+    if (character >= 'A' && character <= 'F') {
+        return (((character as int) - ('A' as int)) + 10) as uint;
     }
     raise "ValueError": "not a hex digit";
 }
@@ -502,8 +528,8 @@ fn hex_digit(character char) u32 except {
 fn skip_space(this &Parser) void {
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if (character == ' ' as char || character == '\t' as char
-            || character == '\n' as char || character == '\r' as char) {
+        if (character == ' ' || character == '\t'
+            || character == '\n' || character == '\r') {
             this._index += 1;
         } else {
             return;
@@ -512,6 +538,9 @@ fn skip_space(this &Parser) void {
 }
 
 // Whether the parser is looking at `character`.
+
+// - `character`: the character to look for; it is compared with the byte at
+//   the current position
 fn at(this &Parser, character char) bool {
     if (this._index >= this._text.length()) {
         return false;
@@ -520,6 +549,9 @@ fn at(this &Parser, character char) bool {
 }
 
 // Consumes `character` or raises.
+
+// - `character`: the one character the parser must be looking at; it is
+//   consumed, and anything else raises `ValueError`
 fn expect(this &Parser, character char) void except {
     if (!this.at(character)) {
         raise "ValueError": "unexpected character";
@@ -528,6 +560,9 @@ fn expect(this &Parser, character char) void except {
 }
 
 // The string without its surrounding whitespace.
+
+// - `text`: the element's text, trimmed on both sides; the result is a
+//   fresh string, and the argument is not changed
 fn trim_spaces(text &String) String {
     start usize = 0;
     while (start < text.length() && is_space(text[start])) {
@@ -541,12 +576,18 @@ fn trim_spaces(text &String) String {
 }
 
 // Whether a character is whitespace.
+
+// - `character`: the byte to test; space, tab, newline and carriage return
+//   count, and nothing else does
 fn is_space(character char) bool {
-    return character == ' ' as char || character == '\t' as char
-        || character == '\n' as char || character == '\r' as char;
+    return character == ' ' || character == '\t'
+        || character == '\n' || character == '\r';
 }
 
 // The length of a C string.
+
+// - `word`: a null-terminated C string; the bytes before the terminator
+//   are counted, and the terminator is not
 fn c_length(word *const char) usize {
     length usize = 0;
     while (word[length] != '\0') {
@@ -563,6 +604,10 @@ export fn serialize(value &const XmlValue) String except {
 }
 
 // Appends one element.
+
+// - `out`: the buffer the element is appended to; its existing text is
+//   kept
+// - `value`: a handle to the element to write, with its whole subtree
 fn write_element(out &String, value &const XmlValue) void except {
     node *XmlNode = value.node_of();
     out.push('<');
@@ -594,17 +639,21 @@ fn write_element(out &String, value &const XmlValue) void except {
 }
 
 // Appends text with the five entities escaped.
+
+// - `out`: the buffer the text is appended to
+// - `text_value`: the raw text to escape; `<`, `>`, `&` and `"` become entities
+//   and every other byte is written as it is, `'` among them
 fn write_escaped(out &String, text_value &const String) void {
     index usize = 0;
     while (index < text_value.length()) {
         character char = text_value[index];
-        if (character == '<' as char) {
+        if (character == '<') {
             out.push("&lt;");
-        } else if (character == '>' as char) {
+        } else if (character == '>') {
             out.push("&gt;");
-        } else if (character == '&' as char) {
+        } else if (character == '&') {
             out.push("&amp;");
-        } else if (character == '"' as char) {
+        } else if (character == '"') {
             out.push("&quot;");
         } else {
             out.push(character);

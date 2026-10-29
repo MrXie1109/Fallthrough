@@ -106,6 +106,7 @@ impl<'ctx> Lowerer<'ctx> {
             in_place_by_address: HashMap::new(),
             init_calls: HashMap::new(),
             method_calls: HashMap::new(),
+            indirect_receivers: HashMap::new(),
             type_of_types: HashMap::new(),
             throwing_calls: std::collections::HashSet::new(),
             propagating_calls: std::collections::HashSet::new(),
@@ -500,6 +501,10 @@ impl<'ctx> Lowerer<'ctx> {
             ),
             init_calls: std::mem::replace(&mut self.init_calls, next.init_calls.clone()),
             method_calls: std::mem::replace(&mut self.method_calls, next.method_calls.clone()),
+            indirect_receivers: std::mem::replace(
+                &mut self.indirect_receivers,
+                next.indirect_receivers.clone(),
+            ),
             assign_methods: std::mem::replace(&mut self.assign_methods, next.assign_methods.clone()),
             deref_reads: std::mem::replace(&mut self.deref_reads, next.deref_reads.clone()),
             pointer_targets: std::mem::replace(
@@ -690,6 +695,12 @@ impl<'ctx> Lowerer<'ctx> {
         self.declare_function(&function, &[]);
         self.pre_resolved_params.clear();
         self.pre_resolved_return = None;
+        // An instantiation is one function however many translation units ask
+        // for it: `Array<int>.push` is written once in its module and used
+        // from everywhere, and every unit that needed it would otherwise emit
+        // a strong definition of the same symbol. `LinkOnceODR` says the
+        // copies are the same function and the linker may keep one, which is
+        // what lets a module be compiled to an object of its own.
         self.template_value_types = previous_values;
         self.substitution = previous;
         self.current_symbol = previous_symbol;
@@ -1078,6 +1089,14 @@ fn status_value(
     pub(super) fn lower_instantiations(&mut self, ast: &Ast, types: &TypeTable, bindings: &BindingTypes) {
         for instantiation in self.instantiation_list(ast) {
             self.lower_instantiation(bindings, &instantiation);
+            // An instantiation is one function however many translation units
+            // ask for it: `Array<int>.push` is written once in its module and
+            // used from everywhere. `LinkOnceODR` says the copies are the same
+            // function, which is what lets a module be compiled to an object of
+            // its own without two objects both defining the symbol.
+            if let Some(lowered) = self.backend.module().get_function(&instantiation.symbol) {
+                lowered.set_linkage(inkwell::module::Linkage::LinkOnceODR);
+            }
         }
         let _ = types;
     }
@@ -1187,6 +1206,10 @@ fn status_value(
                 records.lambda_values.clone(),
             ),
             method_calls: std::mem::replace(&mut self.method_calls, records.method_calls.clone()),
+            indirect_receivers: std::mem::replace(
+                &mut self.indirect_receivers,
+                records.indirect_receivers.clone(),
+            ),
             call_methods: std::mem::replace(&mut self.call_methods, records.call_methods.clone()),
             throwing_calls: std::mem::replace(
                 &mut self.throwing_calls,
@@ -1467,7 +1490,7 @@ impl<'ctx> Lowerer<'ctx> {
         let Some(entry) = self.cache_entry(hash) else {
             return false;
         };
-        let manifest = entry.with_extension("inst");
+        let manifest = entry.with_extension("tl");
         // A library already in the cache is linked in as it stands. The
         // manifest says which instantiations it defines; without it the entry
         // cannot be used, because the unit would emit a second definition of
@@ -1508,7 +1531,7 @@ impl<'ctx> Lowerer<'ctx> {
             // and a rename, so a second compiler reading the cache at the same
             // time never sees a half-written entry. If the manifest cannot be
             // written, the bitcode goes too: an entry without one is unusable.
-            let temporary_manifest = entry.with_extension(format!("inst.{}", std::process::id()));
+            let temporary_manifest = entry.with_extension(format!("tl.{}", std::process::id()));
             let wrote_manifest = std::fs::write(&temporary_manifest, manifest_text(&defined))
                 .and_then(|()| std::fs::rename(&temporary_manifest, &manifest))
                 .is_ok();
@@ -1558,7 +1581,7 @@ impl<'ctx> Lowerer<'ctx> {
         // Both files appear complete or not at all; an entry without its
         // manifest is unusable, because the unit would emit a second definition
         // of every instantiation the object already defines.
-        let temporary_manifest = object.with_extension(format!("inst.{}", std::process::id()));
+        let temporary_manifest = object.with_extension(format!("tl.{}", std::process::id()));
         let wrote_manifest = std::fs::write(&temporary_manifest, manifest_text(&defined))
             .and_then(|()| std::fs::rename(&temporary_manifest, &manifest))
             .is_ok();

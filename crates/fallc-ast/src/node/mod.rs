@@ -498,3 +498,69 @@ pub use expressions::*;
 pub use items::*;
 pub use statements::*;
 pub use types::*;
+
+impl Ast {
+    /// Replaces every top-level `if (cond) @constexpr` with the branch its
+    /// condition selects.
+    ///
+    /// The branches that are dropped are never checked afterwards, which is
+    /// what the form is for: code that only exists for some builds may name
+    /// what other builds do not have. A condition that is not a constant
+    /// leaves the item in place, and the checker reports it.
+    pub fn select_conditional_items(&mut self, platform: &dyn Fn(&str) -> Option<bool>) {
+        let mut selected = Vec::with_capacity(self.items.len());
+        self.flatten_items(&self.items.clone(), &mut selected, platform);
+        self.items = selected;
+    }
+
+    fn flatten_items(
+        &self,
+        items: &[ItemId],
+        out: &mut Vec<ItemId>,
+        platform: &dyn Fn(&str) -> Option<bool>,
+    ) {
+        for &item in items {
+            match &self.item(item).kind {
+                crate::node::ItemKind::Conditional(node) => {
+                    let branch = match self.conditional_value(node.condition, platform) {
+                        Some(true) => &node.then_items,
+                        Some(false) => &node.else_items,
+                        None => {
+                            // Not decided here: keep the node so the checker
+                            // can say the condition is not a constant.
+                            out.push(item);
+                            continue;
+                        }
+                    };
+                    let branch = branch.clone();
+                    self.flatten_items(&branch, out, platform);
+                }
+                _ => out.push(item),
+            }
+        }
+    }
+
+    /// The value of a conditional-item condition, when it is a literal.
+    fn conditional_value(
+        &self,
+        condition: ExprId,
+        platform: &dyn Fn(&str) -> Option<bool>,
+    ) -> Option<bool> {
+        match &self.expr(condition).kind {
+            crate::node::ExprKind::BoolLiteral(value) => Some(*value),
+            crate::node::ExprKind::IntLiteral(literal) => {
+                crate::literal::decode_int_value(&literal.digits).map(|value| value != 0)
+            }
+            // A compile-time question about the build is answerable here for a
+            // platform name, because the platform is this compiler's, not the
+            // program's: `if (@meta.defined(linux)) @constexpr` chooses its
+            // branch before anything is resolved. Every other question needs
+            // the resolution tables, and is left for the checker.
+            crate::node::ExprKind::Builtin(query) => platform(&query.argument),
+            // Everything else -- a name, a call, a comparison -- is decided by
+            // the checker's constant folder, which needs the resolution tables.
+            // The nested conditions are left for it.
+            _ => None,
+        }
+    }
+}

@@ -62,11 +62,15 @@ export fn length(this &const Bitset) usize {
 }
 
 // Shifts `index` into its word.
+//
+// - `index`: the bit's number, counting from zero
 fn word_of(index usize) usize {
     return index / 64usize;
 }
 
-// The bit's position inside its word.
+// The bit's position inside its word, as a mask.
+//
+// - `index`: the bit's number, counting from zero
 fn bit_of(index usize) u64 {
     return 1u64 << ((index % 64usize) as u64);
 }
@@ -206,6 +210,8 @@ export fn __ne__(this &const Bitset, other &const Bitset) bool {
 }
 
 // The number of set bits in one word, by parallel count.
+//
+// - `value`: the word to count
 fn popcount(value u64) usize {
     x u64 = value;
     x = x - ((x >> 1u64) & 0x5555555555555555u64);

@@ -1,6 +1,6 @@
 // CRC checksums: CRC-8, CRC-16/CCITT and CRC-32/ISO-HDLC.
 //
-//     checked u32 = crc.crc32(&data);
+//     checked uint = crc.crc32(&data);
 //
 // Each is the same algorithm with a different width and polynomial: shift the
 // register, exclusive-or the polynomial when a bit leaves, and start and end
@@ -20,10 +20,10 @@ export fn crc8(data &const Bytes) u8 {
         register = (register ^ value) as u8;
         bit int = 0;
         while (bit < 8) {
-            if ((register as u32 & 0x80u32) != 0u32) {
-                register = (((register as u32) << 1) ^ 0x07u32) as u8;
+            if ((register as uint & 0x80u32) != 0u32) {
+                register = (((register as uint) << 1) ^ 0x07u32) as u8;
             } else {
-                register = ((register as u32) << 1) as u8;
+                register = ((register as uint) << 1) as u8;
             }
             bit += 1;
         }
@@ -41,10 +41,10 @@ export fn crc16(data &const Bytes) u16 {
         register = (register ^ value) as u16;
         bit int = 0;
         while (bit < 8) {
-            if ((register as u32 & 0x8000u32) != 0u32) {
-                register = (((register as u32) << 1) ^ 0x1021u32) as u16;
+            if ((register as uint & 0x8000u32) != 0u32) {
+                register = (((register as uint) << 1) ^ 0x1021u32) as u16;
             } else {
-                register = ((register as u32) << 1) as u16;
+                register = ((register as uint) << 1) as u16;
             }
             bit += 1;
         }
@@ -55,11 +55,11 @@ export fn crc16(data &const Bytes) u16 {
 
 // CRC-32/ISO-HDLC, polynomial 0xedb88320, initial value all ones, final
 // complement -- the CRC that PNG and zip call CRC-32.
-export fn crc32(data &const Bytes) u32 {
-    register u32 = 0xffffffffu32;
+export fn crc32(data &const Bytes) uint {
+    register uint = 0xffffffffu32;
     index usize = 0;
     while (index < data.length()) {
-        value u32 = data[index] as u32;
+        value uint = data[index] as uint;
         register = register ^ value;
         bit int = 0;
         while (bit < 8) {

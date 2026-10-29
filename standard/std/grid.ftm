@@ -35,6 +35,10 @@ type Grid {
 }
 
 // Creates a grid of `rows` by `columns` cells, each a copy of `filler`.
+//
+// - `rows`: how many rows the grid has
+// - `columns`: how many columns each row has
+// - `filler`: the value every cell starts as
 export
 template <T type>
 fn __init__(this &Grid<T>, rows usize, columns usize, filler T) void {
@@ -50,6 +54,8 @@ fn __init__(this &Grid<T>, rows usize, columns usize, filler T) void {
 }
 
 // Copies another grid.
+//
+// - `other`: the grid to copy
 export
 template <T type>
 fn __init__(this &Grid<T>, other &const Grid<T>) void {
@@ -94,6 +100,9 @@ fn empty(this &const Grid<T>) bool {
 }
 
 // The cell at `(row, column)`; writing through it writes the grid.
+//
+// - `row`: the row, counting from zero
+// - `column`: the column, counting from zero
 export
 template <T type>
 fn at(this &Grid<T>, row usize, column usize) &T {
@@ -104,6 +113,9 @@ fn at(this &Grid<T>, row usize, column usize) &T {
 }
 
 // The cell at `(row, column)`, read only.
+//
+// - `row`: the row, counting from zero
+// - `column`: the column, counting from zero
 export
 template <T type>
 fn at(this &const Grid<T>, row usize, column usize) &const T {
@@ -114,6 +126,10 @@ fn at(this &const Grid<T>, row usize, column usize) &const T {
 }
 
 // Stores `value` at `(row, column)`.
+//
+// - `row`: the row, counting from zero
+// - `column`: the column, counting from zero
+// - `value`: what to store
 export
 template <T type>
 fn set(this &Grid<T>, row usize, column usize, value T) void {
@@ -121,6 +137,8 @@ fn set(this &Grid<T>, row usize, column usize, value T) void {
 }
 
 // Writes `value` into every cell.
+//
+// - `value`: what every cell becomes
 export
 template <T type>
 fn fill(this &Grid<T>, value T) void {
@@ -132,6 +150,8 @@ fn fill(this &Grid<T>, value T) void {
 }
 
 // Whether two grids have the same shape and equal cells.
+//
+// - `other`: the grid to compare with
 export
 template <T type>
 fn __eq__(this &const Grid<T>, other &const Grid<T>) bool {

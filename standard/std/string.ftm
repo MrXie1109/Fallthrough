@@ -48,10 +48,21 @@ import std.util;
 // `strlen` and `memcpy` are the two operations every string implementation
 // needs, and naming them once here keeps the C bindings from appearing in the
 // middle of the logic below.
+
+// Returns the length of a C string, in bytes.
+//
+// - `text`: a null-terminated C string; its bytes before the terminator
+//   are counted, and the terminator is not
 fn c_strlen(text *const char) usize {
     return C.strlen(text);
 }
 
+// Copies `size` bytes from `source` to `destination`.
+//
+// - `destination`: the bytes to copy into, which must hold at least `size` of
+//   them
+// - `source`: the bytes to copy from, which must hold at least `size` of them
+// - `size`: how many bytes to copy; no terminator is written
 fn c_memcpy(destination *byte, source *const byte, size usize) *byte {
     return C.memcpy(destination, source, size);
 }
@@ -60,6 +71,12 @@ fn c_memcpy(destination *byte, source *const byte, size usize) *byte {
 //
 // The result is `int` because that is what C's `memcmp` returns, and only its
 // sign carries a meaning.
+
+// - `left`: the bytes to compare; they must hold at least `size` of them
+// - `right`: the bytes to compare against; they must hold at least `size` of
+//   them
+// - `size`: how many bytes to compare; a shared prefix alone decides, so
+//   the longer of two strings with a common prefix compares equal
 fn c_memcmp(left *const byte, right *const byte, size usize) int {
     return C.memcmp(left, right, size);
 }
@@ -170,6 +187,9 @@ fn text(this &const String) *const char {
 }
 
 // Records an inline length, which marks the string as inline as well.
+
+// - `len`: the new length in bytes; it must not exceed `INLINE_CAPACITY`
+//   or the high bit the marker uses
 fn set_inline(this &String, len usize) void {
     last *char = (&this as *byte) as *char;
     last[sizeof(String) - 1] = ((INLINE_BIT | (len as u8)) as char);
@@ -201,6 +221,9 @@ fn cap_of(this &const String) usize {
 }
 
 // Sets the length, keeping the marker byte consistent.
+
+// - `len`: the new length in bytes; it is recorded only, and neither
+//   bytes nor a terminator are added
 fn set_len(this &String, len usize) void {
     if (this.inline_q()) {
         this.set_inline(len);
@@ -219,6 +242,9 @@ fn set_len(this &String, len usize) void {
 //
 // Shrinking is deliberately not done here: `reserve` promises room, and a
 // caller who wants memory back asks for it with `shrink_to_fit`.
+
+// - `wanted`: how many bytes of text must fit, the terminator not counted;
+//   a value that already fits changes nothing
 fn reserve_room(this &String, wanted usize) void {
     if (this.cap_of() > wanted) {
         return;
@@ -290,6 +316,9 @@ export fn __im_init__(this &String, text_ptr *const char) void {
 // case -- the exception record, which needs to report a `MemoryError` instead --
 // asks here and gets an empty string plus `false`. It is the exception
 // machinery's own entry point, not part of the string's public surface.
+
+// - `text_ptr`: a null-terminated C string to copy; its bytes are copied, and
+//   the caller's buffer may go away afterwards
 fn try_init(this &String, text_ptr *const char) bool {
     len usize = c_strlen(text_ptr);
     if (len <= INLINE_CAPACITY) {
@@ -375,6 +404,8 @@ export fn __init__(this &String, other &&String) void {
 // Compares the bytes' addresses: for a buffer that is the buffer, and for an
 // inline string it is the object, which is what makes `s = s` a no-op in both
 // modes.
+
+// - `other`: the string to compare addresses with; it is read, not copied
 fn shares_bytes(this &const String, other *const String) bool {
     return this.text() == other.text();
 }
@@ -659,7 +690,7 @@ export fn push(this &String, text_value &const String) void {
         return;
     }
     start usize = this.len_of();
-    this.resize(start + added, 0 as char);
+    this.resize(start + added, '\0');
     // Read through a pointer taken *after* the resize: the argument may be this
     // very string, and growing it would leave an older pointer dangling.
     source *const char = text_value.text();
@@ -681,7 +712,7 @@ export fn push(this &String, text_ptr *const char) void {
         return;
     }
     start usize = this.len_of();
-    this.resize(start + added, 0 as char);
+    this.resize(start + added, '\0');
     // Copied byte by byte rather than with `memcpy`: the argument is a C string
     // that already overlaps this one only if a caller passed `data()`, which is
     // borrowed and must not be modified -- so the simple loop is the safe one.
@@ -971,6 +1002,9 @@ export fn __cmp__(this &const String, other &const String) int {
 //
 // Private, because it is the implementation rather than an interface: a caller
 // writes `<` or `<=>` and gets this.
+
+// - `other`: the string to order this one against; the two are compared
+//   byte by byte over the part they share, and then by length
 fn compare(this &const String, other &const String) int {
     left_len usize = this.len_of();
     right_len usize = other.len_of();
@@ -1034,6 +1068,9 @@ export fn __as__(this &const String, target *f64) f64 except {
 // a stray character, or a magnitude that does not fit an `int`. Nothing is
 // reported through an exception, because "is this text a number?" is a question
 // a caller may be asking rather than a failure.
+
+// - `value`: receives the number when the text is one; it is written only
+//   when this returns `true`
 fn parse_int(this &const String, value &int) bool {
     length usize = this.len_of();
     if (length == 0) {
@@ -1074,6 +1111,9 @@ fn parse_int(this &const String, value &int) bool {
 }
 
 // Parses the whole text as a decimal `usize`.
+
+// - `value`: receives the count when the text is one; it is written only
+//   when this returns `true`
 fn parse_size(this &const String, value &usize) bool {
     length usize = this.len_of();
     if (length == 0) {
@@ -1103,6 +1143,9 @@ fn parse_size(this &const String, value &usize) bool {
 //
 // Digits, one optional `.`, and an optional exponent are the whole grammar;
 // anything else -- including trailing text -- makes it not a number.
+
+// - `value`: receives the number when the text is one; it is written only
+//   when this returns `true`
 fn parse_real(this &const String, value &f64) bool {
     length usize = this.len_of();
     if (length == 0) {
@@ -1318,6 +1361,9 @@ export fn split(this &const String, separator char, into &Array<String>) void {
 }
 
 // Whether `value` is one of the characters `trimmed` removes.
+
+// - `value`: the byte to test; space, tab, newline, carriage return, form
+//   feed and vertical tab count, and nothing else does
 fn is_space(value char) bool {
     return value == ' ' || value == '\t' || value == '\n' || value == '\r' || value == '\f' || value == '\v';
 }
@@ -1457,5 +1503,15 @@ export fn begin(this &const String) *const char {
 }
 
 export fn end(this &const String) *const char {
+    return this.text() + this.length();
+}
+
+// The read-only forward walk, named as C++ names it.
+export fn cbegin(this &const String) *const char {
+    return this.text();
+}
+
+// The read-only walk's stop.
+export fn cend(this &const String) *const char {
     return this.text() + this.length();
 }

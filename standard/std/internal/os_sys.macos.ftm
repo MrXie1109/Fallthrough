@@ -33,7 +33,7 @@ export fn env_raw(name *const char) *const char {
 }
 
 // Sets `name` in the environment of this process.
-export fn set_env(name *const char, value *const char) bool {
+export fn setenv(name *const char, value *const char) bool {
     return setenv(name, value, 1) == 0;
 }
 

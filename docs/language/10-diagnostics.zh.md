@@ -96,11 +96,20 @@
 6.1 警告可以在行尾以注释方式就地抑制。只有下列三种形式构成指令：
 
 ```ft
-x int = 1;                    // no warning
-// 说明文字 —— no warning
-by_code int = 2;              // no warning: S0140
-by_group int = 3;             // no warning: unused
+import C;
+
+fn main() int {
+    x int = 1;                    // no warning
+    by_code int = 2;              // no warning: S0140
+    by_group int = 3;             // no warning: unused
+    // 说明文字 —— no warning
+    C.printf("%d %d %d\n", x, by_code, by_group);
+    return 0;
+}
 ```
+
+该程序编译时完全没有任何诊断，尽管三个绑定在 `printf` 之前都没被读过：三种写法各自抑制
+了那一行的警告。去掉注释后，同样三个绑定会各报一条 `S0140`。
 
 6.2 注释内容恰为 `no warning`：抑制该行的全部警告。
 

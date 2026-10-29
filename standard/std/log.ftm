@@ -7,7 +7,7 @@
 // level filter is one number: a message below the current level is dropped
 // before its text is built, so a disabled debug line costs nothing.
 //
-//     log.set_level(std.log.Level.DEBUG);
+//     log.setlevel(std.log.Level.DEBUG);
 //     log.debug("value = {}", value)??;
 //
 // The stream is `std.err` unless the program changes it, which is what makes a
@@ -27,7 +27,7 @@ from std.string import String;
 // How loud a message is.
 //
 // The numbers are ordered: a larger one is more important. `OFF` silences
-// everything, and is the value `set_level` takes to do it.
+// everything, and is the value `setlevel` takes to do it.
 export enum Level int {
     // For the finest step-by-step detail.
     TRACE,
@@ -50,13 +50,13 @@ _target *File;
 _level int;
 
 // Points the logger at standard error and the ordinary level.
-__setup__ {
+fn __setup__() void {
     _target = &err;
     _level = 2;
 }
 
 // Sets the lowest level that is written.
-export fn set_level(level Level) void {
+export fn setlevel(level Level) void {
     _level = level as int;
 }
 
@@ -66,12 +66,12 @@ export fn level() Level {
 }
 
 // Sends the lines somewhere other than standard error.
-export fn set_target(target *File) void {
+export fn settarget(target *File) void {
     _target = target;
 }
 
 // The text a level writes in front of its lines.
-export fn level_name(level Level) String {
+export fn levelname(level Level) String {
     if (level == Level.TRACE) {
         return String("TRACE");
     }
@@ -96,18 +96,25 @@ export fn enabled(level Level) bool {
 //
 // The format rule is `std.print`'s: `{}` in the first argument stands for the
 // following values. The line ends with a newline the logger supplies.
+
+// - `level`: the level the line is written at, which is compared with the
+//   current one before any text is built
+// - `values`: the format and its arguments, under the rule `std.print` uses:
+//   the first value holds the `{}` and the rest fill them
 export
 template <Ts ...type>
 fn write(level Level, values ...Ts) void except {
     if (!enabled(level)) {
         return;
     }
-    _target.print("[{}] ", level_name(level))??;
+    _target.print("[{}] ", levelname(level))??;
     _target.print(values...)??;
     _target.print("\n")??;
 }
 
 // Writes a trace line.
+
+// - `values`: the format and its arguments, as `write` takes them
 export
 template <Ts ...type>
 fn trace(values ...Ts) void except {
@@ -115,6 +122,8 @@ fn trace(values ...Ts) void except {
 }
 
 // Writes a debug line.
+
+// - `values`: the format and its arguments, as `write` takes them
 export
 template <Ts ...type>
 fn debug(values ...Ts) void except {
@@ -122,6 +131,8 @@ fn debug(values ...Ts) void except {
 }
 
 // Writes an info line.
+
+// - `values`: the format and its arguments, as `write` takes them
 export
 template <Ts ...type>
 fn info(values ...Ts) void except {
@@ -129,6 +140,8 @@ fn info(values ...Ts) void except {
 }
 
 // Writes a warning line.
+
+// - `values`: the format and its arguments, as `write` takes them
 export
 template <Ts ...type>
 fn warn(values ...Ts) void except {
@@ -136,6 +149,8 @@ fn warn(values ...Ts) void except {
 }
 
 // Writes an error line.
+
+// - `values`: the format and its arguments, as `write` takes them
 export
 template <Ts ...type>
 fn error(values ...Ts) void except {

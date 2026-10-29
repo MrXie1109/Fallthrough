@@ -76,15 +76,40 @@ impl Parser {
             // A binding begins with a name followed by a type or `auto`.
             // Both are identifiers, so the decision needs two tokens of
             // lookahead and comes before the fallthrough case.
-            TokenKind::Ident if self.looks_like_binding(stream) => self.parse_bind(stream, ast)?,
+            // A name at the end of a block is the block's value, not a
+            // binding: `{ t int = 3; t * 2 }` multiplies, because a binding
+            // there would declare a variable nothing could then read. The
+            // `}` after the expression is what makes the position a value
+            // position, and the tokens before it decide nothing else.
+            TokenKind::Ident
+                if self.looks_like_binding(stream) && !self.binding_is_really_a_value(stream) =>
+            {
+                self.parse_bind(stream, ast)?
+            }
+
             // An expression statement: an expression followed by `;`.
+            //
+            // The last expression of a block may leave the `;` out, and it is
+            // then the block's value: `{ t int = 3; t * 2 }` is `6`. The `}`
+            // that follows is what says so, and nothing else does -- an
+            // expression followed by `;` still discards what it computes.
             _ => {
                 let start = stream.current_span();
                 let expr = self.parse_expr(stream, ast)?;
-                let semi = self.expect_punct(stream, Punctuation::Semi, "`;`")?;
-                let span = start.to(semi.span);
-                let _ = span;
-                StmtKind::Expr(ExprStmt { expr })
+                if stream.at(TokenKind::Punct(Punctuation::CloseBrace)) {
+                    let _span = start.to(ast.expr(expr).span);
+                    StmtKind::Expr(ExprStmt {
+                        expr,
+                        yields_value: true,
+                    })
+                } else {
+                    let semi = self.expect_punct(stream, Punctuation::Semi, "`;`")?;
+                    let _span = start.to(semi.span);
+                    StmtKind::Expr(ExprStmt {
+                        expr,
+                        yields_value: false,
+                    })
+                }
             }
         };
         Some(ast.builder().alloc_stmt(kind, span))
@@ -111,6 +136,72 @@ impl Parser {
             ast.builder()
                 .alloc_block(statements, open.span.to(close.span)),
         )
+    }
+
+    /// Whether the statement under the cursor is the value a block ends with.
+    ///
+    /// A block's last expression may leave out its `;`, so the tokens from here
+    /// to the closing brace are an expression. The scan is shallow: it stops at
+    /// the first `}` at depth zero, which is the brace that ends this block.
+    fn binding_is_really_a_value(&self, stream: &TokenStream) -> bool {
+        // A declaration names a type after the name. `t * 2 }` cannot be one --
+        // `2` is no type -- but telling that apart from `p Point = ..` needs
+        // more than the tokens, so only the shape where the thing after the
+        // name is a *type operator* and what follows it is not a type is
+        // treated as a value. That is exactly `name * expr` and
+        // `name & expr`, the two forms a multiplication and a bitwise and
+        // share with a declaration.
+        let operator = matches!(
+            stream.peek_kind(1),
+            TokenKind::Punct(Punctuation::Star) | TokenKind::Punct(Punctuation::Amp)
+        );
+        if !operator || self.after_the_operator_is_a_type(stream) {
+            return false;
+        }
+        self.ends_with_a_value(stream)
+    }
+
+    /// Whether what follows `*` or `&` in a leading `name` position is a type.
+    ///
+    /// `p *auto = ..` and `p *Point = ..` are declarations: the operator
+    /// belongs to the type, and the value at the end is the initialiser. The
+    /// two are told apart from `p * q` by what stands after the operator, so
+    /// that reading a keyword or a name there means the type.
+    fn after_the_operator_is_a_type(&self, stream: &TokenStream) -> bool {
+        match stream.peek_kind(2) {
+            TokenKind::Keyword(Keyword::Auto)
+            | TokenKind::Keyword(Keyword::Const)
+            | TokenKind::Keyword(Keyword::Volatile)
+            | TokenKind::Keyword(Keyword::Fn) => true,
+            TokenKind::Punct(Punctuation::Star | Punctuation::Amp)
+            | TokenKind::Punct(Punctuation::OpenBracket) => true,
+            _ => false,
+        }
+    }
+
+    fn ends_with_a_value(&self, stream: &TokenStream) -> bool {
+        let mut depth = 0usize;
+        for token in &stream.tokens()[stream.position()..] {
+            match token.kind {
+                TokenKind::Punct(Punctuation::OpenParen)
+                | TokenKind::Punct(Punctuation::OpenBracket)
+                | TokenKind::Punct(Punctuation::OpenBrace) => depth += 1,
+                TokenKind::Punct(Punctuation::CloseParen)
+                | TokenKind::Punct(Punctuation::CloseBracket) => {
+                    if depth == 0 {
+                        return false;
+                    }
+                    depth -= 1;
+                }
+                // A `;` before the brace means this is a statement rather
+                // than the block's value: `p Point = .{1, 2};` declares.
+                TokenKind::Punct(Punctuation::Semi) if depth == 0 => return false,
+                TokenKind::Punct(Punctuation::CloseBrace) if depth == 0 => return true,
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     /// Skips tokens until something that can start a statement appears.
@@ -498,7 +589,28 @@ impl Parser {
         let start = stream.current_span();
         stream.advance(); // `if`
         let is_constexpr = false;
-        let condition = self.parse_paren_condition(stream, ast)?;
+        // `if (auto) @constexpr { .. }` asks whether the block compiles rather
+        // than testing a value. `auto` is a keyword, so it cannot be a name
+        // here; the parenthesis still has to be consumed.
+        let mut probes_compilable = false;
+        let condition = if stream.at(TokenKind::Punct(Punctuation::OpenParen))
+            && stream.peek_kind(1) == TokenKind::Keyword(Keyword::Auto)
+            && stream.peek_kind(2) == TokenKind::Punct(Punctuation::CloseParen)
+        {
+            let open = stream.advance().span;
+            stream.advance(); // `auto`
+            let close = stream.advance().span;
+            probes_compilable = true;
+            // A placeholder: the probe replaces it with a constant, and no
+            // value is read from it.
+            let span = open.to(close);
+            ast.builder().alloc_expr(
+                ExprKind::BoolLiteral(true),
+                span,
+            )
+        } else {
+            self.parse_paren_condition(stream, ast)?
+        };
         // `if (cond) @constexpr { .. }` is the attribute spelling of the old
         // `if constexpr (cond)`: the condition must be a constant, and the
         // branch not taken is not checked. `@constexpr` is only meaningful on
@@ -528,6 +640,7 @@ impl Parser {
         let _ = start;
         Some(StmtKind::If(IfStmt {
             is_constexpr,
+            probes_compilable,
             condition,
             condition_attrs,
             then_block,
@@ -629,7 +742,13 @@ impl Parser {
                 let span = start.to(ast.expr(expr).span);
                 Some(
                     ast.builder()
-                        .alloc_stmt(StmtKind::Expr(ExprStmt { expr }), span),
+                        .alloc_stmt(
+                            StmtKind::Expr(ExprStmt {
+                                expr,
+                                yields_value: false,
+                            }),
+                            span,
+                        ),
                 )
             };
             self.expect_punct(stream, Punctuation::Semi, "`;`")?;
@@ -1045,7 +1164,11 @@ impl Parser {
             if stream.at(TokenKind::Punct(Punctuation::OpenParen)) {
                 stream.advance();
                 loop {
-                    names.push(self.parse_expr(stream, ast)?);
+                    // Not `parse_expr`: a comma is the comma *operator* there,
+                    // so the whole list would parse as one expression with two
+                    // operands -- and every name but the last was silently
+                    // dropped. Here the comma separates the names.
+                    names.push(self.parse_assignment(stream, ast)?);
                     if stream.at(TokenKind::Punct(Punctuation::Comma)) {
                         stream.advance();
                         continue;

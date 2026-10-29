@@ -647,9 +647,9 @@ pub struct FunctionSignature {
     pub exported: bool,
     /// Whether this function is implemented elsewhere.
     pub is_external: bool,
-    /// The ABI the declaration names, when it is written `extern "C"`.
+    /// The ABI the declaration names, when it is written `@extern_C`.
     ///
-    /// An `extern "C"` function keeps the name it was declared with: the C
+    /// An `@extern_C` function keeps the name it was declared with: the C
     /// library exports exactly that spelling, and a mangled one names no symbol
     /// anybody defines. A bodyless declaration *without* an ABI is a promise
     /// that another translation unit defines it, and its symbol is mangled like
@@ -919,6 +919,11 @@ pub struct Def {
     /// Builtins have no source, so code generation declares them in the module
     /// instead of finding a definition for them.
     pub is_builtin: bool,
+    /// Whether this definition is an `@overridable` default.
+    ///
+    /// A default is a candidate only while nothing else of the name is: a
+    /// program that writes its own definition replaces it without saying so.
+    pub is_overridable: bool,
 }
 
 /// The output of name resolution.
@@ -1254,6 +1259,10 @@ impl Resolver {
     fn declare_item(&mut self, ast: &Ast, id: fallc_ast::ItemId) {
         let item = ast.item(id);
         match &item.kind {
+            // A top-level `if @constexpr` declares nothing itself: what it
+            // selects was flattened into the item list already, and one that
+            // could not be decided declares nothing at all.
+            ItemKind::Conditional(_) => {}
             // A module-level constant is a name, like a function's is. It is
             // declared before any body is resolved, so that a body may refer to
             // one declared later in the file.
@@ -1303,6 +1312,18 @@ impl Resolver {
                     item.span,
                     Some(item.node),
                 );
+                // `@overridable` is read here, where the declaration's own
+                // attributes are in hand: a default implementation is replaced
+                // by any other definition of the name, so which candidates a
+                // call may see depends on it.
+                if item
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.name == "overridable")
+                    && let Some(definition) = self.resolutions.defs.get_mut(def.0 as usize)
+                {
+                    definition.is_overridable = true;
+                }
                 // The signature is recorded in both places: `self.defs` is the
                 // resolver's own view, and `resolutions.defs` is what later
                 // passes read. Storing it in only one silently leaves the
@@ -1438,6 +1459,11 @@ impl Resolver {
             // An assertion has a condition, and the names in it are resolved
             // like any others.
             ItemKind::StaticAssert(node) => self.resolve_expr(ast, node.condition),
+            // A top-level `if @constexpr` that could not be decided by its
+            // literal alone reaches here: its condition is resolved so the
+            // checker can report what is wrong with it, and the branches are
+            // left unread -- nothing they declare exists.
+            ItemKind::Conditional(node) => self.resolve_expr(ast, node.condition),
             // An external variable has a type and no body: the type names
             // types, which the checker resolves.
             ItemKind::ExternVariable(_) => {}
@@ -1916,8 +1942,38 @@ impl Resolver {
             // question, answered when the function is instantiated.
             ExprKind::PackExpand(inner) => self.resolve_expr(ast, *inner),
             ExprKind::CommaFold { pattern } => self.resolve_expr(ast, *pattern),
+            // A range is two ordinary expressions; its meaning is the
+            // `Range` construction the checker builds from them.
+            ExprKind::Range(node) => {
+                self.resolve_expr(ast, node.low);
+                self.resolve_expr(ast, node.high);
+            }
+            // An array literal's elements are ordinary expressions; the type
+            // they make is the checker's question.
+            ExprKind::ArrayLiteral(node) => {
+                for &element in &node.elements {
+                    self.resolve_expr(ast, element);
+                }
+            }
             ExprKind::Propagate(node) => self.resolve_expr(ast, node.value),
             ExprKind::Abort(node) => self.resolve_expr(ast, node.value),
+            ExprKind::Builtin(_) => {}
+            ExprKind::IfValue(node) => {
+                self.resolve_expr(ast, node.condition);
+                for &stmt in &ast.block(node.then_block).statements.clone() {
+                    self.resolve_stmt(ast, stmt);
+                }
+                if let Some(block) = node.else_block {
+                    for &stmt in &ast.block(block).statements.clone() {
+                        self.resolve_stmt(ast, stmt);
+                    }
+                }
+            }
+            ExprKind::Block(block) => {
+                for &stmt in &ast.block(*block).statements.clone() {
+                    self.resolve_stmt(ast, stmt);
+                }
+            }
             ExprKind::ThrowQuery(inner) => self.resolve_expr(ast, *inner),
             // `type(expr)` names the type of an expression: the expression is
             // still an expression, so its names resolve as usual.
@@ -2161,6 +2217,7 @@ impl Resolver {
                 imported_as: None,
                 imported_via: None,
                 is_builtin: false,
+            is_overridable: false,
             });
             if let Some(scope) = self.scopes.last_mut() {
                 scope.names.insert("_".to_owned(), vec![id]);
@@ -2205,6 +2262,7 @@ impl Resolver {
                     imported_as: None,
                     imported_via: None,
                     is_builtin: false,
+                    is_overridable: false,
                 });
                 if let Some(scope) = self.scopes.last_mut()
                     && let Some(defs) = scope.names.get_mut(&name)
@@ -2245,6 +2303,7 @@ impl Resolver {
             imported_as: None,
             imported_via: None,
             is_builtin: false,
+            is_overridable: false,
         });
         if let Some(scope) = self.scopes.last_mut() {
             scope.names.insert(name, vec![id]);
@@ -2327,8 +2386,23 @@ impl Resolver {
     /// name; there is no "did you mean" suggestion.
     pub fn resolve_name(&mut self, name: &str, span: Span) -> Option<DefId> {
         // A qualified name is a module member: `C.printf`.
-        if let Some((module, member)) = name.split_once('.') {
-            return self.resolve_external(module, member, span);
+        //
+        // The split is at the longest module prefix, not at the first dot: a
+        // module reached through another is writable by its full dotted name,
+        // so `std.uuid.v4` names `v4` of the module `std.uuid`. Splitting at
+        // the first dot took `uuid.v4` as a member of `std`, and every path
+        // into a submodule then failed to resolve.
+        if name.contains('.') {
+            let mut end = name.len();
+            while let Some(sep) = name[..end].rfind('.') {
+                if self.external.contains_key(&name[..sep]) {
+                    return self.resolve_external(&name[..sep], &name[sep + 1..], span);
+                }
+                end = sep;
+            }
+            if let Some((module, member)) = name.split_once('.') {
+                return self.resolve_external(module, member, span);
+            }
         }
         match self.lookup(name) {
             Some(def) => {

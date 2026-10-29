@@ -97,9 +97,9 @@ fn the_wall_clock_converts_to_a_civil_date() {
 import std.time;
 
 fn main() int except {
-    std.print("{}\n", SystemTime(0i64).to_utc())??;
-    std.print("{}\n", SystemTime(1792454400i64 * 1000000000i64).to_utc())??;
-    std.print("{}\n", SystemTime(-86400i64 * 1000000000i64).to_utc())??;
+    std.print("{}\n", SystemTime(0i64) as DateTime)??;
+    std.print("{}\n", SystemTime(1792454400i64 * 1000000000i64) as DateTime)??;
+    std.print("{}\n", SystemTime(-86400i64 * 1000000000i64) as DateTime)??;
     now SystemTime = time.unix_now();
     std.print("{}\n", (now.unix_seconds() > 1600000000i64) as int)??;
     return 0;

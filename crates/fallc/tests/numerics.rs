@@ -75,13 +75,13 @@ fn complex_arithmetic_follows_the_formulas() {
     let source = r#"import std;
 
 fn main() int except {
-    first Complex = std.complex(1.0, 2.0);
-    second Complex = std.complex(3.0, -4.0);
+    first Complex = Complex(1.0, 2.0);
+    second Complex = Complex(3.0, -4.0);
     product Complex = first.mul(&second);
     quotient Complex = first.div(&second)??;
     std.print("{} {} {} {}\n", product, first.conjugate(), first.abs(), first.arg())??;
     std.print("{} {} {} {}\n", quotient, first.norm_squared(), first == second, first != second)??;
-    power Complex = std.complex(0.0, 1.0).pow(2.0)??;
+    power Complex = Complex(0.0, 1.0).pow(2.0)??;
     std.print("{}", power)??;
     return 0;
 }
@@ -99,12 +99,12 @@ fn matrix_arithmetic_checks_its_dimensions() {
 
 fn main() int except {
     identity Matrix = std.identity(2usize);
-    value Matrix = std.matrix(2usize, 3usize, 2.0);
+    value Matrix = Matrix(2usize, 3usize, 2.0);
     product Matrix = identity.mul(&value)??;
     std.print("{} {} {} {}\n", product.rows(), product.columns(), product.at(1usize, 2usize)??, value.transpose().rows())??;
     std.print("{} {} {}\n", value.transpose().columns(), product == value, product != value)??;
     scaled Matrix = value.scale(0.5);
-    std.print("{} {}", scaled.at(0usize, 0usize)??, std.matrix(2usize, 2usize, 1.0).add(&identity)??.at(1usize, 1usize)??)??;
+    std.print("{} {}", scaled.at(0usize, 0usize)??, Matrix(2usize, 2usize, 1.0).add(&identity)??.at(1usize, 1usize)??)??;
     try {
         identity.mul(&value)??;
         value.mul(&identity)??;

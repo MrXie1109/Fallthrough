@@ -161,20 +161,25 @@ pub fn library_entries(
         "{:?}",
         inkwell::targets::TargetMachine::get_default_triple()
     );
-    let opt = format!("{mode:?}");
+    // The optimisation level belongs to the key when machine code is what is
+    // cached: two levels produce different code for the same modules, and a
+    // separate entry is what keeps one from answering for the other. With the
+    // level in the key, the artifacts keep their own names.
+    let opt = match optimization {
+        Some(level) => format!("{mode:?}/{}", level.spelling()),
+        None => format!("{mode:?}"),
+    };
     let key = CacheKey {
         cache_hash: library_hash(modules.iter().copied()),
         target: &target,
         opt: &opt,
     };
     let entry = directory.join(key.entry_name());
+    // `.o` is the compiled functions and `.tl` the templates that go with
+    // them; the bitcode path caches the module itself, which is why it has no
+    // `.o`.
     match optimization {
-        // The native object's machine code depends on the optimisation level,
-        // so each level is its own entry; the bitcode is unoptimised and shared.
-        Some(level) => (
-            entry.with_extension(format!("o{}", level.spelling())),
-            entry.with_extension(format!("inst{}", level.spelling())),
-        ),
-        None => (entry.clone(), entry.with_extension("inst")),
+        Some(_) => (entry.with_extension("o"), entry.with_extension("tl")),
+        None => (entry.clone(), entry.with_extension("tl")),
     }
 }

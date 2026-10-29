@@ -78,19 +78,19 @@ _pid i32;
 // Writes `text` quoted for the command line.
 fn push_quoted(out &String, text *const char) void {
     length usize = c_length(text);
-    out.push('"' as char);
+    out.push('"');
     index usize = 0;
     while (index < length) {
         character char = text[index];
-        if (character == '"' as char) {
+        if (character == '"') {
             // A quote inside a quoted argument is doubled, which is the
             // command-line rule `CommandLineToArgvW` reverses.
-            out.push('"' as char);
+            out.push('"');
         }
         out.push(character);
         index += 1;
     }
-    out.push('"' as char);
+    out.push('"');
 }
 
 // Starts `program` with `argv` and returns its process id.
@@ -102,12 +102,12 @@ export fn spawn(program *const char, argv *const *const char) i32 except {
     index usize = 0;
     while (argv[index] != nullptr) {
         if (index > 0) {
-            command.push(' ' as char);
+            command.push(' ');
         }
         push_quoted(&command, argv[index]);
         index += 1;
     }
-    command.push('\0' as char);
+    command.push('\0');
     startup StartupInfo;
     startup.cb = sizeof(StartupInfo) as u32;
     process_info ProcessInfo;

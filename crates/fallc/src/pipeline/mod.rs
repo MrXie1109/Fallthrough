@@ -708,6 +708,7 @@ mod tests {
 mod cache;
 mod compile;
 mod exports;
+mod interface;
 mod imports;
 mod linking;
 mod reporting;

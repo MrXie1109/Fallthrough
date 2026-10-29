@@ -49,8 +49,8 @@
 | `P0002` | error | `@{other}` is not an attribute of a field |
 | `P0002` | error | `@{}` is not an attribute of this branch |
 | `P0002` | error | `@{}` takes no arguments |
-| `P0002` | error | `alignas` is written twice for this binding |
-| `P0002` | error | `alignas` is written twice for this field |
+| `P0002` | error | `@align` is written twice for this binding |
+| `P0002` | error | `@align` is written twice for this field |
 | `P0002` | error | `except` here is the query, so it needs `(expr)` |
 | `P0002` | error | `export` applies to a module-level declaration, not a local |
 | `P0002` | error | `export` is a keyword, not an attribute |
@@ -199,11 +199,11 @@
 | `S0135` | error | a type is not a value |
 | `S0136` | error | `{name}` has no type named `{}` |
 | `S0136` | error | `{}` is not a declared type, so it has no members |
-| `S0137` | error | an `alignas` needs a value the compiler knows |
+| `S0137` | error | an `@align` needs a value the compiler knows |
 | `S0138` | error | `@align({value})` is not a power of two |
-| `S0138` | error | `alignas({value})` is not a power of two |
+| `S0138` | error | `@align({value})` is not a power of two |
 | `S0139` | error | `@align({value})` is weaker than `{name}`'s own alignment of {natural} byte(s) |
-| `S0139` | error | `alignas({value})` is weaker than `{name}`'s own alignment of {natural} byte(s) |
+| `S0139` | error | `@align({value})` is weaker than `{name}`'s own alignment of {natural} byte(s) |
 | `S0140` | warning | something to see |
 | `S0141` | warning | this statement can never run |
 | `S0143` | warning | `{name}` shadows an outer binding |

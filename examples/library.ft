@@ -116,7 +116,7 @@ fn main() int except {
 
     // --- paths --------------------------------------------------------------
     path Path = "/home/user/notes.txt";
-    C.printf("path: %s %s %s\n", path.directory().text(), path.file_name().data(), path.extension().data());
+    C.printf("path: %s %s %s\n", path.directory().text(), path.filename().data(), path.extension().data());
     joined Path = Path("/home/user").join(Path("notes.txt"));
     C.printf("joined: %s\n", joined.text());
 

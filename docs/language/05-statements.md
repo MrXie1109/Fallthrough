@@ -65,23 +65,59 @@ only the selected branch is generated, but the other branch is still checked.
 `@likely` says the branch is usually taken, `@unlikely` says it rarely is.
 
 ```ft
-if (ready) @likely {
-    run();
-} else @unlikely {
-    wait();
+import C;
+
+fn run() int { return 1; }
+fn wait() int { return 2; }
+
+fn classify(code int) int {
+    switch (code) {
+        case 200 @likely:
+            return 1;
+        default:
+            return 0;
+    }
 }
 
-switch (code) {
-    case 200 @likely:
-        return OK;
-    default:
-        return ERROR;
+fn main() int {
+    ready bool = true;
+    if (ready) @likely {
+        C.printf("run=%d\n", run());
+    } else @unlikely {
+        C.printf("wait=%d\n", wait());
+    }
+    C.printf("%d %d\n", classify(200), classify(500));
+    return 0;
 }
 ```
+
+This program prints `run=1`, then `1 0`. The weights are advice to code generation, not
+conditions: the branch that runs is decided by `ready` and by `code` alone.
 
 3.2.6 A branch weight affects code generation only; evaluation order and result do not
 change. At most one weight attribute may be written on a branch, and writing it in any
 other position is an error.
+
+3.2.7 Where a value is wanted, an `if` with both branches is itself the value: each branch
+is a block, and what it gives is what the `if` gives
+(see [09 Scopes §2.2](09-scopes.md#scopes)). Both branches **must** give the same type, and
+an `if` without `else` gives no value. A conditional expression `cond ? a : b` says the same
+thing when both sides are single expressions.
+
+```ft
+import C;
+import std;
+
+fn sign(n int) int { return if (n < 0) { -1 } else { 1 }; }
+
+fn main() int except {
+    C.printf("%d %d\n", sign(-5), sign(5));
+    return 0;
+}
+```
+
+This program prints `-1 1`: the `if` is the value `sign` returns, and each branch's block
+gives the number written in it.
 
 ### Compile-time assertions
 
@@ -97,15 +133,68 @@ is never instantiated does not trigger it.
 
 3.3.4 The condition **must** be a constant that the compiler is able to evaluate.
 
+### Probing whether a block compiles
+
+3.4.1 `if (auto) @constexpr { … } else { … }` asks the compiler to **try** the following
+block. The condition is not written: the question is whether the block compiles. When it
+does, the block is the program; when it does not, the `else` block is, and the trial's
+diagnostics are discarded.
+
+3.4.2 The untaken side is not checked at all, so a block may name things that do not exist
+for the types it is tried against. Only a fatal diagnostic fails the trial: a warning, such
+as a variable that is never read, does not.
+
+3.4.3 `if (auto) @constexpr` is the way to ask whether a *block* compiles, as
+`@meta.compilable(T)` asks whether a *name* does
+(see [07 Expressions §7.9](07-expressions.md#compile-time-queries)).
+
+```ft
+import C;
+import std;
+
+type Point { x int; y int; }
+
+fn main() int except {
+    if (auto) @constexpr {
+        p Point = .{1, 2};
+        n int = p.x;
+        C.printf("a Point has x\n");
+    } else {
+        C.printf("no point here\n");
+    }
+    return 0;
+}
+```
+
+This program prints `a Point has x`: the block compiles, so it is the one kept. A block
+that named a field `Point` does not have would take the `else` instead, and nothing would
+be reported about the trial.
+
 ## Loops
 
 4.1 All three loop forms may carry an `else` clause.
 
 ```ft
-while (cond) { ... } else { ... }
-for (init; cond; update) { ... } else { ... }
-for (item T : range) { ... } else { ... }
+import C;
+
+fn main() int {
+    n int = 0;
+    while (n < 3) {
+        n = n + 1;
+    } else {
+        C.printf("while else ran\n");
+    }
+    for (i int = 0; i < 2; i = i + 1) {
+        C.printf("%d ", i);
+    } else {
+        C.printf("for else ran\n");
+    }
+    return 0;
+}
 ```
+
+This program prints `while else ran`, then `0 1 for else ran`: the loop's `else` runs when
+the loop ends without `break`, which is the case for both here.
 
 4.1.1 The `else` clause is executed when the loop ends normally: when the condition
 becomes false, or when the range form reaches `end()`.
@@ -169,8 +258,93 @@ call `begin`/`end` on it directly; otherwise it **must** first bind a temporary.
 5.1.4 During iteration, the container **must not** grow or be reallocated; such behavior
 is undefined behavior.
 
-5.1.5 Array and string literals do not themselves provide `begin()`/`end()`, and
-**must not** be used directly as the range of a range loop.
+5.1.5 A fixed-length array is walked by its elements. Its `begin()` and `end()` come
+from the standard library, which declares them once for every element type and length:
+
+```ft
+export
+template <T type, N usize>
+fn begin(this &const [N]const T) *const T {
+    return &this[0];
+}
+```
+
+The length `N` is deduced from the argument's own length, so one declaration serves
+every array. A string literal is a `[N]c8`, so it is walked the same way and **may** be
+used directly as the range of a range loop:
+
+```ft
+import C;
+import std;
+
+fn main() int except {
+    for (ch c8 : "abc") {
+        C.printf("%c ", ch);
+    }
+    C.printf("\n");
+    return 0;
+}
+```
+
+This program prints `a b c`.
+
+5.1.6 The elements of a fixed-length array are in line, so the iterators are pointers
+into it and `end()` is `begin() + N`. A named array is walked in place; a literal is
+bound to a temporary first, as 5.1.2 requires.
+
+### Ranges as the subject
+
+5.2.1 A range literal is the ordinary way to walk a series of integers. `1 .. n` walks 1
+through `n - 1` and `1 ..= n` walks 1 through `n`
+(see [01 Lexical §6.6](01-lexical.md#range-literals)). The loop variable is `i64`, the
+element type of `Range`:
+
+```ft
+import C;
+import std;
+
+fn main() int except {
+    total i64 = 0i64;
+    for (i i64 : 1 ..= 10) {
+        total += i;
+    }
+    C.printf("%ld\n", total);
+    return 0;
+}
+```
+
+This program prints `55`, the sum of 1 through 10: `..=` includes its high end, so the
+walk reaches 10.
+
+5.2.2 The subject of a range loop may be any value that supports the operations in the
+table above, a range literal among them. A `Range` value may also be stored and walked
+repeatedly, and a range used twice is walked twice: it is a value, not a cursor.
+
+5.2.3 A fixed-length array is walked by giving `[N]T` the two operations. The length is a
+template's value parameter, so one declaration serves every length, and an array literal
+is a subject like any other:
+
+```ft
+import C;
+import std;
+
+template <T type, N usize>
+fn begin(this &const [N]T) *const T { return &this[0]; }
+template <T type, N usize>
+fn end(this &const [N]T) *const T { return &this[0] + N; }
+
+fn main() int except {
+    for (ch c8 : "abc") { C.printf("%c ", ch); }
+    C.printf("| ");
+    for (v int : {10, 20, 30}) { C.printf("%d ", v); }
+    C.printf("\n");
+    return 0;
+}
+```
+
+This program prints `a b c | 10 20 30 `: a string literal is a `[N]const c8` and an array
+literal is a `[N]T`, and both walk through the two declarations above. Its trailing space
+is the one the loop body writes after the last element.
 
 ## `switch`
 

@@ -126,6 +126,9 @@ export fn __str__(this &const Duration) String {
 // A small helper rather than a `String` conversion: `str` of an `int` builds a
 // `String` of its own, and the formatting above needs the digits placed between
 // parts of a line it is already building.
+//
+// - `text`: the line being built
+// - `value`: the number to append, with a leading `-` when negative
 fn print_to(text &String, value int) void {
     if (value < 0) {
         text.push('-');
@@ -191,7 +194,7 @@ export fn unix_seconds(this &const SystemTime) i64 {
 }
 
 // The civil date and time in UTC.
-export fn to_utc(this &const SystemTime) DateTime {
+export fn __as__(this &const SystemTime, target *DateTime) DateTime {
     seconds i64 = this._ns / 1000000000i64;
     days i64 = seconds / 86400i64;
     remainder i64 = seconds % 86400i64;
@@ -203,14 +206,14 @@ export fn to_utc(this &const SystemTime) DateTime {
     minute i64 = (remainder % 3600i64) / 60i64;
     second i64 = remainder % 60i64;
     civil Civil = civil_from_days(days);
-    return DateTime(civil.year, civil.month, civil.day, hour as u32, minute as u32, second as u32);
+    return DateTime(civil.year, civil.month, civil.day, hour as uint, minute as uint, second as uint);
 }
 
 // The civil year, month and day of a count of days since the Unix epoch.
 type Civil {
-    year i32;
-    month u32;
-    day u32;
+    year int;
+    month uint;
+    day uint;
 }
 
 // Converts a day count to a civil date.
@@ -218,6 +221,8 @@ type Civil {
 // Howard Hinnant's `civil_from_days`: shift the epoch to 0000-03-01, which makes
 // the leap day the last day of the year, then divide by the 400-year cycle. The
 // arithmetic is integer only, and correct for every date the epoch can express.
+//
+// - `days`: days since the Unix epoch, which may be negative
 fn civil_from_days(days i64) Civil {
     shifted i64 = days + 719468i64;
     era i64 = shifted / 146097i64;
@@ -238,35 +243,35 @@ fn civil_from_days(days i64) Civil {
         month -= 9i64;
         year += 1i64;
     }
-    civil Civil = .{ year as i32, month as u32, day as u32 };
+    civil Civil = .{ year as int, month as uint, day as uint };
     return civil;
 }
 
 // A civil date and time in UTC.
 export type DateTime {
     // The year, as written.
-    _year i32;
+    _year int;
     // The month, 1 through 12.
-    _month u32;
+    _month uint;
     // The day of the month, 1 through 31.
-    _day u32;
+    _day uint;
     // The hour, 0 through 23.
-    _hour u32;
+    _hour uint;
     // The minute, 0 through 59.
-    _minute u32;
+    _minute uint;
     // The second, 0 through 59.
-    _second u32;
+    _second uint;
 }
 
 // Builds a date and time from its fields.
 export fn __init__(
     this &DateTime,
-    year i32,
-    month u32,
-    day u32,
-    hour u32,
-    minute u32,
-    second u32
+    year int,
+    month uint,
+    day uint,
+    hour uint,
+    minute uint,
+    second uint
 ) void {
     this._year = year;
     this._month = month;
@@ -277,32 +282,32 @@ export fn __init__(
 }
 
 // The year.
-export fn year(this &const DateTime) i32 {
+export fn year(this &const DateTime) int {
     return this._year;
 }
 
 // The month.
-export fn month(this &const DateTime) u32 {
+export fn month(this &const DateTime) uint {
     return this._month;
 }
 
 // The day of the month.
-export fn day(this &const DateTime) u32 {
+export fn day(this &const DateTime) uint {
     return this._day;
 }
 
 // The hour.
-export fn hour(this &const DateTime) u32 {
+export fn hour(this &const DateTime) uint {
     return this._hour;
 }
 
 // The minute.
-export fn minute(this &const DateTime) u32 {
+export fn minute(this &const DateTime) uint {
     return this._minute;
 }
 
 // The second.
-export fn second(this &const DateTime) u32 {
+export fn second(this &const DateTime) uint {
     return this._second;
 }
 
@@ -324,6 +329,10 @@ export fn __str__(this &const DateTime) String {
 }
 
 // Appends `value` to `text` with at least `width` digits.
+//
+// - `text`: the line being built
+// - `value`: the number to append; its sign is written first
+// - `width`: the fewest digits to write, zero-padded on the left
 fn append_padded(text &String, value i64, width usize) void {
     divisor i64 = 1i64;
     digits usize = 1;

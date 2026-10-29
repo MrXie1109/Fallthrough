@@ -1,7 +1,7 @@
 // UTF-8: code points to bytes and back.
 //
 //     bytes String = unicode.encode(0x00e9)??;   // "é" as two bytes
-//     points Array<u32> = unicode.decode(&text)??;
+//     points Array<uint> = unicode.decode(&text)??;
 //     n usize = unicode.count(&text);            // code points, not bytes
 //
 // A `String` is a sequence of bytes. UTF-8 is the rule that says which bytes
@@ -24,10 +24,10 @@ from std.string import String;
 from std.tuple import Pair;
 
 // The largest code point Unicode has.
-MAX_CODE_POINT const u32 = 0x10ffffu32;
+MAX_CODE_POINT const uint = 0x10ffffu32;
 
 // Encodes one code point as UTF-8 bytes.
-export fn encode(code_point u32) String except {
+export fn encode(code_point uint) String except {
     if (code_point > MAX_CODE_POINT) {
         raise "ValueError": "the code point is above U+10FFFF";
     }
@@ -54,7 +54,10 @@ export fn encode(code_point u32) String except {
 }
 
 // One byte as a character of the string it is stored in.
-fn byte_char(value u32) char {
+
+// - `value`: one UTF-8 byte, zero to `0xFF`, which is re-interpreted as the
+//   character of the same value
+fn byte_char(value uint) char {
     return (value as int) as char;
 }
 
@@ -88,8 +91,8 @@ export fn count(text &const String) usize {
 }
 
 // Decodes every code point of `text`, raising on invalid UTF-8.
-export fn decode(text &const String) Array<u32> except {
-    points Array<u32> = Array<u32>();
+export fn decode(text &const String) Array<uint> except {
+    points Array<uint> = Array<uint>();
     index usize = 0;
     while (index < text.length()) {
         length usize = sequence_length(text, index);
@@ -103,21 +106,25 @@ export fn decode(text &const String) Array<u32> except {
 }
 
 // The code point at `index`, and how many bytes it takes.
-export fn next_code_point(text &const String, index usize) Pair<u32, usize> except {
+export fn next_code_point(text &const String, index usize) Pair<uint, usize> except {
     length usize = sequence_length(text, index);
     if (length == 0usize) {
         raise "ValueError": "the text is not valid UTF-8";
     }
-    return Pair<u32, usize>(code_point_at(text, index, length)??, length);
+    return Pair<uint, usize>(code_point_at(text, index, length)??, length);
 }
 
 // How many bytes the sequence starting at `index` takes, or zero when the bytes
 // there are not a valid sequence.
+
+// - `text`: the bytes to read from
+// - `index`: the byte offset of a sequence's first byte, counted from zero;
+//   an offset past the end gives zero rather than reading
 fn sequence_length(text &const String, index usize) usize {
     if (index >= text.length()) {
         return 0usize;
     }
-    lead u32 = (text[index] as int) as u32;
+    lead uint = (text[index] as int) as uint;
     if (lead < 0x80u32) {
         return 1usize;
     }
@@ -150,24 +157,33 @@ fn sequence_length(text &const String, index usize) usize {
 }
 
 // Whether the byte at `index` is a continuation byte.
+
+// - `text`: the bytes to read from
+// - `index`: the byte offset to test, counted from zero; an offset past the
+//   end answers `false`
 fn continuation(text &const String, index usize) bool {
     if (index >= text.length()) {
         return false;
     }
-    value u32 = (text[index] as int) as u32;
+    value uint = (text[index] as int) as uint;
     return value >= 0x80u32 && value <= 0xbfu32;
 }
 
 // The code point a checked sequence encodes.
-fn code_point_at(text &const String, index usize, length usize) u32 except {
-    first u32 = (text[index] as int) as u32;
+
+// - `text`: the bytes of the sequence, already known to be valid UTF-8
+// - `index`: the byte offset the sequence starts at, counted from zero
+// - `length`: how many bytes the sequence takes, as `sequence_length` said
+//   it does; it decides how many continuation bytes are folded in
+fn code_point_at(text &const String, index usize, length usize) uint except {
+    first uint = (text[index] as int) as uint;
     if (length == 1usize) {
         return first;
     }
-    value u32 = first & mask_for(length);
+    value uint = first & mask_for(length);
     offset usize = 1;
     while (offset < length) {
-        value = (value << 6u32) | ((text[index + offset] as int) as u32 & 0x3fu32);
+        value = (value << 6u32) | ((text[index + offset] as int) as uint & 0x3fu32);
         offset += 1;
     }
     // Over-long forms and surrogates are not characters.
@@ -187,7 +203,10 @@ fn code_point_at(text &const String, index usize, length usize) u32 except {
 }
 
 // The bits of the first byte that belong to the code point.
-fn mask_for(length usize) u32 {
+
+// - `length`: how many bytes the sequence takes, two to four; it selects the
+//   mask of the lead byte's payload bits
+fn mask_for(length usize) uint {
     if (length == 2usize) {
         return 0x1fu32;
     }

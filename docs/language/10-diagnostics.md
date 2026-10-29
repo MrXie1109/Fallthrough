@@ -111,11 +111,21 @@ within the same block, and moves in nested blocks are not counted.
 following three forms constitute a directive:
 
 ```ft
-x int = 1;                    // no warning
-// explanatory text -- no warning
-by_code int = 2;              // no warning: S0140
-by_group int = 3;             // no warning: unused
+import C;
+
+fn main() int {
+    x int = 1;                    // no warning
+    by_code int = 2;              // no warning: S0140
+    by_group int = 3;             // no warning: unused
+    // explanatory text -- no warning
+    C.printf("%d %d %d\n", x, by_code, by_group);
+    return 0;
+}
 ```
+
+This program compiles with no diagnostics at all, though none of the three bindings is
+read before the `printf`: each of the three forms suppressed its warning. Without the
+comments the same three bindings report `S0140`.`
 
 6.2 A comment whose content is exactly `no warning` suppresses every warning on that
 line.

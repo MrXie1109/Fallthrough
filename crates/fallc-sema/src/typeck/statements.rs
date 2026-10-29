@@ -279,6 +279,16 @@ impl TypeChecker {
                             .with_span(ast.stmt(stmt).span),
                     );
                 }
+                // A raise that nothing in this body catches is what makes an
+                // `except(auto)` function a throwing one. The call records in
+                // `note_throwing_call` cover a call that may raise; a `raise`
+                // written here is the other way a body produces one, and it
+                // was the one the deduction did not see -- every
+                // `except(auto)` function that raised in its own body was
+                // treated as one that cannot.
+                if self.throws_auto && self.protected_depth == 0 {
+                    self.auto_seen_raise = true;
+                }
                 self.require_throw_allowed(ast.stmt(stmt).span, "`raise`");
             }
             StmtKind::If(node) => {
@@ -296,6 +306,52 @@ impl TypeChecker {
                 // it is reported. That is the deliberate difference: writing
                 // `if` says both branches are meant to compile.
                 let constant = self.const_eval_int(node.condition);
+
+                // `if (auto) @constexpr { a } else { b }` asks which branch
+                // this build can compile. The `then` block is checked on
+                // trial; if that reported anything it is rolled back and the
+                // `else` block is the one that counts, which is why a probe
+                // needs no separate syntax for "the fallback".
+                if node.probes_compilable {
+                    let saved_types = types.clone();
+                    // The trial is checked into a bag of its own. A diagnostic
+                    // bag keeps one copy of each distinct report, so a mistake
+                    // that had already been reported somewhere else did not
+                    // lengthen the shared bag -- and the probe, which asked
+                    // whether anything was added, read that as "the block
+                    // compiles". Whether the trial compiles is not a fact about
+                    // what else was reported, so the trial records separately.
+                    let mut trial = fallc_diag::DiagnosticBag::new();
+                    std::mem::swap(&mut self.diagnostics, &mut trial);
+                    self.check_block(ast, resolutions, types, node.then_block);
+                    std::mem::swap(&mut self.diagnostics, &mut trial);
+                    // A warning is not a failure to compile: an unused binding
+                    // in the probed block reported the whole branch as
+                    // impossible, which made a probe containing any `??` call
+                    // take its `else` every time.
+                    let failed = trial
+                        .iter()
+                        .any(|diagnostic| diagnostic.severity.is_fatal());
+                    // Code generation emits the branch the probe chose, so the
+                    // answer is recorded where the other compile-time
+                    // decisions are.
+                    self.compile_time_ifs
+                        .insert(ast.expr(node.condition).span, !failed);
+                    if !failed {
+                        // The trial compiled, so it is the live branch and what
+                        // it reported about itself is the program's to keep.
+                        for diagnostic in trial.iter() {
+                            self.diagnostics.push(diagnostic.clone());
+                        }
+                        return;
+                    }
+                    // The block does not compile, so the `else` side is what
+                    // this program has: the trial's reports are discarded and
+                    // its types rolled back before the other branch is checked.
+                    *types = saved_types;
+                    self.check_else_branch(ast, resolutions, types, &node.else_branch);
+                    return;
+                }
 
                 if node.is_constexpr {
                     // The condition is typed *before* it is required to be a
@@ -1227,6 +1283,11 @@ impl TypeChecker {
         if !signature.throws {
             return;
         }
+        // An `except(auto)` callee said nothing; what its body turned out to do
+        // is the answer, and a body that cannot raise makes this call ordinary.
+        if self.auto_throws_is_false(signature) {
+            return;
+        }
         // A probe asks what the expression *would* do, and nothing is emitted
         // for it: the answer is the point, not the call.
         if self.probe_depth > 0 {
@@ -1248,6 +1309,12 @@ impl TypeChecker {
         if self.propagating_depth > 0 {
             // No handler here: the exception leaves this function.
             self.propagating_calls.insert(span);
+            // An `except(auto)` function has no claim of its own yet, so the
+            // fact that something can leave it is recorded and becomes the
+            // answer.
+            if self.throws_auto {
+                self.auto_seen_raise = true;
+            }
             return;
         }
         // `??(cond)` claims the function raises only when `cond` holds. The
@@ -1383,4 +1450,31 @@ impl TypeChecker {
         );
     }
 
+}
+
+impl TypeChecker {
+    /// Whether an `except(auto)` callee turned out not to raise.
+    ///
+    /// A call whose callee cannot be seen at all is treated as raising, which
+    /// is the safe direction: the caller must handle a failure it cannot rule
+    /// out.
+    fn auto_throws_is_false(&self, signature: &crate::FunctionSignature) -> bool {
+        if !self.except_auto(&signature.written_name) {
+            return false;
+        }
+        !self
+            .throwing_functions
+            .contains(&signature.written_name)
+            && !self
+                .throwing_functions
+                .contains(signature.written_name.rsplit('.').next().unwrap_or(""))
+    }
+
+    /// Whether a declaration was written `except(auto)`.
+    fn except_auto(&self, name: &str) -> bool {
+        let bare = name.rsplit('.').next().unwrap_or(name);
+        self.except_auto_functions.iter().any(|declared| {
+            declared == name || declared.rsplit('.').next().unwrap_or(declared) == bare
+        })
+    }
 }

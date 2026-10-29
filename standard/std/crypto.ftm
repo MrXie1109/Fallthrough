@@ -29,14 +29,14 @@ from std.bytes import Bytes;
 
 // The working state.
 type Sha256 {
-    first u32;
-    second u32;
-    third u32;
-    fourth u32;
-    fifth u32;
-    sixth u32;
-    seventh u32;
-    eighth u32;
+    first uint;
+    second uint;
+    third uint;
+    fourth uint;
+    fifth uint;
+    sixth uint;
+    seventh uint;
+    eighth uint;
 }
 
 // The SHA-256 initial state: the fractional parts of the square roots of the
@@ -50,8 +50,8 @@ fn initial_state() Sha256 {
 
 // The sixty-four round constants: the fractional parts of the cube roots of the
 // first sixty-four primes.
-fn round_constants() Array<u32> {
-    values Array<u32> = Array<u32>();
+fn round_constants() Array<uint> {
+    values Array<uint> = Array<uint>();
     values.push(0x428a2f98u32);
     values.push(0x71374491u32);
     values.push(0xb5c0fbcfu32);
@@ -120,81 +120,92 @@ fn round_constants() Array<u32> {
 }
 
 // Rotates `value` right by `count` bits.
-fn rotate_right(value u32, count int) u32 {
-    return (value >> count as u32) | (value << (32 - count) as u32);
+//
+// - `value`: the word to rotate
+// - `count`: how many places, between 1 and 31
+fn rotate_right(value uint, count int) uint {
+    return (value >> count as uint) | (value << (32 - count) as uint);
 }
 
 // The first sigma of the message schedule.
-fn sigma0(value u32) u32 {
+// - `value`: the word to mix
+fn sigma0(value uint) uint {
     return rotate_right(value, 7) ^ rotate_right(value, 18) ^ (value >> 3);
 }
 
 // The second sigma of the message schedule.
-fn sigma1(value u32) u32 {
+// - `value`: the word to mix
+fn sigma1(value uint) uint {
     return rotate_right(value, 17) ^ rotate_right(value, 19) ^ (value >> 10);
 }
 
 // The first sigma of the round function.
-fn epsilon0(value u32) u32 {
+// - `value`: the word to mix
+fn epsilon0(value uint) uint {
     return rotate_right(value, 2) ^ rotate_right(value, 13) ^ rotate_right(value, 22);
 }
 
 // The second sigma of the round function.
-fn epsilon1(value u32) u32 {
+// - `value`: the word to mix
+fn epsilon1(value uint) uint {
     return rotate_right(value, 6) ^ rotate_right(value, 11) ^ rotate_right(value, 25);
 }
 
 // The big sigma the round adds.
-fn big_sigma0(value u32) u32 {
+// - `value`: the word to mix
+fn big_sigma0(value uint) uint {
     return epsilon0(value);
 }
 
 // The big sigma the round adds.
-fn big_sigma1(value u32) u32 {
+// - `value`: the word to mix
+fn big_sigma1(value uint) uint {
     return epsilon1(value);
 }
 
 // Runs the compression function over the padded message, returning the state.
+//
+// - `message`: the bytes to hash, not yet padded
 fn compress(message &const Bytes) Sha256 {
     padded Bytes = pad(message);
-    constants Array<u32> = round_constants();
+    constants Array<uint> = round_constants();
     state Sha256 = initial_state();
     offset usize = 0;
     while (offset < padded.length()) {
-        block Array<u32> = Array<u32>();
+        block Array<uint> = Array<uint>();
         word usize = 0;
         while (word < 16usize) {
             index usize = offset + word * 4usize;
-            value u32 = ((padded[index] as u32) << 24)
-                | ((padded[index + 1usize] as u32) << 16)
-                | ((padded[index + 2usize] as u32) << 8)
-                | (padded[index + 3usize] as u32);
+            value uint = ((padded[index] as uint) << 24)
+                | ((padded[index + 1usize] as uint) << 16)
+                | ((padded[index + 2usize] as uint) << 8)
+                | (padded[index + 3usize] as uint);
             block.push(value);
             word += 1usize;
         }
         round usize = 16usize;
         while (round < 64usize) {
             // W[t] = sigma1(W[t-2]) + W[t-7] + sigma0(W[t-15]) + W[t-16].
-            value u32 = (sigma1(block[round - 2usize]) + block[round - 7usize]
+            value uint = (sigma1(block[round - 2usize]) + block[round - 7usize]
                 + sigma0(block[round - 15usize]) + block[round - 16usize]);
             block.push(value);
             round += 1usize;
         }
-        first u32 = state.first;
-        second u32 = state.second;
-        third u32 = state.third;
-        fourth u32 = state.fourth;
-        fifth u32 = state.fifth;
-        sixth u32 = state.sixth;
-        seventh u32 = state.seventh;
-        eighth u32 = state.eighth;
+        first uint = state.first;
+        second uint = state.second;
+        third uint = state.third;
+        fourth uint = state.fourth;
+        fifth uint = state.fifth;
+        sixth uint = state.sixth;
+        seventh uint = state.seventh;
+        eighth uint = state.eighth;
         round = 0usize;
         while (round < 64usize) {
-            choice1 u32 = (fifth & sixth) ^ ((fifth ^ 0xffffffffu32) & seventh);
-            majority u32 = (first & second) ^ (first & third) ^ (second & third);
+            choice1 uint = (fifth & sixth) ^ ((fifth ^ 0xffffffffu32) & seventh);
+            majority uint = (first & second) ^ (first & third) ^ (second & third);
             // Only in the first sigma terms; kept separate for clarity.
-            add1 u32;
-            temp_first u32;
+            add1 uint;
+            temp_first uint;
             add1 = (eighth + big_sigma1(fifth) + choice1 + constants[round] + block[round]);
             temp_first = add1 + big_sigma0(first) + majority;
             eighth = seventh;
@@ -227,9 +238,9 @@ export fn sha256(message &const Bytes) Bytes {
 }
 
 // The eight state words, for tests that compare against a reference.
-export fn sha256_state(message &const Bytes) Array<u32> {
+export fn sha256_state(message &const Bytes) Array<uint> {
     state Sha256 = compress(message);
-    words Array<u32> = Array<u32>();
+    words Array<uint> = Array<uint>();
     words.push(state.first);
     words.push(state.second);
     words.push(state.third);
@@ -242,6 +253,8 @@ export fn sha256_state(message &const Bytes) Array<u32> {
 }
 
 // Pads a message: a one bit, zeros, and the length in bits, big-endian.
+//
+// - `message`: the bytes to pad
 fn pad(message &const Bytes) Bytes {
     padded Bytes = Bytes();
     index usize = 0;
@@ -264,6 +277,8 @@ fn pad(message &const Bytes) Bytes {
 }
 
 // Writes the state as thirty-two big-endian bytes.
+//
+// - `state`: the eight words the compression function left
 fn digest_bytes(state Sha256) Bytes {
     digest Bytes = Bytes();
     push_word(&digest, state.first);
@@ -278,7 +293,10 @@ fn digest_bytes(state Sha256) Bytes {
 }
 
 // Appends one word, most significant byte first.
-fn push_word(out &Bytes, value u32) void {
+//
+// - `out`: the stream the four bytes are appended to
+// - `value`: the word to write
+fn push_word(out &Bytes, value uint) void {
     out.push(((value >> 24) & 0xffu32) as byte);
     out.push(((value >> 16) & 0xffu32) as byte);
     out.push(((value >> 8) & 0xffu32) as byte);
@@ -291,7 +309,7 @@ export fn hex(data &const Bytes) String {
     text String = String();
     index usize = 0;
     while (index < data.length()) {
-        value u32 = data[index] as u32;
+        value uint = data[index] as uint;
         text.push(digits[(value >> 4) as usize]);
         text.push(digits[(value & 0x0fu32) as usize]);
         index += 1;
@@ -336,8 +354,8 @@ export fn hmac_sha256(key &const Bytes, message &const Bytes) Bytes {
     index = 0;
     while (index < 64usize) {
         inner_value byte = block[index] as byte;
-        inner.push((inner_value as u32 ^ 0x36u32) as byte);
-        outer.push((inner_value as u32 ^ 0x5cu32) as byte);
+        inner.push((inner_value as uint ^ 0x36u32) as byte);
+        outer.push((inner_value as uint ^ 0x5cu32) as byte);
         index += 1;
     }
     index = 0;

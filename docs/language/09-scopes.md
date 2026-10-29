@@ -23,6 +23,34 @@ declarations, and the order in which bindings are destroyed.
 2.2 A name is visible within its scope; after leaving the scope it is no longer
 visible.
 
+2.2.1 A block standing where a value is wanted is that value: the last expression in it
+without a `;` is what the block gives, and a block whose last statement ends in `;` gives
+nothing (`void`). Its bindings are its own, so the value may be computed from names that do
+not exist outside:
+
+```ft
+import C;
+import std;
+
+fn f() int {
+    return {
+        x int = 2;
+        x + 3
+    };
+}
+
+fn main() int except {
+    C.printf("%d\n", f());
+    return 0;
+}
+```
+
+This program prints `5`: the block is the value of the `return`, and `x` belongs to the
+block alone.
+
+2.2.2 A bare `{ … }` in statement position is a statement block, not a value: the
+distinction is the position it stands in.
+
 2.3 Each branch of a `switch` does not introduce a separate scope; where an independent
 scope is needed, write a bare block.
 
@@ -75,3 +103,8 @@ moved-from object is still destroyed when its scope ends (in the empty state).
 
 5.6 A program **must not** rely on the relative order among multiple destructions whose
 order is not specified, unless this standard specifies otherwise.
+
+5.7 When a scope is left, the `defer` blocks of that scope
+(see [05 Statements §8](05-statements.md#defer)) run **before** the destruction of the
+scope's bindings. Both run in reverse declaration order, and an inner scope's `defer` runs
+before anything the enclosing scope does.

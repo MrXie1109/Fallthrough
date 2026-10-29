@@ -67,7 +67,7 @@ export fn lines(text &const String) Array<String> {
     start usize = 0;
     index usize = 0;
     while (index < text.length()) {
-        if (text[index] == '\n' as char) {
+        if (text[index] == '\n') {
             parts.push(text.substring(start, index - start));
             start = index + 1;
         }
@@ -111,7 +111,7 @@ export fn upper(text &const String) String {
     index usize = 0;
     while (index < text.length()) {
         character char = text[index];
-        if (character >= 'a' as char && character <= 'z' as char) {
+        if (character >= 'a' && character <= 'z') {
             result.push((((character as int) - ('a' as int)) + ('A' as int)) as char);
         } else {
             result.push(character);
@@ -127,7 +127,7 @@ export fn lower(text &const String) String {
     index usize = 0;
     while (index < text.length()) {
         character char = text[index];
-        if (character >= 'A' as char && character <= 'Z' as char) {
+        if (character >= 'A' && character <= 'Z') {
             result.push((((character as int) - ('A' as int)) + ('a' as int)) as char);
         } else {
             result.push(character);

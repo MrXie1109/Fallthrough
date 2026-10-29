@@ -33,6 +33,12 @@ ENV_FILE    ?= $(PREFIX)/etc/fallthrough/env
 # A scratch directory for the compiler's own smoke test.
 SCRATCH ?= scratch
 
+# The compiler `make cache` warms the cache with: the installed one, on PATH.
+# The cache belongs to a build of the compiler, so warming it with a different
+# binary than the one a program is later built with would fill a cache nobody
+# reads -- which is why this is the installed compiler and not `$(BIN)`.
+FALLC   ?= fallc
+
 # One test binary is a filter; empty means every test in the workspace. The
 # project's rule is to run only the tests a change touches, which is why
 # `TEST=` exists and why `test-all` is a separate target.
@@ -40,7 +46,7 @@ TEST    ?=
 TARGET  ?=
 
 .PHONY: help build release check clippy fmt fmt-check test test-all std-check \
-        smoke clean distclean install uninstall
+        cache docs docs-check smoke clean distclean install uninstall
 
 help:
 	@echo "make build        build the workspace (debug)"
@@ -52,6 +58,11 @@ help:
 	@echo "make test         run tests (TEST=<name> to run one binary)"
 	@echo "make test-all     run every workspace test (not the default policy)"
 	@echo "make std-check    compile a program that imports the standard library"
+	@echo "make cache        compile the whole standard library once with the"
+	@echo "                  installed $(FALLC), so every later program builds from"
+	@echo "                  the cache (run 'make release install' first)"
+	@echo "make docs         write docs/std/ from the library's comments"
+	@echo "make docs-check   fail if those pages are out of date"
 	@echo "make smoke        compile and run tests/smoke.ft if it exists"
 	@echo "make clean        remove build artifacts"
 	@echo "make install      install fallc, the library and their env file"
@@ -104,6 +115,59 @@ std-check: build
 		'> $(SCRATCH)/std-check.ft
 	$(BIN) $(SCRATCH)/std-check.ft -o $(SCRATCH)/std-check
 	@$(SCRATCH)/std-check
+
+# Fills the module cache without building a program.
+#
+# Every module is compiled once and its products are cached: its interface, the
+# compiled functions, and the templates that go with them. A build that finds
+# them there reads them instead of compiling the sources again, which is what
+# turns a standard-library program from seconds into a fraction of one.
+#
+# The cache is per compiler build -- the key includes this binary's size and
+# modification time -- so a rebuild of `fallc` starts it empty. Running this
+# once after `make release` puts everything a program can import into it, and
+# the next program someone writes is already warm.
+#
+#   make release cache
+#
+# The program compiled here is the widest import the language has: the umbrella
+# module, the C bindings, and the compile-time queries. A module no program
+# imports is still compiled, because importing the umbrella is what loads it.
+cache:
+	@command -v $(FALLC) >/dev/null 2>&1 || { \
+		echo "$(FALLC) is not installed; run 'make release install' first"; exit 1; }
+	@mkdir -p $(SCRATCH)
+	@printf '%s\n' \
+		'import std;' \
+		'import C;' \
+		'' \
+		'fn main() int except {' \
+		'    text String = "warm";' \
+		'    C.printf("%s\\n", text.data());' \
+		'    return 0;' \
+		'}' \
+		> $(SCRATCH)/cache.ft
+	@echo "warming the cache with $$(command -v $(FALLC))"
+	@$(FALLC) $(SCRATCH)/cache.ft -o $(SCRATCH)/cache
+	@echo "module cache is warm: the standard library is compiled"
+# The library's own documentation, from the comments that already describe it.
+#
+# Every module opens with what it is for, and every declaration is preceded by
+# what it does and what its parameters mean. Those comments are Markdown, so
+# the page is a selection rather than a translation: a function keeps its
+# signature and loses its body, a type keeps its fields, and the prose is the
+# prose that was written.
+#
+# `make docs-check` is the form CI uses: it fails when a page no longer matches
+# the source it came from.
+PYTHON ?= python3
+DOCS_TOOL := tools/std-docs.py
+
+docs:
+	$(PYTHON) $(DOCS_TOOL)
+
+docs-check:
+	$(PYTHON) $(DOCS_TOOL) --check
 
 smoke: build
 	@if [ -f tests/smoke.ft ]; then \

@@ -749,6 +749,20 @@ impl<'ctx> Lowerer<'ctx> {
             } else {
                 lowered.ok_or_else(|| CodegenError::waiting_for_spec("this receiver", span))?
             }
+        } else if !matches!(
+            callee
+                .get_type()
+                .get_param_types()
+                .first()
+                .copied(),
+            Some(inkwell::types::BasicMetadataTypeEnum::PointerType(_))
+        ) {
+            // A receiver taken by value: the method wants the object itself,
+            // not its address. `this V` copies, so what is passed is the value
+            // the object expression produced -- stored in a temporary first
+            // when the callee takes an aggregate by address, which is how a
+            // by-value aggregate parameter travels.
+            lowered.ok_or_else(|| CodegenError::waiting_for_spec("this receiver", span))?
         } else {
             // A name whose binding *holds* an address -- a reference or a
             // pointer parameter, such as `this` inside a reference-receiver
@@ -797,6 +811,45 @@ impl<'ctx> Lowerer<'ctx> {
                     storage.as_basic_value_enum()
                 }
             }
+        };
+
+        // A receiver reached through an indirection is the thing it points
+        // at: `w.show()` where `w` is a wrapper with `__deref__` calls the
+        // method on the referent. The checker resolved that call and recorded
+        // it; making it here is what turns the wrapper's address into the
+        // referent's. Without it the method was handed the wrapper's bits and
+        // read them as the referent's.
+        let receiver = match self.indirect_receivers.get(&span).cloned() {
+            Some(symbol) => {
+                let function = self.resolved_function(&symbol, "an indirection", span)?;
+                // The indirection takes the wrapper by address, so the value
+                // reaching this point is given storage of its own first. The
+                // other receiver branches produce a value or an address
+                // depending on which form the object was written in, and the
+                // method's own parameter type is no guide here: it describes
+                // the referent, not the wrapper the call is made on.
+                // The wrapper's own storage, which an lvalue names directly.
+                // Storing the value again would give a copy, and the copy's
+                // address is fine for reading but not for a method that writes
+                // through the referent.
+                let stored = self.lower_lvalue(ast, types, builder, field.object);
+                let address = match stored {
+                    Some(binding) => binding.storage,
+                    None => match receiver {
+                        BasicValueEnum::PointerValue(pointer) => pointer,
+                        other => self.store_temporary(builder, other, "receiver")?,
+                    },
+                };
+                let call_site = builder
+                    .build_call(function, &[address.into()], "indirect")
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                let got = call_site
+                    .try_as_basic_value()
+                    .basic()
+                    .ok_or_else(|| CodegenError::waiting_for_spec("an indirection", span))?;
+                got
+            }
+            None => receiver,
         };
 
         // Through the shared path, not `lower_expr`: an argument may need its

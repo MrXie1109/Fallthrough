@@ -20,31 +20,32 @@ export type Complex {
 }
 
 // Makes a complex number.
-export fn complex(real f64, imaginary f64) Complex {
-    return .{ real, imaginary };
+export fn __init__(this &Complex, real f64, imaginary f64) void {
+    this.re = real;
+    this.im = imaginary;
 }
 
 // The imaginary unit.
 export fn i() Complex {
-    return .{ 0.0, 1.0 };
+    return Complex(0.0, 1.0);
 }
 
 // Addition.
 export fn add(this &const Complex, second &const Complex) Complex {
-    return .{ this.re + second.re, this.im + second.im };
+    return Complex(this.re + second.re, this.im + second.im);
 }
 
 // Subtraction.
 export fn sub(this &const Complex, second &const Complex) Complex {
-    return .{ this.re - second.re, this.im - second.im };
+    return Complex(this.re - second.re, this.im - second.im);
 }
 
 // Multiplication: `(a+bi)(c+di) = (ac-bd) + (ad+bc)i`.
 export fn mul(this &const Complex, second &const Complex) Complex {
-    return .{
+    return Complex(
         this.re * second.re - this.im * second.im,
         this.re * second.im + this.im * second.re
-    };
+    );
 }
 
 // Division, by multiplying numerator and denominator by the conjugate.
@@ -53,15 +54,15 @@ export fn div(this &const Complex, second &const Complex) Complex except {
     if (denominator == 0.0) {
         raise "ValueError": "division by zero";
     }
-    return .{
+    return Complex(
         (this.re * second.re + this.im * second.im) / denominator,
         (this.im * second.re - this.re * second.im) / denominator
-    };
+    );
 }
 
 // The conjugate `a - bi`.
 export fn conjugate(this &const Complex) Complex {
-    return .{ this.re, -this.im };
+    return Complex(this.re, -this.im);
 }
 
 // The magnitude.
@@ -84,13 +85,13 @@ export fn pow(this &const Complex, exponent f64) Complex except {
     magnitude f64 = this.abs();
     if (magnitude == 0.0) {
         if (exponent == 0.0) {
-            return .{ 1.0, 0.0 };
+            return Complex(1.0, 0.0);
         }
-        return .{ 0.0, 0.0 };
+        return Complex(0.0, 0.0);
     }
     angle f64 = this.arg() * exponent;
     scale f64 = math.pow(magnitude, exponent);
-    return .{ scale * math.cos(angle), scale * math.sin(angle) };
+    return Complex(scale * math.cos(angle), scale * math.sin(angle));
 }
 
 // Whether two complex numbers are equal.

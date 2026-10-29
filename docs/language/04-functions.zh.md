@@ -13,12 +13,19 @@
 ### 形式
 
 ```ft
+import C;
+
 fn add(a int, b int) int { return a + b; }
-fn declared(a int) int;
-export fn visible(a int) int { ... }
-@extern_C fn printf(fmt *const c8, ...) int;
+export fn visible(a int) int { return a * 2; }
 @constexpr fn square(n int) int { return n * n; }
+
+fn main() int {
+    C.printf("%d %d %d\n", add(1, 2), visible(3), square(4));
+    return 0;
+}
 ```
+
+该程序输出 `3 6 16`：普通定义、导出定义与 `constexpr` 定义写法相同，调用方式也相同。
 
 2.1.1 有函数体的函数可以省略返回类型：省略等价于 `auto`，由 `return` 语句推断。
 不返回值时返回类型为 `void`，也可以省略。
@@ -86,9 +93,24 @@ export fn visible(a int) int { ... }
 4.1.1 `&` 产生指针；引用是类型的写法。
 
 ```ft
-fn takes_ref(s &const String) int;    // 引用：直接传名字
-fn takes_ptr(p *int) int;             // 指针：传 &x
+import C;
+
+type Point {
+    x int;
+    y int;
+}
+
+fn takes_ref(s &const Point) int { return s.x; }
+fn takes_ptr(p *Point) int { return p.x; }
+
+fn main() int {
+    p Point = .{11, 2};
+    C.printf("%d %d\n", takes_ref(&p), takes_ptr(&p));
+    return 0;
+}
 ```
+
+该程序输出 `11 11`：引用形参与指针形参都接收地址，并都通过它读到同一个字段。
 
 4.1.2 在形参位置，类型为 `T` 的值可以满足 `&T`、`&const T` 形参：实现把实参的
 地址传入。该调整**仅**在形参位置成立。
@@ -123,9 +145,27 @@ fn takes_ptr(p *int) int;             // 指针：传 &x
 不符合本规范（`S0190`）：
 
 ```ft
+import C;
+
+type Point {
+    x int;
+    y int;
+}
+
 fn length(this &const Point) int { return this.x + this.y; }
 fn shift(this &Point, d int) void { this.x += d; }
+
+fn main() int {
+    p Point = .{1, 2};
+    C.printf("%d\n", length(&p));
+    shift(&p, 10);
+    C.printf("%d\n", p.x);
+    return 0;
+}
 ```
+
+该程序先输出 `3`，再输出 `11`：`length` 只读接收者、不得写它，而 `shift` 取
+`this &Point` 并写入字段。
 
 5.3 调用成员函数时，接收者作为第一个实参传入。接收者为值时，实现取它的地址；
 接收者本身就是引用或指针值时，传入它持有的地址。
@@ -161,6 +201,31 @@ fn shift(this &Point, d int) void { this.x += d; }
 7.1 同一名字可以有多个重载。调用时由接收者与实参类型选出唯一匹配。
 
 7.2 无法选出唯一匹配时，实现**必须**报告诊断。
+
+7.2.1 选重载**只看参数表**。返回类型不是签名的一部分，从不参与选择，所以两个只有返回值
+不同的定义只能靠参数区分——区分不出来时，调用就是歧义的，会被报告：
+
+```ft
+fn f(a int) int { return 1; }
+fn f(a int) bool { return true; }
+
+fn main() int {
+    x int = f(1);
+    return 0;
+}
+```
+
+该程序不符合本规范，报告为：
+
+```text
+error[S0037]: the call to `f` is ambiguous: 2 overloads match
+```
+
+结果的期望类型不能打破这个平局——读者必须不必看返回值被怎么用，就能说出跑的是哪一个函数。
+
+7.2.2 标了 `@overridable` 的定义是一个**默认实现**：同名的任何其他定义取代它，于是调用处
+只有一个候选而不是两个。库用这种方式给出一个兜底实现，程序接管它时调用处什么也不用写。
+该属性见 [附录 C §C.3](appendix-c-attributes.zh.md#c3-函数)。
 
 7.3 函数名用于要求函数指针的位置时，由目标函数类型选出重载。
 
@@ -214,6 +279,40 @@ fn shift(this &Point, d int) void { this.x += d; }
 
 11.3 `std.forward<T>(value)` 在 `T` 为引用时给出左值，否则给出右值引用。其行为
 由标准库规定。
+
+## 从调用推出模板实参
+
+11.4 模板参数只从实参的类型推出，不从别处推出。写成 `T` 的形参取实参的类型；
+写成 `&T`、`&const T` 或 `*T` 的形参取实参所指或所指向的东西。
+
+11.5 不出现在形参类型里的参数不由实参推出。`template <T type, K usize>` 写成
+`fn f(a [3]T)` 时，只有调用方写出 `K` 才有值：形参里的长度是声明的常量，不是
+关于实参的问题。
+
+11.6 写成 `[N]` 的长度**会**被推出，数字来自实参自身的数组长度：
+
+```ft
+import C;
+
+template <T type, N usize>
+fn count(a [N]const T) usize {
+    return N + (a[0] != '\0') as usize * 0usize;
+}
+
+fn main() int except {
+    C.printf("%zu\n", count("abc"));
+    return 0;
+}
+```
+
+`N` 是 4，因为 `"abc"` 连同终止符共四个字符——字面量的类型是 `[4]c8`。写出的长度
+指明了是哪个参数，实参给出它的值。写出的表达式本身不被求值。该程序输出 `4`。
+
+11.7 正因如此，一处声明能服务所有数组：同一个 `begin` 用于 `[4]c8`、`[3]int` 与
+`[1024]f64`，每次调用取各自的长度。
+
+11.8 在某个模块里声明的模板，其实例化与声明在调用方模块里没有分别。实参类型按同
+样的方式决定，数组实参的长度在两种情况下都从实参读取。
 
 ## 求值顺序
 

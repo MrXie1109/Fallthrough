@@ -111,7 +111,7 @@ fn last_separator(this &const Path) usize {
     last usize = this._text.length();
     index usize = 0;
     while (index < this._text.length()) {
-        if (this._text[index] == '/' as char) {
+        if (this._text[index] == '/') {
             last = index;
         }
         index += 1;
@@ -143,11 +143,11 @@ export fn directory(this &const Path) Path {
 //
 // A trailing separator names the directory it follows, so `a/b/` is `b`: the
 // separators at the end are not a name of their own.
-export fn file_name(this &const Path) String {
+export fn filename(this &const Path) String {
     length usize = this._text.length();
     // Skip trailing separators; the last segment ends before them.
     end usize = length;
-    while (end > 0 && this._text[end - 1] == '/' as char) {
+    while (end > 0 && this._text[end - 1] == '/') {
         end -= 1;
     }
     if (end == 0) {
@@ -156,7 +156,7 @@ export fn file_name(this &const Path) String {
     start usize = 0;
     position usize = end;
     while (position > 0) {
-        if (this._text[position - 1] == '/' as char) {
+        if (this._text[position - 1] == '/') {
             start = position;
             break;
         }
@@ -187,7 +187,7 @@ export fn extension(this &const Path) String {
     }
     position usize = length;
     while (position > start) {
-        if (this._text[position - 1] == '.' as char) {
+        if (this._text[position - 1] == '.') {
             // A dot at the start of the segment marks a hidden name.
             if (position - 1 == start) {
                 return String();
@@ -203,14 +203,14 @@ export fn extension(this &const Path) String {
 export fn join(this &const Path, other &const Path) Path {
     out Path = Path(this);
     if (!other.empty()) {
-        ends_with_separator bool = !out.empty() && out._text[out._text.length() - 1] == '/' as char;
+        ends_with_separator bool = !out.empty() && out._text[out._text.length() - 1] == '/';
         if (!out.empty() && !ends_with_separator) {
             out._text.push('/');
             ends_with_separator = true;
         }
         // `other` may bring its own leading separator; one is enough.
         start usize = 0;
-        if (ends_with_separator && other._text[0] == '/' as char) {
+        if (ends_with_separator && other._text[0] == '/') {
             start = 1;
         }
         index usize = start;
@@ -224,7 +224,7 @@ export fn join(this &const Path, other &const Path) Path {
 
 // Whether the path names something the system can open.
 export fn exists(this &const Path) bool {
-    stream *c8 = C.fopen(this.text(), "rb");
+    stream *char = C.fopen(this.text(), "rb");
     if (stream == nullptr) {
         return false;
     }
@@ -245,7 +245,7 @@ export fn mkdir(this &const Path) bool {
 // `.` and `..` are not names a caller usually wants, so they are left out; the
 // order is the system's. A directory that cannot be read raises `IOError`, and
 // the message carries the system's error number.
-export fn read_dir(this &const Path) Array<String> except {
+export fn readdir(this &const Path) Array<String> except {
     names Array<String> = Array<String>();
     if (!fs_sys.read_dir_names(this.text(), &names)) {
         raise "IOError": String("the directory could not be read");

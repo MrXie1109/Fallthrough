@@ -38,6 +38,8 @@ export traits Hashable(it T) {
 
 // Spreads the bits of an integer, so that keys which differ only in a high
 // digit do not all land in the same bucket.
+//
+// - `number`: the value to hash
 fn mix(number usize) usize {
     return number * 1099511628211usize;
 }
@@ -49,6 +51,8 @@ type Hash {
 }
 
 // Turns `value` into a number by asking the type.
+//
+// - `value`: the value to hash
 export
 template <T type>
 fn __call__(this &const Hash<T>, value &const T) usize {
@@ -60,7 +64,7 @@ fn __call__(this &const Hash<T>, value &const T) usize {
 // The integers are hashed by their value, spread out.
 //
 // Every width has its own spelling and so its own method: a `byte` is not a
-// `u8`, and `char` names `c8`, which is why each one is written out.
+// `u8`, and `char` names `char`, which is why each one is written out.
 export fn __hash__(this &const i8) usize {
     return mix(this as usize);
 }
@@ -69,7 +73,7 @@ export fn __hash__(this &const i16) usize {
     return mix(this as usize);
 }
 
-export fn __hash__(this &const i32) usize {
+export fn __hash__(this &const int) usize {
     return mix(this as usize);
 }
 
@@ -89,7 +93,7 @@ export fn __hash__(this &const u16) usize {
     return mix(this as usize);
 }
 
-export fn __hash__(this &const u32) usize {
+export fn __hash__(this &const uint) usize {
     return mix(this as usize);
 }
 
@@ -109,7 +113,7 @@ export fn __hash__(this &const bool) usize {
     return mix(this as int as usize);
 }
 
-export fn __hash__(this &const c8) usize {
+export fn __hash__(this &const char) usize {
     return mix(this as usize);
 }
 
@@ -187,6 +191,9 @@ fn __init__(this &HashTable<K, V, H, A>) void {
 }
 
 // Creates an empty table with the caller's hasher and allocator.
+//
+// - `hash`: the hash that turns a key into a bucket index
+// - `memory`: the allocator the buckets and entries are drawn from
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HashTable<K, V, H, A>, hash H, memory A) void {
@@ -212,6 +219,8 @@ fn clear_buckets(this &HashTable<K, V, H, A>) void {
 }
 
 // The bucket a hash belongs in.
+//
+// - `hash`: the hash function to use
 fn bucket_of(this &const HashTable<K, V, H, A>, hash usize) usize {
     return hash % this._capacity;
 }
@@ -255,6 +264,8 @@ fn grow(this &HashTable<K, V, H, A>) void {
 }
 
 // Finds the entry holding `key`, or null.
+//
+// - `key`: the key to look for
 fn entry_of(this &HashTable<K, V, H, A>, key &const K) *HashEntry<K, V> {
     hasher H = this.hasher;
     hash usize = hasher(key);
@@ -270,6 +281,8 @@ fn entry_of(this &HashTable<K, V, H, A>, key &const K) *HashEntry<K, V> {
 }
 
 // Finds the entry holding `key`, or null, for a table read through a constant.
+//
+// - `key`: the key to look for
 fn entry_of_const(this &const HashTable<K, V, H, A>, key &const K) *const HashEntry<K, V> {
     hasher H = this.hasher;
     hash usize = hasher(key);
@@ -285,6 +298,9 @@ fn entry_of_const(this &const HashTable<K, V, H, A>, key &const K) *const HashEn
 }
 
 // Adds an entry, replacing the value when the key is already there.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HashTable<K, V, H, A>, key K, value V) void {
@@ -299,6 +315,9 @@ fn insert(this &HashTable<K, V, H, A>, key K, value V) void {
 }
 
 // Adds an entry that is known to be new.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 fn insert_new(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
     if (this._count >= this._capacity) {
         this.grow();
@@ -318,11 +337,16 @@ fn insert_new(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
 }
 
 // Adds an entry without looking for the key, so a key may appear many times.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 fn insert_multi(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
     return this.insert_new(util.move(key), util.move(value));
 }
 
 // Returns the value stored for `key`, or null.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn find(this &HashTable<K, V, H, A>, key &const K) *V {
@@ -334,6 +358,8 @@ fn find(this &HashTable<K, V, H, A>, key &const K) *V {
 }
 
 // Returns the value stored for `key`, or null, for a constant table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn find(this &const HashTable<K, V, H, A>, key &const K) *const V {
@@ -345,6 +371,8 @@ fn find(this &const HashTable<K, V, H, A>, key &const K) *const V {
 }
 
 // Whether `key` is in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn contains(this &const HashTable<K, V, H, A>, key &const K) bool {
@@ -352,6 +380,8 @@ fn contains(this &const HashTable<K, V, H, A>, key &const K) bool {
 }
 
 // How many entries hold `key`.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn count(this &const HashTable<K, V, H, A>, key &const K) usize {
@@ -370,6 +400,8 @@ fn count(this &const HashTable<K, V, H, A>, key &const K) usize {
 }
 
 // Removes one entry holding `key`, and answers whether there was one.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase(this &HashTable<K, V, H, A>, key &const K) bool {
@@ -397,6 +429,8 @@ fn erase(this &HashTable<K, V, H, A>, key &const K) bool {
 }
 
 // Removes every entry holding `key`, and answers how many there were.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase_all(this &HashTable<K, V, H, A>, key &const K) usize {
@@ -427,6 +461,8 @@ fn erase_all(this &HashTable<K, V, H, A>, key &const K) usize {
 }
 
 // Destroys one entry that is no longer in any chain.
+//
+// - `entry`: the entry to free
 fn release(this &HashTable<K, V, H, A>, entry *HashEntry<K, V>) void {
     (&entry->key)->__drop__();
     (&entry->value)->__drop__();
@@ -451,6 +487,8 @@ fn clear(this &HashTable<K, V, H, A>) void {
 }
 
 // Copies every entry of `other` into this empty table.
+//
+// - `other`: the table to copy
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn copy_entries(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) void {
     slots **HashEntry<K, V> = other.heads();
@@ -466,6 +504,8 @@ fn copy_entries(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>)
 }
 
 // Copies another table, chains and all.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) void {
@@ -479,6 +519,8 @@ fn __init__(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) voi
 }
 
 // Takes another table's chains.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HashTable<K, V, H, A>, other &&HashTable<K, V, H, A>) void {
@@ -493,6 +535,8 @@ fn __init__(this &HashTable<K, V, H, A>, other &&HashTable<K, V, H, A>) void {
 }
 
 // Copies another table over this one.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __assign__(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) void {
@@ -506,6 +550,8 @@ fn __assign__(this &HashTable<K, V, H, A>, other &const HashTable<K, V, H, A>) v
 }
 
 // Takes another table's chains over this one.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __assign__(this &HashTable<K, V, H, A>, other &&HashTable<K, V, H, A>) void {
@@ -564,6 +610,9 @@ fn __init__(this &HashIterator<K, V>) void {
 }
 
 // Creates an iterator over a table's buckets, standing on the first entry.
+//
+// - `buckets`: the bucket array, or null for a position with none
+// - `capacity`: how many buckets the array has; a power of two
 export
 template <K type, V type>
 fn __init__(this &HashIterator<K, V>, buckets *byte, capacity usize) void {
@@ -616,6 +665,8 @@ fn key(this &const HashIterator<K, V>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the table to copy
 export
 template <K type, V type>
 fn __eq__(this &const HashIterator<K, V>, other &const HashIterator<K, V>) bool {
@@ -623,6 +674,8 @@ fn __eq__(this &const HashIterator<K, V>, other &const HashIterator<K, V>) bool 
 }
 
 // Whether two positions differ.
+//
+// - `other`: the table to copy
 export
 template <K type, V type>
 fn __ne__(this &const HashIterator<K, V>, other &const HashIterator<K, V>) bool {
@@ -654,6 +707,9 @@ fn __init__(this &ConstHashIterator<K, V>) void {
 }
 
 // Creates an iterator over a table's buckets.
+//
+// - `buckets`: the bucket array, or null for a position with none
+// - `capacity`: how many buckets the array has; a power of two
 export
 template <K type, V type>
 fn __init__(this &ConstHashIterator<K, V>, buckets *byte, capacity usize) void {
@@ -706,6 +762,8 @@ fn key(this &const ConstHashIterator<K, V>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the table to copy
 export
 template <K type, V type>
 fn __eq__(this &const ConstHashIterator<K, V>, other &const ConstHashIterator<K, V>) bool {
@@ -713,6 +771,8 @@ fn __eq__(this &const ConstHashIterator<K, V>, other &const ConstHashIterator<K,
 }
 
 // Whether two positions differ.
+//
+// - `other`: the table to copy
 export
 template <K type, V type>
 fn __ne__(this &const ConstHashIterator<K, V>, other &const ConstHashIterator<K, V>) bool {
@@ -747,6 +807,9 @@ fn __init__(this &SetHashIterator<K>) void {
 }
 
 // Creates an iterator over a table's buckets.
+//
+// - `buckets`: the bucket array, or null for a position with none
+// - `capacity`: how many buckets the array has; a power of two
 export
 template <K type>
 fn __init__(this &SetHashIterator<K>, buckets *byte, capacity usize) void {
@@ -792,6 +855,8 @@ fn __deref__(this &const SetHashIterator<K>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the table to copy
 export
 template <K type>
 fn __eq__(this &const SetHashIterator<K>, other &const SetHashIterator<K>) bool {
@@ -799,6 +864,8 @@ fn __eq__(this &const SetHashIterator<K>, other &const SetHashIterator<K>) bool 
 }
 
 // Whether two positions differ.
+//
+// - `other`: the table to copy
 export
 template <K type>
 fn __ne__(this &const SetHashIterator<K>, other &const SetHashIterator<K>) bool {
@@ -826,6 +893,9 @@ fn __init__(this &ConstSetHashIterator<K>) void {
 }
 
 // Creates an iterator over a table's buckets.
+//
+// - `buckets`: the bucket array, or null for a position with none
+// - `capacity`: how many buckets the array has; a power of two
 export
 template <K type>
 fn __init__(this &ConstSetHashIterator<K>, buckets *byte, capacity usize) void {
@@ -871,6 +941,8 @@ fn __deref__(this &const ConstSetHashIterator<K>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the table to copy
 export
 template <K type>
 fn __eq__(this &const ConstSetHashIterator<K>, other &const ConstSetHashIterator<K>) bool {
@@ -878,6 +950,8 @@ fn __eq__(this &const ConstSetHashIterator<K>, other &const ConstSetHashIterator
 }
 
 // Whether two positions differ.
+//
+// - `other`: the table to copy
 export
 template <K type>
 fn __ne__(this &const ConstSetHashIterator<K>, other &const ConstSetHashIterator<K>) bool {
@@ -901,6 +975,8 @@ fn __init__(this &HMap<K, V, H, A>) void {
 
 
 // Copies another hmap through its table.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMap<K, V, H, A>, other &const HMap<K, V, H, A>) void {
@@ -908,6 +984,8 @@ fn __init__(this &HMap<K, V, H, A>, other &const HMap<K, V, H, A>) void {
 }
 
 // Takes another hmap's table.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMap<K, V, H, A>, other &&HMap<K, V, H, A>) void {
@@ -915,12 +993,18 @@ fn __init__(this &HMap<K, V, H, A>, other &&HMap<K, V, H, A>) void {
 }
 
 // Copies another hmap over this one.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __assign__(this &HMap<K, V, H, A>, other &const HMap<K, V, H, A>) void {
     this.table = other.table;
 }
 
+// Creates an empty table with the caller's hash and allocator.
+//
+// - `hash`: the hash function the table uses
+// - `memory`: the allocator the buckets and entries are drawn from
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMap<K, V, H, A>, hash H, memory A) void {
@@ -933,18 +1017,28 @@ fn __drop__(this &HMap<K, V, H, A>) void {
     (&this.table)->__drop__();
 }
 
+// Adds an entry, replacing the value when the key is already there.
+//
+// - `key`: the key to place, moved in
+// - `value`: the value to store with it, moved in
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HMap<K, V, H, A>, key K, value V) void {
     this.table.insert(util.move(key), util.move(value));
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn find(this &HMap<K, V, H, A>, key &const K) *V {
     return this.table.find(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn find(this &const HMap<K, V, H, A>, key &const K) *const V {
@@ -955,6 +1049,8 @@ fn find(this &const HMap<K, V, H, A>, key &const K) *const V {
 //
 // The same rule the ordered map follows: `m[key]` names a value that must be
 // there, and `find` is the form that answers "is it?".
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn at(this &HMap<K, V, H, A>, key &const K) &V {
@@ -966,6 +1062,8 @@ fn at(this &HMap<K, V, H, A>, key &const K) &V {
 }
 
 // Returns the value for a key, and aborts when there is none, for reading.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn at(this &const HMap<K, V, H, A>, key &const K) &const V {
@@ -977,30 +1075,44 @@ fn at(this &const HMap<K, V, H, A>, key &const K) &const V {
 }
 
 // Indexes the map: `m[key]` is the value, and a missing key aborts.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __getitem__(this &HMap<K, V, H, A>, key &const K) &V {
     return this.at(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn contains(this &const HMap<K, V, H, A>, key &const K) bool {
     return this.table.contains(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn count(this &const HMap<K, V, H, A>, key &const K) usize {
     return this.table.count(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase(this &HMap<K, V, H, A>, key &const K) bool {
     return this.table.erase(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase_all(this &HMap<K, V, H, A>, key &const K) usize {
@@ -1064,6 +1176,8 @@ fn __init__(this &HSet<K, H, A>) void {
 
 
 // Copies another hset through its table.
+//
+// - `other`: the table to copy
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HSet<K, H, A>, other &const HSet<K, H, A>) void {
@@ -1071,6 +1185,8 @@ fn __init__(this &HSet<K, H, A>, other &const HSet<K, H, A>) void {
 }
 
 // Takes another hset's table.
+//
+// - `other`: the table to copy
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HSet<K, H, A>, other &&HSet<K, H, A>) void {
@@ -1078,12 +1194,18 @@ fn __init__(this &HSet<K, H, A>, other &&HSet<K, H, A>) void {
 }
 
 // Copies another hset over this one.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __assign__(this &HSet<K, H, A>, other &const HSet<K, H, A>) void {
     this.table = other.table;
 }
 
+// Creates an empty table with the caller's hash and allocator.
+//
+// - `hash`: the hash function the table uses
+// - `memory`: the allocator the buckets and entries are drawn from
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HSet<K, H, A>, hash H, memory A) void {
@@ -1096,6 +1218,9 @@ fn __drop__(this &HSet<K, H, A>) void {
     (&this.table)->__drop__();
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HSet<K, H, A>, key K) void {
@@ -1103,24 +1228,36 @@ fn insert(this &HSet<K, H, A>, key K) void {
     this.table.insert(util.move(key), util.move(placeholder));
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn contains(this &const HSet<K, H, A>, key &const K) bool {
     return this.table.contains(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn count(this &const HSet<K, H, A>, key &const K) usize {
     return this.table.count(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase(this &HSet<K, H, A>, key &const K) bool {
     return this.table.erase(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase_all(this &HSet<K, H, A>, key &const K) usize {
@@ -1184,6 +1321,8 @@ fn __init__(this &HMMap<K, V, H, A>) void {
 
 
 // Copies another hmmap through its table.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMMap<K, V, H, A>, other &const HMMap<K, V, H, A>) void {
@@ -1191,6 +1330,8 @@ fn __init__(this &HMMap<K, V, H, A>, other &const HMMap<K, V, H, A>) void {
 }
 
 // Takes another hmmap's table.
+//
+// - `other`: the table to copy
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMMap<K, V, H, A>, other &&HMMap<K, V, H, A>) void {
@@ -1198,12 +1339,18 @@ fn __init__(this &HMMap<K, V, H, A>, other &&HMMap<K, V, H, A>) void {
 }
 
 // Copies another hmmap over this one.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __assign__(this &HMMap<K, V, H, A>, other &const HMMap<K, V, H, A>) void {
     this.table = other.table;
 }
 
+// Creates an empty table with the caller's hash and allocator.
+//
+// - `hash`: the hash function the table uses
+// - `memory`: the allocator the buckets and entries are drawn from
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMMap<K, V, H, A>, hash H, memory A) void {
@@ -1216,42 +1363,64 @@ fn __drop__(this &HMMap<K, V, H, A>) void {
     (&this.table)->__drop__();
 }
 
+// Adds an entry, replacing the value when the key is already there.
+//
+// - `key`: the key to place, moved in
+// - `value`: the value to store with it, moved in
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HMMap<K, V, H, A>, key K, value V) void {
     this.table.insert_multi(util.move(key), util.move(value));
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn find(this &HMMap<K, V, H, A>, key &const K) *V {
     return this.table.find(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn find(this &const HMMap<K, V, H, A>, key &const K) *const V {
     return this.table.find(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn contains(this &const HMMap<K, V, H, A>, key &const K) bool {
     return this.table.contains(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn count(this &const HMMap<K, V, H, A>, key &const K) usize {
     return this.table.count(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase(this &HMMap<K, V, H, A>, key &const K) bool {
     return this.table.erase(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase_all(this &HMMap<K, V, H, A>, key &const K) usize {
@@ -1315,6 +1484,8 @@ fn __init__(this &HMSet<K, H, A>) void {
 
 
 // Copies another hmset through its table.
+//
+// - `other`: the table to copy
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMSet<K, H, A>, other &const HMSet<K, H, A>) void {
@@ -1322,6 +1493,8 @@ fn __init__(this &HMSet<K, H, A>, other &const HMSet<K, H, A>) void {
 }
 
 // Takes another hmset's table.
+//
+// - `other`: the table to copy
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMSet<K, H, A>, other &&HMSet<K, H, A>) void {
@@ -1329,12 +1502,18 @@ fn __init__(this &HMSet<K, H, A>, other &&HMSet<K, H, A>) void {
 }
 
 // Copies another hmset over this one.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __assign__(this &HMSet<K, H, A>, other &const HMSet<K, H, A>) void {
     this.table = other.table;
 }
 
+// Creates an empty table with the caller's hash and allocator.
+//
+// - `hash`: the hash function the table uses
+// - `memory`: the allocator the buckets and entries are drawn from
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMSet<K, H, A>, hash H, memory A) void {
@@ -1347,6 +1526,9 @@ fn __drop__(this &HMSet<K, H, A>) void {
     (&this.table)->__drop__();
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HMSet<K, H, A>, key K) void {
@@ -1354,24 +1536,36 @@ fn insert(this &HMSet<K, H, A>, key K) void {
     this.table.insert_multi(util.move(key), util.move(placeholder));
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn contains(this &const HMSet<K, H, A>, key &const K) bool {
     return this.table.contains(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn count(this &const HMSet<K, H, A>, key &const K) usize {
     return this.table.count(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase(this &HMSet<K, H, A>, key &const K) bool {
     return this.table.erase(key);
 }
 
+// Looks the key up in the table.
+//
+// - `key`: the key to look for
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn erase_all(this &HMSet<K, H, A>, key &const K) usize {
@@ -1418,4 +1612,60 @@ export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn end(this &const HMSet<K, H, A>) ConstSetHashIterator<K> {
     return ConstSetHashIterator<K>();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, V type, H type, A type>
+fn cbegin(this &const HMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, V type, H type, A type>
+fn cend(this &const HMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return this.end();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, V type, H type, A type>
+fn cbegin(this &const HMMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, V type, H type, A type>
+fn cend(this &const HMMap<K, V, H, A>) ConstHashIterator<K, V> {
+    return this.end();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, H type, A type>
+fn cbegin(this &const HSet<K, H, A>) ConstSetHashIterator<K> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, H type, A type>
+fn cend(this &const HSet<K, H, A>) ConstSetHashIterator<K> {
+    return this.end();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, H type, A type>
+fn cbegin(this &const HMSet<K, H, A>) ConstSetHashIterator<K> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, H type, A type>
+fn cend(this &const HMSet<K, H, A>) ConstSetHashIterator<K> {
+    return this.end();
 }

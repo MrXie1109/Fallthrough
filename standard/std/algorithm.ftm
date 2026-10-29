@@ -38,6 +38,8 @@ type Equal {
 }
 
 // Answers whether `a` equals `b` under `==`.
+// - `a`: the left element
+// - `b`: the right element
 export
 template <E type>
 fn __call__(this &const Equal<E>, a &const E, b &const E) bool {
@@ -48,6 +50,8 @@ fn __call__(this &const Equal<E>, a &const E, b &const E) bool {
 //
 // Stepping rather than subtracting keeps this available to a forward range: it
 // asks only for `++`, not for random access.
+// - `first`: where the range starts
+// - `last`: one past the range's end
 @enable_if(InputIterator(It))
 export
 template <It type>
@@ -67,6 +71,8 @@ fn range_length(first It, last It) usize {
 // so a type that owns storage swaps its storage rather than sharing it. A
 // member-wise exchange of two strings would leave both elements pointing at one
 // buffer.
+// - `first`: a position to write into
+// - `second`: the other position
 @enable_if(ForwardIterator(It))
 export
 template <It type>
@@ -85,6 +91,8 @@ fn swap(first It, second It) void {
 // allocator -- which matters where an algorithm runs on a range whose size the
 // caller chose. It uses random access, so it takes a `*T` pair or a deque's
 // `begin()`/`end()`.
+// - `first`: where the range starts
+// - `last`: one past the range's end
 @enable_if(RandomAccessIterator(It))
 export
 template <It type>
@@ -113,6 +121,9 @@ fn sort(first It, last It) void {
 //
 //     descending Greater<int>;
 //     sort_by(values.begin(), values.end(), descending);
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `order`: the comparison that decides which element comes first
 @enable_if(RandomAccessIterator(It))
 export
 template <It type, Cmp type>
@@ -136,6 +147,9 @@ fn sort_by(first It, last It, order Cmp) void {
 }
 
 // Moves the element at `start` down until its children are both larger.
+// - `first`: the root of the heap
+// - `count`: how many elements the heap holds
+// - `start`: the element to move down
 template <It type>
 fn sift_down(first It, count usize, start usize) void {
     root usize = start;
@@ -156,6 +170,10 @@ fn sift_down(first It, count usize, start usize) void {
 }
 
 // `sift_down` under a comparator.
+// - `first`: the root of the heap
+// - `count`: how many elements the heap holds
+// - `start`: the element to move down
+// - `cmp`: the comparison that orders the heap
 template <It type, Cmp type>
 fn sift_down_by(first It, count usize, start usize, cmp Cmp) void {
     root usize = start;
@@ -176,6 +194,8 @@ fn sift_down_by(first It, count usize, start usize, cmp Cmp) void {
 }
 
 // Whether a range is in order.
+// - `first`: where the range starts
+// - `last`: one past the range's end
 @enable_if(ForwardIterator(It))
 export
 template <It type>
@@ -197,6 +217,9 @@ fn is_sorted(first It, last It) bool {
 }
 
 // Whether a range is in order under the comparator.
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `order`: the comparison that decides the order
 @enable_if(ForwardIterator(It))
 export
 template <It type, Cmp type>
@@ -219,6 +242,8 @@ fn is_sorted_by(first It, last It, order Cmp) bool {
 }
 
 // Reverses a range in place.
+// - `first`: where the range starts
+// - `last`: one past the range's end
 @enable_if(RandomAccessIterator(It))
 export
 template <It type>
@@ -237,6 +262,9 @@ fn reverse(first It, last It) void {
 }
 
 // Puts `value` in every slot of a range.
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `value`: what to write at every position
 @enable_if(ForwardIterator(It))
 export
 template <It type, T type>
@@ -249,6 +277,9 @@ fn fill(first It, last It, value T) void {
 }
 
 // Returns the first position whose element equals `value`, or `last`.
+// - `first`: where to start looking
+// - `last`: one past the last position to look at
+// - `value`: what to look for
 @enable_if(InputIterator(It))
 export
 template <It type, T type>
@@ -264,6 +295,9 @@ fn find(first It, last It, value &const T) It {
 }
 
 // Returns the first position whose element equals `value`, or `-1`.
+// - `first`: where to start looking
+// - `last`: one past the last position to look at
+// - `value`: what to look for
 @enable_if(InputIterator(It))
 export
 template <It type, T type>
@@ -281,6 +315,9 @@ fn index_of(first It, last It, value &const T) isize {
 }
 
 // How many elements of a range equal `value`.
+// - `first`: where to start counting
+// - `last`: one past the last position to count
+// - `value`: the element to count
 @enable_if(InputIterator(It))
 export
 template <It type, T type>

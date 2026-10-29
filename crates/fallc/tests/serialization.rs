@@ -92,9 +92,9 @@ fn main() int except {
     root String = String("");
     ratio_key String = String("ratio");
     std.print("{} {} {}\n",
-        document.get(&server, &port_key).value()??.as_int()??,
-        document.get(&server, &host_key).value()??.as_string()??,
-        document.get(&root, &ratio_key).value()??.as_real()??)??;
+        document.get(&server, &port_key).value()?? as i64??,
+        document.get(&server, &host_key).value()?? as String??,
+        document.get(&root, &ratio_key).value()?? as f64??)??;
     return 0;
 }
 "##;

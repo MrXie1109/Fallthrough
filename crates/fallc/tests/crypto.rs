@@ -122,8 +122,8 @@ fn uuid_version_four_round_trips_through_its_text() {
     let source = r#"import std;
 
 fn main() int except {
-    identifier Uuid = std.v4()??;
-    text String = identifier.to_string();
+    identifier Uuid = Uuid()??;
+    text String = identifier as String;
     std.print("{} {} {} ", text.length(), identifier.version(), identifier.variant())??;
     parsed Uuid = std.parse_uuid(&text)??;
     std.print("{} {}", (parsed == identifier) as int, (parsed != identifier) as int)??;

@@ -32,7 +32,7 @@ pub mod special;
 pub mod visit;
 
 pub use node::{
-    AlignSpec, ArrayType, AssignExpr, Ast, AstBuilder, Attr, BinaryExpr, BinaryOp, BindStmt,
+    AlignSpec, ArrayLiteral, ArrayType, AssignExpr, Ast, AstBuilder, Attr, BinaryExpr, BinaryOp, BindStmt,
     BindingType,
     Block, BlockId, CallExpr, CastExpr, CharLiteral, CommaExpr, ConditionalExpr, ConstItem,
     ConstantMember,
@@ -45,8 +45,8 @@ pub use node::{
     LambdaBody, LambdaExpr, LambdaParam,
     NamedArgument,
     ItemId, ItemKind, LinkItem, LinkKind, LinkLocation, LoopStmt, NamedType, NodeId, PackRef, Param,
-    RaiseStmt, ReturnStmt, Stmt, StmtId, StmtKind, SwitchArm, SwitchStmt, TemplateArgumentSyntax,
-    AbortExpr, PropagateExpr, StaticAssert, TemplateDefault, TemplateParam, TemplateParamKind, Throws, TryStmt,
+    RaiseStmt, RangeExpr, ReturnStmt, Stmt, StmtId, StmtKind, SwitchArm, SwitchStmt, TemplateArgumentSyntax,
+    AbortExpr, BuiltinQuery, ConditionalItems, IfValueExpr, PropagateExpr, StaticAssert, TemplateDefault, TemplateParam, TemplateParamKind, Throws, TryStmt,
     TypeDecl,
     TypeDeclKind,
     TraitDecl, TraitParam, TraitRequirement, TraitResult, TraitValue, TypeMember, TypeOfType, TypeSyntax,

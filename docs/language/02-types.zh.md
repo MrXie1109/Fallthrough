@@ -32,6 +32,10 @@
 （如 `@static`、`@align(..)`）作为属性写在声明之后，见
 [03 声明](03-declarations.zh.md#声明修饰符)。
 
+2.4 范围没有自己的类型：`1 .. 10` 是 `i64` 的范围，也就是标准库的 `Range`，所以范围
+写在期待 `Range` 的位置。它的词法形式见
+[01 词法 §6.6](01-lexical.zh.md#范围字面量)。
+
 ## 基本类型
 
 | 名字 | 规定 |
@@ -158,9 +162,74 @@
 
 7.1.1 数组元素内联于数组对象，无间接层。
 
-7.1.2 在实参位置，数组**调整**为指向首元素的指针 `*T`。
+7.1.1.1 数组没有属于自己的那一层供限定词落脚：它的元素**就是**数组。因此 `const [N]T`、
+`[N]const T`、`const [N]const T` 表示**同一个类型**，其中元素是只读的，对三者中任何一个的
+元素赋值都是错误（`S0044`）。这正是数组与指针的区别所在——指针有自己的那一层，所以
+`const *T` 与 `*const T` 是两个类型。
+
+```ft
+import C;
+import std;
+
+fn read(a const [4]c8) c8 { return a[0]; }
+
+fn main() int except {
+    C.printf("%c\n", read("abc"));
+    return 0;
+}
+```
+
+该程序输出 `a`：`const [4]c8` 与字符串字面量所具有的 `[4]const c8` 是同一个类型，所以字面量
+可以作实参。
+
+7.1.2 数组是普通值：传给 `[N]T` 形参时**被复制**，所以函数改写其形参的某个元素，不会改动
+调用者的数组。正是这一点使 `[4]int` 成为一等类型，而不是指针的另一种拼法。
+
+7.1.2.1 形参为 `*T` 的调用接受 `T` 的数组，并像 C 一样把它**调整**为指向首元素的指针。
+调整只朝这一个方向：数组不是指针，而 `*T` 也满足不了 `[N]T`。
+
+```ft
+import C;
+import std;
+
+fn by_value(a [3]int) int { a[0] = 99; return a[0]; }
+fn by_pointer(p *int) int { return p[0]; }
+
+fn main() int except {
+    a [3]int = {1, 2, 3};
+    C.printf("%d %d %d\n", by_value(a), by_pointer(a), a[0]);
+    return 0;
+}
+```
+
+该程序输出 `99 1 1`：`by_value` 的形参 `a` 是一份副本，函数体改的是它的首元素；调用者的
+数组仍以 1 开头，而 `by_pointer` 通过调整后的指针读到的正是同一个首元素。
 
 7.1.3 数组**不得**按值返回。函数返回类型为数组形式时，实现**必须**报告诊断。
+
+7.1.4 数组字面量在表达式中写作 `{a, b, c}`。其**长度就是元素个数**，不必写出：
+只要元素类型已知，`{1, 2, 3}` 就是 `[3]int`。这与 `.{ … }` 是两种形式——后者是聚合
+初始化，类型取自它所初始化的声明。
+
+7.1.5 长度可以是模板的值参数：`template <N usize> fn f(a &const [N]int)` 接受任意长度
+的数组，并把 `N` 绑定到该长度。`[N]T` 对 `[4]const c8` 把 `N` 绑定为 4、`T` 绑定为
+`c8`；元素自身的限定词不属于 `T`。
+
+```ft
+import C;
+import std;
+
+fn sum(a [3]int) int { return a[0] + a[1] + a[2]; }
+
+fn main() int except {
+    a [3]int = {1, 2, 3};
+    b auto = {4, 5, 6};
+    C.printf("%d %d %d\n", sum(a), a[2], b[1]);
+    return 0;
+}
+```
+
+该程序输出 `6 3 5`：`{1, 2, 3}` 是三元素数组，`b auto = {4, 5, 6}` 给 `b` 同样的类型。
 
 ### 下标
 
@@ -177,6 +246,8 @@
 ### 声明形式
 
 ```ft
+import C;
+
 type Point {
     x int;
     y int;
@@ -194,7 +265,22 @@ enum Color int {
 }
 
 type Id = usize;
+
+fn main() int {
+    p Point = .{1, 2};
+    v Value;
+    v.i = 65;
+    id Id = 7usize;
+    C.printf("%d %d\n", p.x, p.y);
+    C.printf("%d %d\n", v.i, v.b as int);
+    C.printf("%d %d %ld\n", Color.RED as int, Color.BLUE as int, id as i64);
+    return 0;
+}
 ```
+
+该程序依次输出 `1 2`、`65 65`、`0 6 7`：结构体字段就是写入的值；联合体两个成员读到
+同一个 65，因为它们共享地址；`RED` 为 0，`BLUE` 接在 `GREEN = 5` 之后为 6；别名 `Id`
+就是 `usize`。
 
 8.1.1 `type Name { … }` 声明结构体：字段按书写顺序排列。
 

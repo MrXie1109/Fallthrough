@@ -29,22 +29,73 @@
 3.1 `except` 写在返回类型之后。
 
 ```ft
+import C;
+
 fn risky(n int) int except {
     if (n < 0) {
         raise "ValueError": "negative";
     }
     return n * 2;
 }
+
+fn main() int {
+    C.printf("%d\n", risky(3)!!);
+    return 0;
+}
 ```
+
+该程序输出 `6`：调用处标了 `!!`，一旦真的抛出就停下程序。
 
 3.2 `except` 之后可以写条件：一个常量表达式，说明仅当条件成立时函数可能抛出。
 
 ```ft
-fn check(n int) int except(n < 0) { ... }
+import C;
+
+fn check(n int) int except(n < 0) {
+    if (n < 0) {
+        raise "ValueError": "negative";
+    }
+    return n;
+}
+
+fn main() int {
+    C.printf("%d\n", check(5)!!);
+    return 0;
+}
 ```
+
+该程序输出 `5`。条件 `n < 0` 在每个调用点折叠：实参是常量时它当场决定，所以 `check(5)`
+不需要处理者。
 
 3.3 条件以形参命名。调用点用实参把条件折成常量：实参均为常量时实现**必须**当场
 判定；实参不是常量时按可能抛出处理。
+
+3.3.1 `except(auto)` 不写条件：函数体能不能抛出，就是函数能不能抛出。决定权在函数体，
+所以体内没有任何抛出操作的函数不会抛出，对它写 `!!` 的调用处会被告知这一点（`S0083`）。
+
+```ft
+import C;
+
+fn risky(n int) int except(auto) {
+    if (n < 0) { raise "ValueError": "negative"; }
+    return n * 2;
+}
+
+fn calm(n int) int except(auto) {
+    return n + 1;
+}
+
+fn main() int except {
+    C.printf("%d %d\n", risky(3)!!, calm(1)!!);
+    return 0;
+}
+```
+
+该程序输出 `6 2`：`risky` 的体里有 `raise`，所以它是可能抛出的；`calm` 的体里没有，
+所以它不是——调用处写 `calm(1)!!` 会被指出这个 `!!` 没有作用。
+
+3.3.2 `except(auto)` 与写出条件的 `except` 是同一个问题的两种问法，同一个函数两种都可写。
+`!!` 不计入可能抛出：该标记让程序在那就是停下来，没有任何异常经由它离开函数。
 
 3.4 函数体内任何可能抛出的操作（直接的 `raise`、可能抛出的调用、可能抛出的隐式
 调用）都要求函数声明 `except`，否则实现**必须**报告诊断。
@@ -67,16 +118,31 @@ fn check(n int) int except(n < 0) { ... }
 ### 形式
 
 ```ft
-try {
-    ...
-} except {
-    ...
-} else {
-    ...
-} finally {
-    ...
+import C;
+
+fn half(n int) int except {
+    if (n % 2 != 0) {
+        raise "ValueError": "odd";
+    }
+    return n / 2;
+}
+
+fn main() int {
+    try {
+        C.printf("%d\n", half(4)!!);
+    } except {
+        C.printf("caught\n");
+    } else {
+        C.printf("no raise\n");
+    } finally {
+        C.printf("done\n");
+    }
+    return 0;
 }
 ```
+
+该程序依次输出 `2`、`no raise`、`done`：主体产出了值，所以 `else` 执行；而 `finally`
+无论发生了什么都会执行。
 
 | 子句 | 语义 |
 | ---- | ---- |
@@ -101,18 +167,37 @@ try {
 匹配子句的块被执行：
 
 ```ft
-try {
-    ...
-} except ("KeyError") {
-    ...
-} except ("IOError", "FileError") {
-    ...
-} except {
-    ...                         // 其余全部异常
-} finally {
-    ...
+import C;
+
+fn lookup(key int) int except {
+    if (key == 1) { raise "KeyError": "missing"; }
+    if (key == 2) { raise "FileError": "bad"; }
+    return key;
+}
+
+fn classify(key int) int except {
+    try {
+        return lookup(key)??;
+    } except ("KeyError") {
+        return -1;
+    } except ("IOError", "FileError") {
+        return -2;
+    } except {
+        return -3;
+    } finally {
+        C.printf("done %d\n", key);
+    }
+}
+
+fn main() int except {
+    C.printf("%d %d %d\n", classify(0)!!, classify(1)!!, classify(2)!!);
+    return 0;
 }
 ```
+
+该程序依次输出 `done 0`、`done 1`、`done 2`，再输出 `0 -1 -2`：子句按书写顺序尝试，
+含多个名字的子句接受其中任意一个（`classify(2)` 抛出的正是第二个子句的第二个名字
+`FileError`），而 `finally` 在每条路径上都执行。
 
 每个子句有两种写法：
 

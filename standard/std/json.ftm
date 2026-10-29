@@ -3,7 +3,7 @@
 //     document JsonDocument = json.parse(&text)??;
 //     root JsonValue = document.root();
 //     key String = String("name");
-//     name String = root.member(&key).value()??.as_text()??;
+//     name String = root.member(&key).value()?? as String??;
 //     written String = json.serialize(&root)??;
 //
 // # Ownership
@@ -62,11 +62,11 @@ export type JsonNodeData {
     // The text, for `TEXT`.
     _text String;
     // The child indices, for `ARRAY`.
-    _children Array<u32>;
+    _children Array<uint>;
     // The member names, for `OBJECT`.
     _keys Array<String>;
     // The member indices, for `OBJECT`.
-    _values Array<u32>;
+    _values Array<uint>;
 }
 
 // Creates an empty node.
@@ -131,7 +131,7 @@ export type JsonDocument {
     // never zero-by-accident, and the root is `root_index`.
     _nodes Array<JsonNodeData>;
     // The root's index.
-    _root u32;
+    _root uint;
 }
 
 // Creates an empty document.
@@ -158,9 +158,9 @@ export fn root(this &JsonDocument) JsonValue {
 }
 
 // Makes room for one more node and returns its index.
-fn add_node(this &JsonDocument) u32 {
+fn add_node(this &JsonDocument) uint {
     node JsonNodeData = JsonNodeData();
-    index u32 = this._nodes.length() as u32;
+    index uint = this._nodes.length() as uint;
     this._nodes.push(node);
     return index;
 }
@@ -174,11 +174,11 @@ export type JsonValue {
     // The document the value lives in.
     _document *JsonDocument;
     // The node's index in the document.
-    _index u32;
+    _index uint;
 }
 
 // Builds a handle.
-export fn __init__(this &JsonValue, document *JsonDocument, index u32) void {
+export fn __init__(this &JsonValue, document *JsonDocument, index uint) void {
     this._document = document;
     this._index = index;
 }
@@ -245,7 +245,7 @@ export fn member_value(this &const JsonValue, index usize) JsonValue except {
 }
 
 // The boolean, or a raise when the value is another kind.
-export fn as_bool(this &const JsonValue) bool except {
+export fn __as__(this &const JsonValue, target *bool) bool except {
     if (this.kind() != JsonKind.BOOLEAN) {
         raise "ValueError": "the value is not a boolean";
     }
@@ -253,7 +253,7 @@ export fn as_bool(this &const JsonValue) bool except {
 }
 
 // The number, or a raise when the value is another kind.
-export fn as_number(this &const JsonValue) f64 except {
+export fn __as__(this &const JsonValue, target *f64) f64 except {
     if (this.kind() != JsonKind.NUMBER) {
         raise "ValueError": "the value is not a number";
     }
@@ -261,7 +261,7 @@ export fn as_number(this &const JsonValue) f64 except {
 }
 
 // The text, or a raise when the value is another kind.
-export fn as_text(this &const JsonValue) String except {
+export fn __as__(this &const JsonValue, target *String) String except {
     if (this.kind() != JsonKind.TEXT) {
         raise "ValueError": "the value is not text";
     }
@@ -286,6 +286,11 @@ type Parser {
 }
 
 // Creates a parser over `text`, building into `document`.
+
+// - `text`: the whole JSON text the parser reads from, copied into the
+//   parser
+// - `document`: the document nodes are added to, pointed at rather than
+//   copied, so it must outlive the parser
 fn __init__(this &Parser, text &const String, document *JsonDocument) void {
     (&this._text)->__init__(text);
     this._index = 0usize;
@@ -295,9 +300,9 @@ fn __init__(this &Parser, text &const String, document *JsonDocument) void {
 // Parses JSON text into a document.
 export fn parse(text &const String) JsonDocument except {
     document JsonDocument = JsonDocument();
-    dummy u32 = document.add_node();
+    dummy uint = document.add_node();
     parser Parser = Parser(text, &document);
-    root_index u32 = parser.parse_into()??;
+    root_index uint = parser.parse_into()??;
     parser.skip_space();
     if (parser._index != parser._text.length()) {
         raise "ValueError": "trailing text after the JSON value";
@@ -307,59 +312,70 @@ export fn parse(text &const String) JsonDocument except {
 }
 
 // Adds one node holding `kind` and returns its index.
-fn add_node(this &Parser, kind JsonKind) u32 {
-    index u32 = this._document->add_node();
+
+// - `kind`: the kind the new node is given; its value field is left as it
+//   is, so the caller fills it in
+fn add_node(this &Parser, kind JsonKind) uint {
+    index uint = this._document->add_node();
     this._document->_nodes[index as usize]._kind = kind as int;
     return index;
 }
 
 // Adds a text node.
-fn add_text(this &Parser, value &const String) u32 {
-    index u32 = this.add_node(JsonKind.TEXT);
+
+// - `value`: the text the new node holds, copied, so the caller's string may
+//   go away afterwards
+fn add_text(this &Parser, value &const String) uint {
+    index uint = this.add_node(JsonKind.TEXT);
     this._document->_nodes[index as usize]._text = value;
     return index;
 }
 
 // Adds a number node.
-fn add_number(this &Parser, value f64) u32 {
-    index u32 = this.add_node(JsonKind.NUMBER);
+
+// - `value`: the real the new node holds; JSON's integers are reals here
+//   too
+fn add_number(this &Parser, value f64) uint {
+    index uint = this.add_node(JsonKind.NUMBER);
     this._document->_nodes[index as usize]._number = value;
     return index;
 }
 
 // Adds a boolean node.
-fn add_boolean(this &Parser, value bool) u32 {
-    index u32 = this.add_node(JsonKind.BOOLEAN);
+
+// - `value`: the boolean the new node holds
+fn add_boolean(this &Parser, value bool) uint {
+    index uint = this.add_node(JsonKind.BOOLEAN);
     this._document->_nodes[index as usize]._boolean = value;
     return index;
 }
 
 // Reads one value at the parser's position, returning its node index.
-fn parse_into(this &Parser) u32 except {
+fn parse_into(this &Parser) uint except {
     this.skip_space();
     if (this._index >= this._text.length()) {
         raise "ValueError": "the JSON text ended where a value was expected";
     }
     character char = this._text[this._index];
-    if (character == '{' as char) {
+    if (character == '{') {
         return this.parse_object()??;
     }
-    if (character == '[' as char) {
+    if (character == '[') {
         return this.parse_array()??;
     }
-    if (character == '"' as char) {
+    if (character == '"') {
         text_value String = this.parse_text()??;
         return this.add_text(&text_value);
     }
-    if (character == 't' as char) {
+    if (character == 't') {
         this.expect_word("true")??;
         return this.add_boolean(true);
     }
-    if (character == 'f' as char) {
+    if (character == 'f') {
         this.expect_word("false")??;
         return this.add_boolean(false);
     }
-    if (character == 'n' as char) {
+    if (character == 'n') {
         this.expect_word("null")??;
         return this.add_node(JsonKind.NULL_VALUE);
     }
@@ -367,8 +383,8 @@ fn parse_into(this &Parser) u32 except {
 }
 
 // Reads an object, returning its node index.
-fn parse_object(this &Parser) u32 except {
-    index u32 = this.add_node(JsonKind.OBJECT);
+fn parse_object(this &Parser) uint except {
+    index uint = this.add_node(JsonKind.OBJECT);
     this._index += 1;
     this.skip_space();
     if (this.at('}')) {
@@ -386,7 +402,7 @@ fn parse_object(this &Parser) u32 except {
             raise "ValueError": "an object's key must be followed by `:`";
         }
         this._index += 1;
-        child u32 = this.parse_into()??;
+        child uint = this.parse_into()??;
         this._document->_nodes[index as usize]._keys.push(key);
         this._document->_nodes[index as usize]._values.push(child);
         this.skip_space();
@@ -403,8 +419,8 @@ fn parse_object(this &Parser) u32 except {
 }
 
 // Reads an array, returning its node index.
-fn parse_array(this &Parser) u32 except {
-    index u32 = this.add_node(JsonKind.ARRAY);
+fn parse_array(this &Parser) uint except {
+    index uint = this.add_node(JsonKind.ARRAY);
     this._index += 1;
     this.skip_space();
     if (this.at(']')) {
@@ -412,7 +428,7 @@ fn parse_array(this &Parser) u32 except {
         return index;
     }
     while (true) {
-        child u32 = this.parse_into()??;
+        child uint = this.parse_into()??;
         this._document->_nodes[index as usize]._children.push(child);
         this.skip_space();
         if (this.at(',')) {
@@ -437,10 +453,10 @@ fn parse_text(this &Parser) String except {
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
         this._index += 1;
-        if (character == '"' as char) {
+        if (character == '"') {
             return result;
         }
-        if (character != '\\' as char) {
+        if (character != '\\') {
             result.push(character);
             continue;
         }
@@ -449,20 +465,20 @@ fn parse_text(this &Parser) String except {
         }
         escape char = this._text[this._index];
         this._index += 1;
-        if (escape == '"' as char || escape == '\\' as char || escape == '/' as char) {
+        if (escape == '"' || escape == '\\' || escape == '/') {
             result.push(escape);
-        } else if (escape == 'b' as char) {
+        } else if (escape == 'b') {
             result.push(8 as char);
-        } else if (escape == 'f' as char) {
+        } else if (escape == 'f') {
             result.push(12 as char);
-        } else if (escape == 'n' as char) {
-            result.push('\n' as char);
-        } else if (escape == 'r' as char) {
-            result.push('\r' as char);
-        } else if (escape == 't' as char) {
-            result.push('\t' as char);
-        } else if (escape == 'u' as char) {
-            code_point u32 = this.parse_hex4()??;
+        } else if (escape == 'n') {
+            result.push('\n');
+        } else if (escape == 'r') {
+            result.push('\r');
+        } else if (escape == 't') {
+            result.push('\t');
+        } else if (escape == 'u') {
+            code_point uint = this.parse_hex4()??;
             result.push(unicode.encode(code_point)??);
         } else {
             raise "ValueError": "unknown JSON escape";
@@ -472,14 +488,14 @@ fn parse_text(this &Parser) String except {
 }
 
 // Reads the four hex digits of a `\u` escape.
-fn parse_hex4(this &Parser) u32 except {
-    value u32 = 0u32;
+fn parse_hex4(this &Parser) uint except {
+    value uint = 0u32;
     count usize = 0;
     while (count < 4) {
         if (this._index >= this._text.length()) {
             raise "ValueError": "a `\\u` escape is incomplete";
         }
-        digit u32 = json_hex_digit(this._text[this._index])??;
+        digit uint = json_hex_digit(this._text[this._index])??;
         value = value * 16u32 + digit;
         this._index += 1;
         count += 1;
@@ -488,15 +504,18 @@ fn parse_hex4(this &Parser) u32 except {
 }
 
 // The value of one hex digit.
-fn json_hex_digit(character char) u32 except {
-    if (character >= '0' as char && character <= '9' as char) {
-        return ((character as int) - ('0' as int)) as u32;
+
+// - `character`: one hex digit, `0`-`9`, `a`-`f` or `A`-`F`; anything else
+//   raises `ValueError`
+fn json_hex_digit(character char) uint except {
+    if (character >= '0' && character <= '9') {
+        return ((character as int) - ('0' as int)) as uint;
     }
-    if (character >= 'a' as char && character <= 'f' as char) {
-        return (((character as int) - ('a' as int)) + 10) as u32;
+    if (character >= 'a' && character <= 'f') {
+        return (((character as int) - ('a' as int)) + 10) as uint;
     }
-    if (character >= 'A' as char && character <= 'F' as char) {
-        return (((character as int) - ('A' as int)) + 10) as u32;
+    if (character >= 'A' && character <= 'F') {
+        return (((character as int) - ('A' as int)) + 10) as uint;
     }
     raise "ValueError": "not a hex digit in a `\\u` escape";
 }
@@ -506,10 +525,10 @@ fn parse_number(this &Parser) f64 except {
     start usize = this._index;
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if ((character >= '0' as char && character <= '9' as char)
-            || character == '-' as char || character == '+' as char
-            || character == '.' as char || character == 'e' as char
-            || character == 'E' as char)
+        if ((character >= '0' && character <= '9')
+            || character == '-' || character == '+'
+            || character == '.' || character == 'e'
+            || character == 'E')
         {
             this._index += 1;
         } else {
@@ -527,8 +546,8 @@ fn parse_number(this &Parser) f64 except {
 fn skip_space(this &Parser) void {
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if (character == ' ' as char || character == '\t' as char
-            || character == '\n' as char || character == '\r' as char)
+        if (character == ' ' || character == '\t'
+            || character == '\n' || character == '\r')
         {
             this._index += 1;
         } else {
@@ -538,6 +557,9 @@ fn skip_space(this &Parser) void {
 }
 
 // Whether the parser is looking at `character`.
+
+// - `character`: the character to look for; it is compared with the byte at
+//   the current position
 fn at(this &Parser, character char) bool {
     if (this._index >= this._text.length()) {
         return false;
@@ -546,6 +568,9 @@ fn at(this &Parser, character char) bool {
 }
 
 // Consumes `word` or raises.
+
+// - `word`: a null-terminated C string, compared byte for byte with the
+//   text at the current position and then consumed
 fn expect_word(this &Parser, word *const char) void except {
     length usize = c_length(word);
     if (this._index + length > this._text.length()) {
@@ -562,6 +587,9 @@ fn expect_word(this &Parser, word *const char) void except {
 }
 
 // The length of a C string.
+
+// - `word`: a null-terminated C string; the bytes before the terminator
+//   are counted, and the terminator is not
 fn c_length(word *const char) usize {
     length usize = 0;
     while (word[length] != '\0') {
@@ -578,6 +606,11 @@ export fn serialize(value &const JsonValue) String except {
 }
 
 // Appends the JSON text of one value.
+
+// - `out`: the buffer the JSON text is appended to; its existing text is
+//   kept, and nothing is flushed
+// - `value`: the value to write, with its whole subtree; the kind decides
+//   how
 fn write_into(out &String, value &const JsonValue) void except {
     kind_value JsonKind = value.kind();
     if (kind_value == JsonKind.NULL_VALUE) {
@@ -585,7 +618,7 @@ fn write_into(out &String, value &const JsonValue) void except {
         return;
     }
     if (kind_value == JsonKind.BOOLEAN) {
-        if (value.as_bool()??) {
+        if (value as bool??) {
             out.push("true");
         } else {
             out.push("false");
@@ -593,7 +626,7 @@ fn write_into(out &String, value &const JsonValue) void except {
         return;
     }
     if (kind_value == JsonKind.NUMBER) {
-        out.push(str(value.as_number()??));
+        out.push(str(value as f64??));
         return;
     }
     if (kind_value == JsonKind.TEXT) {
@@ -630,20 +663,24 @@ fn write_into(out &String, value &const JsonValue) void except {
 }
 
 // Appends a quoted JSON string.
+
+// - `out`: the buffer the quoted string is appended to
+// - `text_value`: the raw text to quote; a `"`, a `\`, a newline, a carriage
+//   return and a tab are escaped, and every other byte is written as it is
 fn write_text(out &String, text_value &const String) void {
     out.push('"');
     index usize = 0;
     while (index < text_value.length()) {
         character char = text_value[index];
-        if (character == '"' as char) {
+        if (character == '"') {
             out.push("\\\"");
-        } else if (character == '\\' as char) {
+        } else if (character == '\\') {
             out.push("\\\\");
-        } else if (character == '\n' as char) {
+        } else if (character == '\n') {
             out.push("\\n");
-        } else if (character == '\r' as char) {
+        } else if (character == '\r') {
             out.push("\\r");
-        } else if (character == '\t' as char) {
+        } else if (character == '\t') {
             out.push("\\t");
         } else {
             out.push(character);

@@ -197,7 +197,15 @@ impl TypeChecker {
         // what a reader would expect -- `str(r)` for `r: &T` is `str(*r)`.
         let rendered = found.referent().cloned().unwrap_or_else(|| found.clone());
 
-        let resolved = self.resolve_nullary_method(resolutions, &rendered, method);
+        // `str(x)` asks for `__str__`, and falls back to `__repr__` when the
+        // type declares none: a type that writes only `__repr__` still has a
+        // `str`, which is what Appendix B states and what a reader expects.
+        let mut method = method;
+        let mut resolved = self.resolve_nullary_method(resolutions, &rendered, method);
+        if resolved.is_none() && method == fallc_ast::special::SpecialMethod::Str {
+            method = fallc_ast::special::SpecialMethod::Repr;
+            resolved = self.resolve_nullary_method(resolutions, &rendered, method);
+        }
         // The method's return type is what the call has, which lets a `__str__`
         // return something other than the standard string.
         let result = resolved.and_then(|symbol| {
@@ -230,38 +238,6 @@ impl TypeChecker {
         //
         // So a declared type is never "unwritable": it has a `repr`, and
         // therefore a `str`, whatever it declares.
-        if method == fallc_ast::special::SpecialMethod::Str
-            && !Self::renderable(&rendered)
-        {
-            let repr = self.resolve_nullary_method(
-                resolutions,
-                &rendered,
-                fallc_ast::special::SpecialMethod::Repr,
-            );
-            let result = repr.and_then(|symbol| {
-                let receiver_name = rendered.nominal_name()?.to_owned();
-                let qualified = Self::special_method_qualified(
-                    &receiver_name,
-                    fallc_ast::special::SpecialMethod::Repr.name(),
-                );
-                let signature = self
-                    .definitions_named(resolutions, &qualified)
-                    .into_iter()
-                    .find_map(|def| def.signature.clone())?;
-                self.text_calls.insert(span, Some(symbol));
-                self.note_throwing_call(span, &signature, ast, None);
-                Some(self.signature_result_type(&signature))
-            });
-            match result {
-                Some(result) => return Some(result),
-                // No `__repr__` either: the compiler writes the value itself,
-                // which is the default `repr`, and `str` is that text.
-                None => {
-                    self.text_calls.insert(span, None);
-                    return self.standard_string_type();
-                }
-            }
-        }
         if !Self::renderable(&rendered) && method == fallc_ast::special::SpecialMethod::Str {
             self.diagnostics.push(
                 Diagnostic::error(format!(
@@ -1564,6 +1540,31 @@ impl TypeChecker {
                 let object_ty = types.get(index.object).cloned().unwrap_or_else(|| {
                     Type::unspecified("", ast.expr(index.object).span)
                 });
+                // An array marked `const` is an object that may not change, so
+                // an element of it may not be written either -- however many
+                // index and field steps the path takes, `a[1] = 4` modifies
+                // `a` itself. The `const` is on the binding, not on the
+                // element's type, so it is the root of the path that answers.
+                // A read-only array says the same thing twice: `const [N]T`
+                // and `[N]const T` are one type, and either way its elements
+                // may not be written. The binding is not marked `const` in the
+                // second spelling, so the *element* is what is asked.
+                let element_is_const = matches!(
+                    object_ty.unqualified(),
+                    Type::Array { element, .. } if matches!(**element, Type::Const(_))
+                );
+                if element_is_const || self.const_root(ast, resolutions, index.object).is_some() {
+                    self.diagnostics.push(
+                        Diagnostic::error("cannot assign to an element of a `const` object")
+                            .with_code(DiagnosticCode::sema(44))
+                            .with_span(ast.expr(target).span)
+                            .with_note(
+                                "a `const` binding names an object that may not change, and \
+                                 its elements are part of it",
+                            ),
+                    );
+                    return None;
+                }
                 if object_ty.pointee_is_const() {
                     self.diagnostics.push(
                         Diagnostic::error("cannot assign through a pointer to const")
@@ -2285,6 +2286,14 @@ impl TypeChecker {
         // such a pointer is reading the *finished* type's field -- the two have
         // one name, and `nominal_types` holds the finished one by the time any
         // body is checked -- so the placeholder is replaced here.
+        // `volatile` says how memory is accessed, not what the value is, so a
+        // field of a `volatile T` is a field of `T`. Reaching one through a
+        // `&volatile T` receiver -- `this.x` -- has to see through the
+        // qualifier, exactly as a plain value does.
+        let base = match base {
+            Type::Volatile(inner) => *inner,
+            other => other,
+        };
         let base = match base.unqualified() {
             Type::Nominal(nominal) if nominal.is_incomplete => self
                 .nominal_types

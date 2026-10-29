@@ -40,9 +40,20 @@ initial state exists for every type.
 3.4 `auto` infers the type from the initializer:
 
 ```ft
-n auto = 7;
-r auto = *p;        // a value: auto infers the value
+import C;
+
+fn main() int {
+    v int = 5;
+    p *int = &v;
+    n auto = 7;
+    r auto = *p;        // a value: auto infers the value
+    C.printf("%d %d\n", n, r);
+    return 0;
+}
 ```
+
+This program prints `7 5`: `n` is an `int`, and `r` is the `int` the pointer names rather
+than the pointer itself.
 
 3.4.1 `auto` infers the type of the **value**: when the initializer is a reference, the
 result is the type of the referenced value.
@@ -67,11 +78,23 @@ attributes; export is the keyword `export`. Their positions and meanings are in
 section 9:
 
 ```ft
+import C;
+
 count int @static = 0;          // static storage duration
 seen int @thread_local = 0;     // one object per thread
 buf [16]byte @align(64);        // raise the alignment
-export fn visible() void { }   // exported function
+export fn visible() void { }    // exported function
+
+fn main() int {
+    count = 3;
+    buf[0] = 1;
+    C.printf("%d %d %d\n", count, seen, buf[0] as int);
+    return 0;
+}
 ```
+
+This program prints `3 0 1`: `count` keeps the value assigned to it, `seen` starts at zero,
+and `buf` is writable at its first byte.
 
 4.2 Type qualifiers `*`, `&`, `&&`, `const`, `volatile` are written before the type;
 `mutable` is written after a field's type and says the field may be written inside a
@@ -93,18 +116,37 @@ Without an initializer the value is zero.
 defines it; the rules for `export` are given in
 [08 Modules](08-modules.md#the-export-table).
 
-### External variables
+### External variables and functions
 
-5.5 `extern "ABI"` on a module-level variable declares an object provided by an external
-library.
+5.5 A module-level variable marked `@extern_C` declares an object provided by an external
+library; an analogous function declaration is marked the same way. There is no `extern`
+keyword: the attribute says the name comes from elsewhere, and it is written after the
+type in the same place as every other declaration attribute.
+
+```ft
+import C;
+
+@extern_C
+fn getenv(name *const c8) *c8;
+
+fn main() int {
+    path *c8 = getenv("PATH");
+    C.printf("%d\n", (path != nullptr) as int);
+    return 0;
+}
+```
+
+This program prints `1` where `PATH` is set in the environment: `getenv` is looked up in
+the C library by its own name, with the C calling convention, because `@extern_C` says so.
 
 5.6 An external variable **must not** have an initializer; reading or writing the name
 accesses the storage provided by the library.
 
-5.7 `"ABI"` has the same meaning as `@extern_C` on a function: it specifies the calling
-convention and the source of the symbol.
+5.7 `@extern_C` specifies both the calling convention and the source of the symbol: the
+name is passed to the linker unmangled, and no definition is emitted. A function declared
+without a body is external for the same reason.
 
-5.8 `export` makes an external variable visible to importers.
+5.8 `export` makes an external variable or function visible to importers.
 
 ## Module-level constants
 
@@ -128,23 +170,45 @@ declaration (`export LIMIT const usize = 8;`, `export counter int = 0;`).
 
 ## `__setup__`
 
-7.1 A module has **at most** one `__setup__ { … }` block.
+7.1 A module has **at most** one `__setup__` function, declared
+`fn __setup__() void`.
 
-7.2 `__setup__` runs once, before `main`. It runs in import-dependency order: the
-`__setup__` of an imported module runs before that of the importer.
+```ft
+import C;
 
-7.3 The body of `__setup__` is equivalent to the body of a `void` function: it may
-declare bindings, call functions, and end early with `return;`; it **must not** return a
-value or `raise`.
+counter int = 0;
 
-7.4 `__setup__` is an ordinary identifier; it has the meaning given above only at the
-start of an item and when followed by `{`.
+fn __setup__() void {
+    counter = 41;
+}
+
+fn main() int {
+    C.printf("%d\n", counter + 1);
+    return 0;
+}
+```
+
+This program prints `42`: `main` reads `counter` after the setup function has run, so the
+assignment in `__setup__` is what `main` sees.
+
+7.2 It runs once, before `main`, in import-dependency order: the `__setup__` of an
+imported module runs before that of the importer.
+
+7.3 It is a function in every respect, so its body is written as any other `void`
+function's: it declares bindings, calls functions, and may end early with `return;`. It
+**must not** return a value or `raise`, and takes no parameters.
+
+7.4 `__setup__` is an ordinary identifier. It names the module's setup function only when
+the declaration is exactly `fn __setup__()`; any other signature is an ordinary
+function that nothing calls.
 
 ## Forward declarations
 
 8.1 A nominal type may be declared first and defined later:
 
 ```ft
+import C;
+
 type Node;
 union Value;
 enum Color u32;
@@ -154,7 +218,16 @@ type Node {
     value int;
     next *Node;
 }
+
+fn main() int {
+    n Node = .{7, nullptr};
+    C.printf("%d %d\n", n.value, (n.next == nullptr) as int);
+    return 0;
+}
 ```
+
+This program prints `7 1`: `Node` is named before its fields are written, and by the time a
+value is made the type is complete.
 
 8.2 Before the definition appears, the type is incomplete: it may be used only in
 pointers, references and declarations; defining a value, `sizeof`, `alignof`, member
@@ -245,12 +318,23 @@ macro definitions.
 10.1 A macro is token substitution, defined at module level:
 
 ```ft
+import C;
+
 define MAX(a, b) ((a) > (b) ? (a) : (b))
-define SHOW(x) puts(#x)
-define FIELD(name) get_ ## name
-define LOG(fmt, ...) C.printf(fmt, __VA_LIST__)
+define SHOW(x) #x
 export define VERSION 3
+
+fn main() int {
+    C.printf("%d\n", $MAX(3, 7));
+    C.printf("%s\n", $SHOW(hello));
+    C.printf("%d\n", $VERSION);
+    return 0;
+}
 ```
+
+This program prints `7`, then `hello`, then `3`: `MAX` is the conditional expression it
+was defined as, `#x` turns the argument into the text `hello`, and `VERSION` is the
+number it was defined as. Every use carries the `$` that section 10.4 requires.
 
 10.2 The definition of `define NAME body` extends to the end of the logical line; a `\`
 at the end of the line continues the definition onto the next line.
@@ -346,8 +430,10 @@ family per predicate: the generic member answers `false`, and an explicit
 specialisation for the types that satisfy the predicate answers `true`.
 
 ```ft
+import C;
+
 template <T type>
-export type IsInteger {
+type IsInteger {
     VALUE const bool = false;
 }
 
@@ -355,7 +441,15 @@ template <>
 type IsInteger<int> {
     VALUE const bool = true;
 }
+
+fn main() int {
+    C.printf("%d %d\n", IsInteger(int) as int, IsInteger(f64) as int);
+    return 0;
+}
 ```
+
+This program prints `1 0`: `IsInteger(int)` selects the specialisation, whose `VALUE` is
+`true`, and `IsInteger(f64)` falls back to the general one, whose `VALUE` is `false`.
 
 11.4.2 The query `IsInteger(int)` instantiates the family; the specialisation machinery
 (a full or a partial specialisation, the most specific one winning) chooses the member
@@ -390,8 +484,29 @@ call in the condition is not folded -- what folds is the `except(..)` query in t
 function's body. `std.util` therefore provides a wrapper macro:
 
 ```ft
-if ($MOVES(T)) @constexpr { .. }
+import C;
+import std;
+import std.util;
+
+template <T type>
+fn move_path() int {
+    if ($MOVES(T)) @constexpr {
+        C.printf("move may raise, so the element is copied\n");
+    } else {
+        C.printf("move cannot raise, so the element is moved\n");
+    }
+    return 0;
+}
+
+fn main() int except {
+    move_path<int>();
+    move_path<String>();
+    return 0;
+}
 ```
+
+This program prints `move cannot raise, so the element is moved` twice: neither `int` nor
+`String` has a move that can raise, so both take the moving path.
 
 `$MOVES(T)` expands to the query itself, `except(T(util.fake<&&T>()))`, so the
 condition is foldable where it is written. It needs `import std.util;`.

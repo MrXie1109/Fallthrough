@@ -5,6 +5,7 @@
 //! live in `precedence.rs`.
 
 use super::*;
+use crate::precedence::RANGE_PRECEDENCE;
 
 impl Parser {
     /// Parses an expression using the binding-power loop.
@@ -150,6 +151,34 @@ impl Parser {
                 continue;
             }
 
+            // A range: `low .. high` or `low ..= high`. It binds looser than
+            // every binary operator, so `1 .. n + 1` is `1 .. (n + 1)`, and a
+            // range cannot be chained: `1 .. 2 .. 3` has no meaning.
+            if matches!(
+                token.kind,
+                TokenKind::Punct(Punctuation::DotDot | Punctuation::DotDotEq)
+            ) {
+                if RANGE_PRECEDENCE < min_bp.right {
+                    break;
+                }
+                let inclusive = token.kind == TokenKind::Punct(Punctuation::DotDotEq);
+                stream.advance();
+                let low = lhs;
+                let high = match self.parse_expr_bp(stream, ast, BindingPower::new(RANGE_PRECEDENCE, 1)) {
+                    Some(id) => id,
+                    None => break,
+                };
+                if matches!(
+                    stream.peek(0).kind,
+                    TokenKind::Punct(Punctuation::DotDot | Punctuation::DotDotEq)
+                ) {
+                    break;
+                }
+                let span = ast.expr(low).span.to(ast.expr(high).span);
+                lhs = self.build_range(ast, low, high, inclusive, span);
+                continue;
+            }
+
             // Inside a template parameter header a `>` closes the header, and
             // is not a comparison: `template <n int = 4>` would otherwise read
             // `4 >` as a greater-than with nothing on the right.
@@ -180,6 +209,171 @@ impl Parser {
 
         self.leave();
         Some(lhs)
+    }
+
+    /// Whether the `{` at the cursor begins an array literal rather than a
+    /// block.
+    ///
+    /// The question is answered by lookahead, comparing token kinds and nesting
+    /// depth only: an array literal has an element followed by `,` at depth
+    /// zero of its own braces, and a block reaches its `}` first because its
+    /// statements end in `;` or because what follows the first expression is
+    /// not a comma.
+    fn brace_begins_a_literal(&self, stream: &TokenStream) -> bool {
+        // Every `{`, `(`, `[` opens a level; the literal ends when the level
+        // that started here closes.
+        let mut depth = 0usize;
+        let mut index = 1usize; // through the opening `{`
+        // An element is either immediately followed by `,` at this level, or
+        // the brace closes with a single element, which is also a literal.
+        loop {
+            match stream.peek(index).kind {
+                TokenKind::Eof => return false,
+                TokenKind::Punct(
+                    Punctuation::OpenBrace | Punctuation::OpenParen | Punctuation::OpenBracket
+                    | Punctuation::DotBrace,
+                ) => depth += 1,
+                TokenKind::Punct(
+                    Punctuation::CloseBrace | Punctuation::CloseParen | Punctuation::CloseBracket,
+                ) => {
+                    if depth == 0 {
+                        // The brace closed. `{}` and `{ element }` are literals;
+                        // a block that got here had a `;`, which returned false.
+                        return true;
+                    }
+                    depth -= 1;
+                }
+                TokenKind::Punct(Punctuation::Comma) if depth == 0 => return true,
+                TokenKind::Punct(Punctuation::Semi) if depth == 0 => return false,
+                _ => {}
+            }
+            index += 1;
+        }
+    }
+
+    /// Parses an array literal, `{a, b, c}`.
+    ///
+    /// The elements are full expressions, separated by commas; the length is
+    /// however many there are. Nothing here decides the element type -- that
+    /// comes from the position the literal is written in, exactly as it does
+    /// for `.{ .. }`.
+    fn parse_array_literal(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ExprId> {
+        let open = stream.advance().span;
+        let mut elements = Vec::new();
+        while !stream.at(TokenKind::Punct(Punctuation::CloseBrace)) {
+            if stream.at(TokenKind::Eof) {
+                self.push_diagnostic(
+                    Diagnostic::error("an array literal is not closed: `}` is missing")
+                        .with_code(DiagnosticCode::parser(2))
+                        .with_span(open),
+                );
+                return None;
+            }
+            let element = self.parse_expr_no_comma(stream, ast)?;
+            elements.push(element);
+            if stream.at(TokenKind::Punct(Punctuation::Comma)) {
+                stream.advance();
+                continue;
+            }
+            break;
+        }
+        let close = match self.expect_punct(stream, Punctuation::CloseBrace, "`}`") {
+            Some(close) => close,
+            None => return None,
+        };
+        let span = open.to(close.span);
+        Some(
+            ast.builder()
+                .alloc_expr(ExprKind::ArrayLiteral(fallc_ast::ArrayLiteral { elements }), span),
+        )
+    }
+
+    /// Builds the value of `low .. high` or `low ..= high`.
+    ///
+    /// A range is the standard library's `Range`, so it is lowered here to the
+    /// construction `std.range.Range(low, high, step)`: `1 .. 10` walks 1
+    /// through 9 and `1 ..= 10` walks 1 through 10, which is the same range
+    /// with the stop one past the end in the second form. Writing the
+    /// construction rather than a node of its own means every later stage --
+    /// resolution, type checking and code generation -- handles a range as the
+    /// constructor call it is.
+    fn build_range(
+        &mut self,
+        ast: &mut Ast,
+        low: ExprId,
+        high: ExprId,
+        inclusive: bool,
+        span: fallc_span::Span,
+    ) -> ExprId {
+        let int_one = |ast: &mut Ast, span: fallc_span::Span| {
+            ast.builder().alloc_expr(
+                ExprKind::IntLiteral(fallc_ast::IntLiteral {
+                    digits: "1".to_owned(),
+                    suffix: Some("i64".to_owned()),
+                }),
+                span,
+            )
+        };
+        let stop = if inclusive {
+            // `..= high` stops one past the high end. The high end is widened to
+            // the element type first, so `1 ..= 5` adds two `i64`s whatever
+            // type the written literal would have had on its own.
+            let widened = ast.builder().alloc_expr(
+                ExprKind::Cast(fallc_ast::CastExpr {
+                    operand: high,
+                    ty: fallc_ast::TypeSyntax::Named(fallc_ast::NamedType {
+                        path: "i64".to_owned(),
+                        arguments: Vec::new(),
+                        is_expansion: false,
+                        span,
+                    }),
+                }),
+                span,
+            );
+            let one = int_one(ast, span);
+            ast.builder().alloc_expr(
+                ExprKind::Binary(fallc_ast::BinaryExpr {
+                    op: fallc_ast::BinaryOp::Add,
+                    lhs: widened,
+                    rhs: one,
+                }),
+                span,
+            )
+        } else {
+            high
+        };
+        let step = int_one(ast, span);
+        let std_module = ast
+            .builder()
+            .alloc_expr(ExprKind::Name("std".to_owned()), span);
+        let range_module = ast.builder().alloc_expr(
+            ExprKind::Field(fallc_ast::FieldExpr {
+                object: std_module,
+                field: "range".to_owned(),
+                through_pointer: false,
+            }),
+            span,
+        );
+        let callee = ast.builder().alloc_expr(
+            ExprKind::Field(fallc_ast::FieldExpr {
+                object: range_module,
+                field: "Range".to_owned(),
+                through_pointer: false,
+            }),
+            span,
+        );
+        let call = fallc_ast::CallExpr {
+            callee,
+            args: vec![low, stop, step],
+            named: Vec::new(),
+            template_args: Vec::new(),
+            explicit_template_arguments: false,
+        };
+        ast.builder().alloc_expr(ExprKind::Call(call), span)
     }
 
     /// Parses a prefix expression: a literal, a name, a parenthesised
@@ -264,6 +458,90 @@ impl Parser {
         // it is read wherever an expression may begin.
         if stream.at(TokenKind::Keyword(Keyword::Lambda)) {
             return self.parse_lambda(stream, ast);
+        }
+        // `@__builtin_defined(X)` and its kind: a compile-time question. The
+        // `@` is what tells it from a name, and the argument is read as text
+        // because the builtin decides what it means -- a module name, a type,
+        // a platform.
+        if stream.at(TokenKind::Punct(Punctuation::At)) {
+            let start = stream.advance().span;
+            let name_token = self.parse_ident(stream, "a builtin name")?;
+            // `@meta.defined` is written as a path: the namespace and the
+            // question. It is one name, so the dot is part of it.
+            let mut name = self.token_text(stream, &name_token);
+            if stream.at(TokenKind::Punct(Punctuation::Dot))
+                && stream.peek_kind(1) == TokenKind::Ident
+            {
+                stream.advance();
+                let part = self.parse_ident(stream, "a builtin name")?;
+                name = format!("{name}.{}", self.token_text(stream, &part));
+            }
+            self.expect_punct(stream, Punctuation::OpenParen, "`(`")?;
+            let argument = self.parse_ident(stream, "what the builtin asks about")?;
+            let argument_text = self.token_text(stream, &argument);
+            let close = self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
+            let span = start.to(close.span);
+            return Some(ast.builder().alloc_expr(
+                ExprKind::Builtin(fallc_ast::BuiltinQuery {
+                    name,
+                    argument: argument_text,
+                    span,
+                }),
+                span,
+            ));
+        }
+        // `if (cond) { .. } else { .. }` standing where a value is wanted.
+        // The same keyword starts the statement form; the position decides
+        // which it is, and this entry point is only reached from a position
+        // that wants a value.
+        if stream.at(TokenKind::Keyword(Keyword::If)) {
+            stream.advance();
+            self.expect_punct(stream, Punctuation::OpenParen, "`(`")?;
+            let condition = self.parse_expr(stream, ast)?;
+            self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
+            let then_block = self.parse_block(stream, ast)?;
+            let else_block = if stream.at(TokenKind::Keyword(Keyword::Else)) {
+                stream.advance();
+                Some(self.parse_block(stream, ast)?)
+            } else {
+                None
+            };
+            let end = match else_block {
+                Some(block) => ast.block(block).span,
+                None => ast.block(then_block).span,
+            };
+            let span = ast.expr(condition).span.to(end);
+            return Some(ast.builder().alloc_expr(
+                ExprKind::IfValue(fallc_ast::IfValueExpr {
+                    condition,
+                    then_block,
+                    else_block,
+                }),
+                span,
+            ));
+        }
+        // A `{` where a value is wanted begins one of two things, and they are
+        // told apart by what comes after it: an array literal `{1, 2, 3}`, whose
+        // elements are expressions separated by commas, or a block expression
+        // `{ x = 1; x }`, whose contents are statements ending in `;` or a tail
+        // expression.
+        //
+        // The separator decides it: an element followed by `,` is an array, and
+        // anything else -- a `;`, a declaration, a `}` -- is a block. That is a
+        // property of the text rather than of the position, so a literal inside
+        // a statement still reads as a literal.
+        if stream.at(TokenKind::Punct(Punctuation::OpenBrace))
+            && self.brace_begins_a_literal(stream)
+        {
+            return self.parse_array_literal(stream, ast);
+        }
+        if stream.at(TokenKind::Punct(Punctuation::OpenBrace)) {
+            let block = self.parse_block(stream, ast)?;
+            let span = ast.block(block).span;
+            return Some(
+                ast.builder()
+                    .alloc_expr(ExprKind::Block(block), span),
+            );
         }
         // `type(expr)` where an expression is expected: a *type*, which only a
         // position that wants one -- a trait query's argument, today -- can
@@ -464,6 +742,13 @@ impl Parser {
                 init,
             });
             return Some(id);
+        }
+
+        // `{1, 2, 3}` in an expression position is an array literal: the length
+        // is how many elements there are. A statement position has already
+        // taken `{` as a block, so a brace reaching here is a value.
+        if stream.at(TokenKind::Punct(Punctuation::OpenBrace)) {
+            return self.parse_array_literal(stream, ast);
         }
 
         // `.{ .. }` in an expression position is a nested initialiser. Its type

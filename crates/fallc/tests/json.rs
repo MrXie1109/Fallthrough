@@ -60,16 +60,16 @@ fn main() int except {
     document JsonDocument = std.parse(&body)??;
     root JsonValue = document.root();
     ok_key String = String("ok");
-    std.print("{} {} {}\n", root.kind() as int, root.length(), root.member(&ok_key).value()??.as_bool() as int)??;
+    std.print("{} {} {}\n", root.kind() as int, root.length(), root.member(&ok_key).value()?? as bool as int)??;
     name_key String = String("name");
-    std.print("{}\n", root.member(&name_key).value()??.as_text()??)??;
+    std.print("{}\n", root.member(&name_key).value()?? as String??)??;
     tags_key String = String("tags");
     tags JsonValue = root.member(&tags_key).value()??;
     sum int = 0;
     index usize = 0;
     while (index < tags.length()) {
         element JsonValue = tags.at(index)??;
-        sum += element.as_number()?? as int;
+        sum += element as f64?? as int;
         index += 1;
     }
     none_key String = String("none");
@@ -115,7 +115,7 @@ fn main() int except {
     document JsonDocument = std.parse(&good)??;
     root JsonValue = document.root();
     try {
-        std.print("never {}\n", root.as_text()??)??;
+        std.print("never {}\n", root as String??)??;
     } except {
         e &const std.Exception = std.exception();
         std.print("{}\n", e.name())??;

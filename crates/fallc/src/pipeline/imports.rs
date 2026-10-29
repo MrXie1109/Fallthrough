@@ -1097,6 +1097,13 @@ pub(super) fn imports_std(ast: &Ast) -> bool {
 /// about the compiler leaking into the language: the machinery is the
 /// language's, so the compiler brings what it needs.
 ///
+/// The module it brings is the one that declares those two types, and not the
+/// umbrella. `import std` would have compiled every module of the standard
+/// library -- 67 of them, and the 947 functions their bodies instantiate -- for
+/// a program that wrote `except` and nothing else. A program that writes
+/// `except` around `C.printf` took ten seconds to build and a program without
+/// it took a twentieth of that, and the difference was this import.
+///
 /// The import is added as a plain one, so `std.member` becomes reachable and
 /// nothing is put into scope bare -- exactly as if the author had written it.
 pub(super) fn add_exception_runtime(ast: &mut Ast) {
@@ -1105,7 +1112,7 @@ pub(super) fn add_exception_runtime(ast: &mut Ast) {
     }
     let item = ast.builder().alloc_item(
         fallc_ast::ItemKind::Import(fallc_ast::ImportItem {
-            module: "std".to_owned(),
+            module: "std.string".to_owned(),
             name_span: fallc_span::Span::SYNTHETIC,
             alias: None,
             exported: false,
@@ -1589,7 +1596,7 @@ pub(super) fn load_module(
         // The exported functions of the modules this one imports are added to it
         // for exactly that.
         let mut resolutions = resolved.resolutions.clone();
-        // Only names the module does not already declare: its own `extern "C"`
+        // Only names the module does not already declare: its own `@extern_C`
         // declaration of `strlen` is one function, and importing the C module's
         // exported copy as well made every call to it ambiguous.
         let already: std::collections::HashSet<(String, String)> = resolutions
@@ -1650,6 +1657,7 @@ pub(super) fn load_module(
                         imported_as: None,
                         imported_via: None,
                         is_builtin: false,
+                        is_overridable: false,
                     });
                 }
             }
@@ -1826,6 +1834,13 @@ pub(super) fn load_module(
     for dependency in &reexported {
         exports.merge(dependency);
     }
+
+    // The module's interface is published as source: a file of the
+    // declarations an importer may name, and nothing else. Writing it out here
+    // -- from the export table that was just built -- is what lets an importer
+    // read the interface as text instead of re-reading and re-checking the
+    // module's implementation. See `interface`.
+    crate::pipeline::interface::publish(&exports, name, &parsed_ast);
 
     // Every exported function is also recorded as an external symbol, keyed by
     // its qualified name, so the code generator can declare the ones that are

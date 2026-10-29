@@ -364,6 +364,10 @@ impl<'ctx> Lowerer<'ctx> {
         self.binding_alignments.extend(alignments);
     }
 
+    pub fn set_indirect_receivers(&mut self, receivers: HashMap<Span, String>) {
+        self.indirect_receivers = receivers;
+    }
+
     pub fn set_method_calls(&mut self, calls: HashMap<Span, String>) {
         self.method_calls = calls;
     }
@@ -452,12 +456,22 @@ impl<'ctx> Lowerer<'ctx> {
         self.optimization = optimization;
     }
 
-    /// Returns the object and manifest paths of a cached module library.
+    /// Returns the object and template paths of a cached module library.
+    ///
+    /// `.o` holds the compiled functions and `.tl` the templates that go with
+    /// them. The optimisation level names the directory the pair lives in, so
+    /// the files themselves say only what they are.
     pub fn object_library_entries(&self, cache_hash: u64) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
-        let entry = self.cache_entry(cache_hash)?;
-        let object = entry.with_extension(format!("o{}", self.optimization.spelling()));
-        let manifest = entry.with_extension(format!("inst{}", self.optimization.spelling()));
-        Some((object, manifest))
+        let directory = self.module_cache.clone()?;
+        let target = format!("{:?}", self.backend.host_triple());
+        let opt = format!("{:?}/{}", self.mode, self.optimization.spelling());
+        let key = crate::codegen::cache::CacheKey {
+            cache_hash,
+            target: &target,
+            opt: &opt,
+        };
+        let entry = directory.join(key.entry_name());
+        Some((entry.with_extension("o"), entry.with_extension("tl")))
     }
 
     /// Returns the bitcode path for a module with this dependency hash, or

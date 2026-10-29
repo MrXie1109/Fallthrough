@@ -694,10 +694,11 @@ std.print("{} {} {}\n", took.nanos(), took.millis(), took)??;  // 0.005s
 
 d Duration = time.from_millis(1500);   // from_nanos / from_seconds 同理
 stamp SystemTime = time.unix_now();
-std.print("{}\n", stamp.to_utc())??;   // 2026-10-20 16:54:58
+dt DateTime = stamp as DateTime;
+std.print("{}\n", dt)??;   // 2026-10-20 16:54:58
 ```
 
-`Duration` 支持 `+`/`-`/比较与文本（`1.500s`）；`SystemTime.to_utc()` 给
+`Duration` 支持 `+`/`-`/比较与文本（`1.500s`）；`SystemTime` 经 `as` 转为
 `DateTime`（`year()`/`month()`/`day()`/`hour()`/`minute()`/`second()` 与
 `YYYY-MM-DD HH:MM:SS` 文本）；`time.sleep(&duration)` 睡眠。平台差异在
 `std/internal/time_sys.ftm`（POSIX `clock_gettime`）与 `std/internal/time_sys.windows.ftm`
@@ -748,8 +749,8 @@ UDP 是独立工作，本模块明确不做，而不是悄悄只处理一部分�
 - **crypto**（[`std/crypto.ftm`](../../standard/std/crypto.ftm)）：`sha256`/`sha256_hex`、
   `hmac_sha256`/`hmac_sha256_hex`、`hex`；按规范实现并用标准向量（`"abc"`、空串、
   RFC 4231）验证。明确不是密码学库：没有常量时间比较、密钥管理；SHA-1/MD5 不提供。
-- **uuid**（[`std/uuid.ftm`](../../standard/std/uuid.ftm)）：`v4()??` 随机 UUID（版本位与
-  RFC 4122 变体位已设置）、`to_string()`/`__str__`、`parse_uuid(&text)??`、`version()`、
+- **uuid**（[`std/uuid.ftm`](../../standard/std/uuid.ftm)）：`Uuid()??` 随机 UUID（版本位与
+  RFC 4122 变体位已设置）、`as String`/`__str__`、`parse_uuid(&text)??`、`version()`、
   `variant()`、`==`/`!=`；两个 `u64` 存储，复制/比较/返回都不涉及所有权。
 - **rand_dist**（[`std/rand_dist.ftm`](../../standard/std/rand_dist.ftm)）：在
   `std.random.Random` 之上的分布函数名——`sample_uniform`/`sample_uniform_real`/
@@ -789,7 +790,7 @@ UDP 是独立工作，本模块明确不做，而不是悄悄只处理一部分�
 - **TOML**（[`std/toml.ftm`](../../standard/std/toml.ftm)）：`parse_toml(&text)` 给
   `TomlDocument`（文件顺序的扁平条目表）。支持注释、`[table]`、`key = value` 与
   字符串/整数/实数/布尔；数组、内联表、日期、多行字符串明确不支持（报 `ValueError`）。
-  `get(&table, &key)` 返回 `?TomlValue`，值用 `as_string`/`as_int`/`as_real`/`as_bool`。
+  `get(&table, &key)` 返回 `?TomlValue`，值用 `as String`/`as i64`/`as f64`/`as bool` 读出。
 - **XML**（[`std/xml.ftm`](../../standard/std/xml.ftm)）：`parse_xml(&text)` 给
   `XmlDocument`（节点数组 + 子节点下标，和 JSON 同样的所有权形状）；`XmlValue` 句柄
   提供 `name`/`text`/`child_count`/`child(i)`/`attribute_count`/`attribute_name`/
@@ -806,13 +807,13 @@ UDP 是独立工作，本模块明确不做，而不是悄悄只处理一部分�
 document JsonDocument = std.parse(&text)??;
 root JsonValue = document.root();
 key String = String("name");
-name String = root.member(&key).value()??.as_text()??;
+name String = root.member(&key).value()?? as String??;
 written String = std.serialize(&root)??;
 ```
 
 `kind()` 返回 `NULL_VALUE`/`BOOLEAN`/`NUMBER`/`TEXT`/`ARRAY`/`OBJECT`；数组用
 `length()`/`at(i)`，对象用 `length()`/`member(&key)`（`?JsonValue`，缺键是"没有"而不是
-失败）/`member_key(i)`/`member_value(i)`；标量用 `as_bool`/`as_number`/`as_text`，
+失败）/`member_key(i)`/`member_value(i)`；标量用 `as Bool`/`as f64`/`as String` 读出，
 类型不对抛 `ValueError`；`is_null()`。解析失败同样抛 `ValueError`。数字统一是 `f64`。
 
 ## 编码与文本工具：`std.encoding`、`std.unicode`、`std.strings`
@@ -850,7 +851,7 @@ cursor *int = std.advance(values.begin(), values.end(), 2usize);
 
 `std.range`（[`std/range.ftm`](../../standard/std/range.ftm)）给整数区间：
 `to(n)`（0..n）、`up_to(low, high)`、`down_to(low, high)`、`step_range(low, high, step)`
-（步长为 0 抛 `ValueError`）。`IntRange` 自己既是容器又是位置，所以能直接
+（步长为 0 抛 `ValueError`）。`Range` 自己既是容器又是位置，所以能直接
 `for (value i64 : std.to(5i64))`；终点**不包含**，步长不整除时到越过终点为止。
 
 ## 网格：`std.grid`

@@ -426,6 +426,10 @@ impl TypeChecker {
 
         let mut deduced: std::collections::HashMap<String, Type> =
             std::collections::HashMap::new();
+        // Values a parameter's *length* supplied, kept apart from the types:
+        // `[N]T` against `[3]int` decides `N` as well as `T`.
+        let mut deduced_values: std::collections::HashMap<String, i64> =
+            std::collections::HashMap::new();
         // The types of a pack parameter's elements, gathered as the arguments
         // are read: one argument is one element, so the list *is* the pack.
         let mut deduced_packs: std::collections::HashMap<String, Vec<Type>> =
@@ -482,11 +486,31 @@ impl TypeChecker {
                     continue;
                 }
             }
+            // The signature's types belong to the tree the *declaration* was
+            // written in, which for an imported template is not the tree being
+            // checked. A length written `[N]T` is an expression id, and an id
+            // means nothing in another tree -- so the deduction reads it from
+            // the declaration's own tree.
+            // The body is filed under the symbol the signature mangles to, not
+            // under the written name: `begin` is `begin_R1A0_KX1_T`, because a
+            // template with a different parameter list is a different body.
+            let symbol = crate::typeck::template_symbol_of(
+                &signature.bound_as,
+                &signature.param_types,
+            );
+            let declaration_tree = self
+                .template_body_for(&symbol)
+                .or_else(|| self.template_body_for(&signature.bound_as))
+                .or_else(|| self.template_body_for(&signature.written_name))
+                .map(|body| body.tree);
+            let tree = declaration_tree.as_deref().unwrap_or(ast);
             self.deduce_from_type(
+                tree,
                 parameter,
                 &found,
                 &signature.template_params,
                 &mut deduced,
+                &mut deduced_values,
             );
         }
 
@@ -512,6 +536,10 @@ impl TypeChecker {
             }
             if let Some(ty) = deduced.get(&param.name) {
                 arguments.push(crate::template::TemplateArgument::Type(ty.clone()));
+                continue;
+            }
+            if let Some(value) = deduced_values.get(&param.name) {
+                arguments.push(crate::template::TemplateArgument::Int(*value));
                 continue;
             }
             // A parameter that could not be deduced may still have a default.
@@ -642,10 +670,12 @@ impl TypeChecker {
     /// parameter becomes.
     pub(super) fn deduce_from_type(
         &self,
+        ast: &Ast,
         parameter: &fallc_ast::TypeSyntax,
         argument: &Type,
         params: &[fallc_ast::TemplateParam],
         deduced: &mut std::collections::HashMap<String, Type>,
+        values: &mut std::collections::HashMap<String, i64>,
     ) {
         use fallc_ast::TypeSyntax;
         match parameter {
@@ -691,7 +721,7 @@ impl TypeChecker {
                     let crate::template::TemplateArgument::Type(actual) = actual else {
                         continue;
                     };
-                    self.deduce_from_type(written, actual, params, deduced);
+                    self.deduce_from_type(ast, written, actual, params, deduced, values);
                 }
             }
             // A pointer is looked through only when the argument *is* one: a
@@ -705,7 +735,7 @@ impl TypeChecker {
                     return;
                 };
                 let pointee = pointee.unqualified().clone();
-                self.deduce_from_type(inner, &pointee, params, deduced);
+                self.deduce_from_type(ast, inner, &pointee, params, deduced, values);
             }
             // A reference binds to a value: `&const T` says `T` is what the
             // argument refers to, which is how `min(a, b)` deduces from
@@ -718,10 +748,55 @@ impl TypeChecker {
             | TypeSyntax::Const(inner) => {
                 let pointee = argument.pointee().cloned().unwrap_or_else(|| argument.clone());
                 let pointee = pointee.unqualified().clone();
-                self.deduce_from_type(inner, &pointee, params, deduced);
+                self.deduce_from_type(ast, inner, &pointee, params, deduced, values);
             }
-            // A value parameter, an array, or anything else says nothing about
-            // a type parameter: `N usize` is a value the caller writes out.
+            // `[N]T` against an array: the element type is deduced from the
+            // element, and the length names a value parameter this argument
+            // supplies. `fn begin(this &const [N]const c8)` therefore works for
+            // every string literal, which is what a loop over one needs.
+            // `[N]T` against an array.
+            //
+            // The rule is the one C++ states for `void f(T const (&)[N])`: the
+            // *element* type is deduced from the argument's elements, and `N`
+            // is the argument's length. The written length is never read for a
+            // value -- it is a parameter, and the number comes from the
+            // argument. That is what lets an imported template be instantiated:
+            // the written length names a node of the tree that declared the
+            // template, and an id from there means nothing here.
+            TypeSyntax::Array(array) => {
+                let Type::Array { element, len } = argument else {
+                    return;
+                };
+                // `T` is the element's *value* type: a signature that wants a
+                // read-only element writes `[N]const T`, and the resolved type
+                // carries the `const` once.
+                let element = element.unqualified().clone();
+                self.deduce_from_type(ast, &array.element, &element, params, deduced, values);
+                // Which parameter is the length? The declaration says so: the
+                // only thing a signature writes there is a value parameter, and
+                // a module publishes one along with the template. The written
+                // name is read when this tree numbered it, and the declaration's
+                // parameter list otherwise.
+                let written = match self.const_exprs.get(array.len.as_raw() as usize) {
+                    Some(ConstExpr::Named { name, .. }) => Some(name.clone()),
+                    _ => None,
+                };
+                let parameter = written
+                    .as_ref()
+                    .and_then(|name| params.iter().find(|param| param.name == *name))
+                    .or_else(|| {
+                        params
+                            .iter()
+                            .find(|param| param.kind != fallc_ast::TemplateParamKind::Type)
+                    });
+                if let Some(parameter) = parameter {
+                    values
+                        .entry(parameter.name.clone())
+                        .or_insert_with(|| i64::try_from(*len).unwrap_or(i64::MAX));
+                }
+            }
+            // A value parameter, or anything else, says nothing about a type
+            // parameter: `N usize` is a value the caller writes out.
             _ => {}
         }
     }
@@ -828,6 +903,7 @@ impl TypeChecker {
                         imported_as: None,
                         imported_via: None,
                         is_builtin: false,
+                        is_overridable: false,
                     });
                 }
                 // A copied name has a span of its own; what it means is what
@@ -914,6 +990,19 @@ impl TypeChecker {
         self.expected = Some(returns.clone());
         // The value parameters' declared types, so that a use of one inside the
         // body -- `string[index]` -- has a type to be checked against.
+        //
+        // The names are entered before any is resolved, in two passes: a
+        // parameter's type may name another parameter, and a name is what makes
+        // the length of `[N]T` a constant while the signature is being resolved
+        // rather than only afterwards.
+        for param in &signature.template_params {
+            if matches!(param.kind, fallc_ast::TemplateParamKind::Value(_)) {
+                self.template_value_types.insert(
+                    param.name.clone(),
+                    Type::INT,
+                );
+            }
+        }
         for param in &signature.template_params {
             if let fallc_ast::TemplateParamKind::Value(ty) = &param.kind {
                 let ty = self.resolve_template_type(ty, substitution);
@@ -1099,6 +1188,35 @@ impl TypeChecker {
     /// Judged from the types recorded while the arguments were matched, so a
     /// candidate can be rejected without side effects on the call site.
     fn instantiated_arguments_fit(
+        &mut self,
+        signature: &FunctionSignature,
+        substitution: &crate::template::Substitution,
+        written: &[(usize, fallc_ast::ExprId)],
+        types: &TypeTable,
+    ) -> bool {
+        // The parameters are written in the *declaration's* tree, and a length
+        // `[N]` is an expression id in it. Resolving them against whichever
+        // tree the call happens to be written in read another node, so the
+        // expected type came out wrong and the instantiation was rolled back.
+        let symbol = crate::typeck::template_symbol_of(
+            &signature.bound_as,
+            &signature.param_types,
+        );
+        let declaration = self
+            .template_body_for(&symbol)
+            .or_else(|| self.template_body_for(&signature.bound_as))
+            .map(|body| body.tree);
+        let previous_index = declaration
+            .as_ref()
+            .and_then(|tree| self.adopt_const_index(tree));
+        let fits = self.arguments_fit_in_declaration(signature, substitution, written, types);
+        self.restore_const_index(previous_index);
+        fits
+    }
+
+    /// The body of [`Self::instantiated_arguments_fit`], run with the
+    /// declaration's constant index installed.
+    fn arguments_fit_in_declaration(
         &mut self,
         signature: &FunctionSignature,
         substitution: &crate::template::Substitution,
@@ -1513,6 +1631,18 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         if self.same_type_named_apart(receiver, expected) {
             return true;
         }
+        // An array's element qualifiers are not part of *which* array a method
+        // belongs to: `this &const [N]T` is a method of every `[N]T`, and the
+        // `const` it does not write is supplied by the `&const` around it.
+        // Comparing the written types exactly would make `[4]const c8` and the
+        // resolved `[4]c8` two different receivers.
+        if let (Type::Array { element: a, len: la }, Type::Array { element: b, len: lb }) =
+            (receiver.unqualified(), expected.unqualified())
+            && la == lb
+            && a.unqualified() == b.unqualified()
+        {
+            return true;
+        }
         if let Some(pointee) = expected.pointee()
             && self.same_type_named_apart(receiver, pointee)
         {
@@ -1644,6 +1774,12 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
     /// declared type of the same name is found first, so this only decides the
     /// names nothing else explains.
     pub(super) fn type_template_parameter(&self, name: &str) -> bool {
+        // A parameter the template being read declared: `template <T type>
+        // fn f(this &const T)` names `T` in its own signature, before any
+        // instantiation exists to substitute it.
+        if self.declared_template_types.contains(name) {
+            return true;
+        }
         self.type_templates.values().any(|template| {
             template.template_params.iter().any(|param| {
                 param.name == name && param.kind == fallc_ast::TemplateParamKind::Type
@@ -3012,6 +3148,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                     imported_as: None,
                     imported_via: None,
                     is_builtin: false,
+                    is_overridable: false,
                 });
             }
             // A copied name has a span of its own; what it means is what the
@@ -3115,6 +3252,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
             lambda_calls: std::mem::take(&mut self.lambda_calls),
             lambda_values: std::mem::take(&mut self.lambda_values),
             method_calls: std::mem::take(&mut self.method_calls),
+            indirect_receivers: std::mem::take(&mut self.indirect_receivers),
             call_methods: std::mem::take(&mut self.call_methods),
             throwing_calls: std::mem::take(&mut self.throwing_calls),
             propagating_calls: std::mem::take(&mut self.propagating_calls),
@@ -3150,6 +3288,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         self.lambda_calls = previous.lambda_calls;
         self.lambda_values = previous.lambda_values;
         self.method_calls = previous.method_calls;
+        self.indirect_receivers = previous.indirect_receivers;
         self.call_methods = previous.call_methods;
         self.throwing_calls = previous.throwing_calls;
         self.propagating_calls = previous.propagating_calls;

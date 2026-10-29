@@ -424,6 +424,7 @@ impl<'ctx> Lowerer<'ctx> {
             exported: false,
             throws: instance.throws.then_some(fallc_ast::Throws {
                 condition: None,
+                is_auto: false,
                 span,
             }),
             is_external: false,

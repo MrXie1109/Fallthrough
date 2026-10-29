@@ -50,25 +50,29 @@ identifiers with different code-point sequences are different names.
 
 ```text
 alignof  as       auto     break    case     const    continue default
-defer    define   delete   dynamic  else     enum     except   export
+defer    define   delete   else     enum     except   export   fallthrough
 false    finally  fn       for      from     if       import   interface
 lambda   link     mutable  nullptr  raise    return   sizeof   static_assert
 switch   template this     traits   true     try      type     union
 volatile while
 ```
 
-5.2 There are no contextual keywords: `dynamic`, `delete` and `define` are reserved
-too. `dynamic` is used in the link-kind position of a `link` declaration, `define`
-introduces a macro definition at the start of a logical line, and `delete` marks a
-deleted definition; none of them is an identifier anywhere else.
+5.2 The list in 5.1 is the complete set: no other word is reserved, and a program may
+declare an identifier with any word not on it. In particular `alignas`, `constexpr`,
+`dynamic`, `extern`, `static` and `thread_local` are ordinary identifiers. The
+declarations they name are written with attributes, in which the word after `@` is read
+as a word rather than as a keyword; see [03 Declarations §9](03-declarations.md#attributes).
 
-5.3 `alignas`, `constexpr`, `extern`, `thread_local` and `static` are not reserved
-words and may be used as identifiers. The declarations they describe are written with
-attributes; see [03 Declarations §9](03-declarations.md#attributes). `export` is a
-keyword: it introduces a declaration importers may see, see
+5.3 `export` **is** reserved: it introduces a declaration that importers may see, and it
+is written before the attribute list rather than as an attribute; see
 [03 Declarations §9](03-declarations.md#attributes).
 
-5.4 The name after `@` is not a keyword: it is read as an ordinary word, and the
+5.4 `delete` is reserved for a future deletion expression and has no meaning yet. `define`
+introduces a macro definition at the start of a logical line; it is reserved so that a
+definition always means what it says, because a preprocessor that recognised it only by
+reading an identifier would let a program shadow that identifier.
+
+5.5 The name after `@` is not a keyword: it is read as an ordinary word, and the
 attributes and positions that are allowed are given in
 [03 Declarations §9](03-declarations.md#attributes).
 
@@ -152,6 +156,41 @@ ordinary character. There is no `f"""…"""` form.
 6.6.2 `nullptr` has no fixed pointer type; it takes the pointer type required by the
 position of use.
 
+### Range literals
+
+6.6.3 `low .. high` and `low ..= high` denote a range: the series of integers that starts
+at `low` and steps by one. The step is one and the elements are `i64`.
+
+6.6.4 The range excludes `high` and the range with `=` includes it: `1 .. 5` walks
+1, 2, 3, 4, and `1 ..= 5` walks 1, 2, 3, 4, 5.
+
+6.6.5 The two ends are expressions, not necessarily literals; each **must** have an
+integer type or be inferable as one. `1 .. n + 1` is the range from 1 to `n`, because a
+range binds looser than every binary operator.
+
+6.6.6 A range literal is the standard library's `Range`: `1 .. 10` is
+`std.range.Range(1, 10, 1)` and `1 ..= 10` is `std.range.Range(1, 11, 1)`. It therefore
+**requires** `import std;` or `import std.range;`, and it may be stored in a `Range`, used
+as the subject of a range loop (see [05 Statements](05-statements.md#range-loops)), or
+passed wherever a `Range` is expected.
+
+6.6.7 A range **must not** be chained: `1 .. 2 .. 3` does not conform to this standard.
+
+The following program prints `1 2 3 4` and then `1 2 3 4 5`:
+
+```ft
+import C;
+import std;
+
+fn main() int except {
+    for (i i64 : 1 .. 5) { C.printf("%ld ", i); }
+    C.printf("| ");
+    for (i i64 : 1 ..= 5) { C.printf("%ld ", i); }
+    C.printf("\n");
+    return 0;
+}
+```
+
 ### Escape sequences
 
 6.7.1 Character and string literals support the following escapes: `\n`, `\t`, `\r`,
@@ -185,8 +224,14 @@ as the table states.
 | 2 | `&&` | left |
 | 1 | `\|\|` | left |
 | 0 | `?:`, `=` and the compound assignments | right |
+| — | `..`, `..=` (looser than every operator above) | — |
+
+7.1.1 A range is not an operator over two values: its two ends are integers and its
+whole is a `Range`. It therefore sits below `?:` and takes each end as a full expression,
+so `1 .. n + 1` is the range from 1 to `n + 1`.
 
 7.2 Postfix forms (call, subscript, field access, `++`, `--`, `??`, `!!`) have higher
+precedence than any binary operator in the table.
 precedence than any binary operator in the table.
 
 7.3 `as` has higher precedence than any binary operator and lower precedence than the

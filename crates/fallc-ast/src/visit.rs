@@ -91,6 +91,15 @@ pub fn walk_item<V: Visitor + ?Sized>(ast: &Ast, id: ItemId, visitor: &mut V) {
 /// Walks the children of an item kind.
 pub fn walk_item_kind<V: Visitor + ?Sized>(ast: &Ast, kind: &ItemKind, visitor: &mut V) {
     match kind {
+        ItemKind::Conditional(node) => {
+            walk_expr(ast, node.condition, visitor);
+            for &item in &node.then_items {
+                walk_item(ast, item, visitor);
+            }
+            for &item in &node.else_items {
+                walk_item(ast, item, visitor);
+            }
+        }
         ItemKind::Variable(node) => match &node.init {
             Some(crate::node::Initializer::Expr(expr)) => walk_expr(ast, *expr, visitor),
             Some(crate::node::Initializer::Designated(init)) => {
@@ -287,6 +296,15 @@ pub fn walk_expr_kind<V: Visitor + ?Sized>(ast: &Ast, kind: &ExprKind, visitor: 
             walk_expr(ast, node.lhs, visitor);
             walk_expr(ast, node.rhs, visitor);
         }
+        ExprKind::Range(node) => {
+            walk_expr(ast, node.low, visitor);
+            walk_expr(ast, node.high, visitor);
+        }
+        ExprKind::ArrayLiteral(node) => {
+            for &element in &node.elements {
+                walk_expr(ast, element, visitor);
+            }
+        }
         ExprKind::Unary(node) => walk_expr(ast, node.operand, visitor),
         // A fold names a pack rather than an expression, so there is nothing
         // inside it for this walker to descend into.
@@ -298,6 +316,15 @@ pub fn walk_expr_kind<V: Visitor + ?Sized>(ast: &Ast, kind: &ExprKind, visitor: 
         ExprKind::CommaFold { pattern } => walk_expr(ast, *pattern, visitor),
         ExprKind::Propagate(node) => walk_expr(ast, node.value, visitor),
         ExprKind::Abort(node) => walk_expr(ast, node.value, visitor),
+        ExprKind::Builtin(_) => {}
+        ExprKind::Block(block) => walk_block(ast, *block, visitor),
+        ExprKind::IfValue(node) => {
+            walk_expr(ast, node.condition, visitor);
+            walk_block(ast, node.then_block, visitor);
+            if let Some(block) = node.else_block {
+                walk_block(ast, block, visitor);
+            }
+        }
         ExprKind::ThrowQuery(inner) => walk_expr(ast, *inner, visitor),
         // `type(expr)` names a type, but its operand is an expression and has
         // names to resolve and expressions to fold.

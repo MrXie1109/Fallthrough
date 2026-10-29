@@ -12,12 +12,40 @@
 ### 形式
 
 ```ft
+// geom.ftm
+export fn area(w int, h int) int {
+    return w * h;
+}
+
+export type Point {
+    x int;
+    y int;
+}
+```
+
+```ft
+// main.ft
+import C;
 import geom;
 import geom as g;
-from geom import area, Point;
-from geom import *;
+from geom import area;
+from geom import Point;
+
+fn main() int {
+    p Point = .{1, 2};
+    C.printf("%d %d %d\n", area(2, 3), g.area(3, 4), p.x);
+    return 0;
+}
+```
+
+这两个文件一起编译，程序输出 `6 12 1`：`geom.area` 既能经模块名调用，也能经别名 `g`
+调用，而 `from geom import area` 让裸名字可用。
+
+模块可以把导入的东西再导出，伞形模块就是这样拼起来的：
+
+```ft
+// umbrella.ftm
 export from geom import *;
-export from geom import area;
 ```
 
 2.1.1 导入是静态的：模块在编译期加载，不存在运行期模块对象。
@@ -150,15 +178,28 @@ export from geom import area;
 link m dynamic from default;
 link z static from "/usr/lib";
 link "gcc_s" dynamic from default;
+
+fn main() int {
+    return 0;
+}
 ```
+
+这三个文件都能编译并链接：裸名字按链接器的方式查找库，带引号的名字原样传给链接器，
+`from "…"` 指定查找目录。
 
 9.2 `link` 的三部分**必须**齐全：名字、链接方式（`dynamic` 或 `static`）、查找
 位置（`default` 或目录字符串）。
+
+9.2.1 `dynamic` 与 `static` **不是**保留字（见
+[01 词法 §5.2](01-lexical.zh.md#关键字)）。它们只在 `link` 声明中库名之后的位置表示
+链接方式；在其他任何位置都是普通标识符，所以程序可以声明 `static int = 2;` 并使用它。
+声明中的静态存储期是属性 `@static`（见
+[03 声明 §4](03-declarations.zh.md#声明修饰符)），那是不同位置的另一个词。
 
 9.3 库名含 `/` 或以 `.a`/`.so` 结尾时，作为文件路径交给链接器；否则按平台约定
 加前缀与后缀。
 
 9.4 外部函数与外部变量的声明分别见 [04 函数](04-functions.zh.md) 与
-[03 声明](03-declarations.zh.md#外部变量)。
+[03 声明](03-declarations.zh.md#外部变量与外部函数)。
 
 9.5 标准库的 C 绑定是普通模块；导入方式与普通模块相同。

@@ -1,0 +1,1655 @@
+# `std.string`
+
+A growable, owned sequence of bytes.
+
+The bytes are the text itself, in UTF-8, which is what makes a `String` a
+valid C string: `data()` hands out a pointer that C can read directly, and
+the storage always keeps a terminating zero so that `printf("%s")` works.
+
+# Short strings live inside the object
+
+A `String` is three words, and a string of up to `INLINE_CAPACITY` bytes keeps
+its text in those words rather than allocating. The last byte of the object
+holds the marker that says so, and the length above the marker's bit -- so one
+byte of the object is both the mode and the length, and the text has the rest
+of it. Such a string never touches the allocator: not when it is created, not
+when it is copied, and not when it is destroyed. Longer strings allocate, and
+then `_data`, `_len` and `_cap` mean what they say.
+
+An all-zero object is an empty inline string as well, which is what makes
+`s String;` -- zero-initialised, with no constructor call -- a valid empty
+string rather than a special case every method has to check for.
+
+The mode is decided by the object itself, never by a caller, so every method
+below asks which mode it is in and works with the bytes either way. One rule
+follows: the length of an inline string lives in the object's last byte, so
+`_len` and `_cap` are only read when the string is not inline.
+
+# Lengths are in bytes
+
+`length()` counts *bytes*, not characters, and `s[i]` is the `i`th byte.
+That keeps both operations O(1) and keeps them consistent with each other --
+a character-based index would have to scan, and mixing the two meanings is
+how a program comes to slice a character in half.
+
+# Ownership
+
+A `String` owns its buffer, if it has one. Copying one copies the bytes;
+destroying one frees them. `data()` lends the buffer out, so the pointer it
+returns is valid only until the `String` is changed or destroyed.
+What this module needs from elsewhere. A module's imports are its own: the
+names it uses must be brought in here, whether or not an importer has them.
+
+## Declarations
+
+### `fn c_strlen(text *const char) usize`
+
+The C functions this file uses, under names that say what they are rather
+than where they come from.
+
+`strlen` and `memcpy` are the two operations every string implementation
+needs, and naming them once here keeps the C bindings from appearing in the
+middle of the logic below.
+Returns the length of a C string, in bytes.
+
+- `text`: a null-terminated C string; its bytes before the terminator
+  are counted, and the terminator is not
+
+```
+fn c_strlen(text *const char) usize
+```
+
+### `fn c_memcpy(destination *byte, source *const byte, size usize) *byte`
+
+Copies `size` bytes from `source` to `destination`.
+
+- `destination`: the bytes to copy into, which must hold at least `size` of
+  them
+- `source`: the bytes to copy from, which must hold at least `size` of them
+- `size`: how many bytes to copy; no terminator is written
+
+```
+fn c_memcpy(destination *byte, source *const byte, size usize) *byte
+```
+
+### `fn c_memcmp(left *const byte, right *const byte, size usize) int`
+
+Compares two runs of bytes, returning a negative, zero, or positive value.
+
+The result is `int` because that is what C's `memcmp` returns, and only its
+sign carries a meaning.
+- `left`: the bytes to compare; they must hold at least `size` of them
+- `right`: the bytes to compare against; they must hold at least `size` of
+  them
+- `size`: how many bytes to compare; a shared prefix alone decides, so
+  the longer of two strings with a common prefix compares equal
+
+```
+fn c_memcmp(left *const byte, right *const byte, size usize) int
+```
+
+### `INITIAL_CAPACITY const usize = 8;`
+
+How much room a string asks for when it first has to allocate.
+
+A small non-zero start means a string that outgrows the intrinsic storage
+does not immediately allocate its exact size, which is the common case for a
+string built by appending.
+
+A constant rather than a function: it *is* a value, and a function that
+returned one would be a call every time it was named -- and a call is not
+allowed where a constant is, such as an array length.
+
+```
+INITIAL_CAPACITY const usize = 8;
+```
+
+### `ZERO const char = '\0';`
+
+The terminator a C string ends with.
+
+A named constant rather than a bare `0`: the buffer holds `char`, and an
+unsuffixed `0` is an `int`, which does not fit. Writing the character once
+also says what the zero *is* at every place it is stored.
+
+```
+ZERO const char = '\0';
+```
+
+### `export type String {`
+
+```
+export type String {
+    // Three words, and two readings of them.
+    //
+    // A string that fits inside the object stores its bytes *here*, in these
+    // three fields, and the last byte of the object holds the marker and the
+    // length. A longer string stores a buffer pointer, a length and a capacity
+    // and has nothing inline. Which is which is answered by `inline_q`, never
+    // by a caller.
+    //
+    // A `char` rather than a `byte`, which is what every method here takes and
+    // returns. Keeping the storage a `byte` meant every crossing between the
+    // two needed a cast, and a cast is a place a mistake can hide.
+    //
+    // Null only in a moved-from string: the move takes the buffer, and the
+    // source is left empty rather than sharing or dangling. Such a string is
+    // still valid -- empty, destructible, and `data()` still a C string -- so
+    // the invariant holds in what a caller can observe, with the buffer case
+    // and the moved-from case handled separately below.
+    _data *char;
+    // How many bytes of text are stored. Meaningful only when not inline: an
+    // inline string keeps its length in the object's last byte.
+    _len usize;
+    // How many bytes are allocated, the terminator included. Meaningful only
+    // when not inline, for the same reason.
+    _cap usize;
+}
+```
+
+### `INLINE_BIT const u8 = 0x80;`
+
+The high bit of the object's last byte, which marks a string as inline.
+
+```
+INLINE_BIT const u8 = 0x80;
+```
+
+### `LENGTH_MASK const u8 = 0x7F;`
+
+The rest of that byte, which holds the length of an inline string.
+
+```
+LENGTH_MASK const u8 = 0x7F;
+```
+
+### `INLINE_CAPACITY const usize = sizeof(String) - 2;`
+
+How many bytes of text fit inside the object.
+
+One byte of the three words is the marker and the length, and one more is the
+terminating zero, so the text has what is left.
+
+```
+INLINE_CAPACITY const usize = sizeof(String) - 2;
+```
+
+### `fn inline_q(this &const String) bool`
+
+------------------------------------------------------------------ storage
+Returns `true` when the text lives inside the object.
+
+The answer is the marker byte's high bit, read through a byte pointer over the
+object: that byte belongs to a field whose meaning depends on the answer, so
+the check has to come before any field is read.
+
+An all-zero object answers `true` as well. That is the state a binding has
+before anything is written to it, and reading it as "empty, inline" is what
+makes the default `String` valid without a constructor call.
+
+```
+fn inline_q(this &const String) bool
+```
+
+### `fn inline_len(this &const String) usize`
+
+Returns the length of an inline string, from the marker byte.
+
+```
+fn inline_len(this &const String) usize
+```
+
+### `fn text_mut(this &String) *char`
+
+Returns the bytes, for writing.
+
+An inline string's bytes are the object itself, so this is the object's
+address; a longer string's are its buffer. A moved-from string answers with
+null, and no caller writes without having established that there are bytes.
+
+```
+fn text_mut(this &String) *char
+```
+
+### `fn text(this &const String) *const char`
+
+Returns the bytes, for reading.
+
+```
+fn text(this &const String) *const char
+```
+
+### `fn set_inline(this &String, len usize) void`
+
+Records an inline length, which marks the string as inline as well.
+- `len`: the new length in bytes; it must not exceed `INLINE_CAPACITY`
+  or the high bit the marker uses
+
+```
+fn set_inline(this &String, len usize) void
+```
+
+### `fn set_empty_inline(this &String) void`
+
+Makes this string empty, without allocating anything.
+
+```
+fn set_empty_inline(this &String) void
+```
+
+### `fn len_of(this &const String) usize`
+
+Returns the length in bytes, whichever way the bytes are stored.
+
+```
+fn len_of(this &const String) usize
+```
+
+### `fn cap_of(this &const String) usize`
+
+Returns how many bytes are allocated, the terminator included.
+
+```
+fn cap_of(this &const String) usize
+```
+
+### `fn set_len(this &String, len usize) void`
+
+Sets the length, keeping the marker byte consistent.
+- `len`: the new length in bytes; it is recorded only, and neither
+  bytes nor a terminator are added
+
+```
+fn set_len(this &String, len usize) void
+```
+
+### `fn reserve_room(this &String, wanted usize) void`
+
+Makes room for `wanted` bytes of text.
+
+`wanted` counts the text only; the terminator is accounted for here, so a
+caller never has to remember that the buffer is one byte longer than the
+length. Growing doubles the capacity rather than matching the request, which
+is what makes appending in a loop cost O(1) per byte on average instead of
+reallocating every time.
+
+Shrinking is deliberately not done here: `reserve` promises room, and a
+caller who wants memory back asks for it with `shrink_to_fit`.
+- `wanted`: how many bytes of text must fit, the terminator not counted;
+  a value that already fits changes nothing
+
+```
+fn reserve_room(this &String, wanted usize) void
+```
+
+### `export fn __init__(this &String) void {`
+
+------------------------------------------------------------------ lifetime
+Creates an empty string.
+
+Empty is short, so an empty string is inline: it allocates nothing, and
+`sizeof(String)` bytes of stack are the whole of it.
+
+```
+export fn __init__(this &String) void {
+    this.set_empty_inline();
+}
+```
+
+### `export fn __im_init__(this &String, text_ptr *const char) void {`
+
+Creates a string holding a copy of a C string.
+
+The bytes are copied, so the `String` owns them and the caller's buffer may
+go away afterwards. A short text goes into the object itself and never
+reaches the allocator.
+
+```
+export fn __im_init__(this &String, text_ptr *const char) void {
+    len usize = c_strlen(text_ptr);
+    if (len <= INLINE_CAPACITY) {
+        this.set_inline(len);
+        bytes *char = this.text_mut();
+        c_memcpy(bytes as *byte, text_ptr as *const byte, len);
+        bytes[len] = ZERO;
+        return;
+    }
+    this._cap = len + 1;
+    this._data = util.allocate(this._cap) as *char;
+    this._len = len;
+    c_memcpy(this._data as *byte, text_ptr as *const byte, len);
+    this._data[len] = ZERO;
+}
+```
+
+### `fn try_init(this &String, text_ptr *const char) bool`
+
+Builds a string from C text, reporting whether the memory was available.
+
+The ordinary constructor cannot say "no": running out of memory while copying
+a string has no value to fall back on. A caller that must stay defined in that
+case -- the exception record, which needs to report a `MemoryError` instead --
+asks here and gets an empty string plus `false`. It is the exception
+machinery's own entry point, not part of the string's public surface.
+- `text_ptr`: a null-terminated C string to copy; its bytes are copied, and
+  the caller's buffer may go away afterwards
+
+```
+fn try_init(this &String, text_ptr *const char) bool
+```
+
+### `export fn __init__(this &String, other &const String) void {`
+
+Copies another string.
+
+Copying an inline string is a byte copy and no allocation; copying a longer
+one allocates and copies its bytes.
+
+```
+export fn __init__(this &String, other &const String) void {
+    len usize = other.len_of();
+    if (len <= INLINE_CAPACITY) {
+        this.set_inline(len);
+        bytes *char = this.text_mut();
+        source *const char = other.text();
+        index usize = 0;
+        while (index <= len) {
+            bytes[index] = source[index];
+            index += 1;
+        }
+        return;
+    }
+    this._cap = len + 1;
+    this._data = util.allocate(this._cap) as *char;
+    this._len = len;
+    source *const char = other.text();
+    index usize = 0;
+    while (index <= len) {
+        this._data[index] = source[index];
+        index += 1;
+    }
+}
+```
+
+### `export fn __init__(this &String, other &&String) void {`
+
+Takes another string's buffer.
+
+This is the *move* form, chosen when the source is a temporary: the buffer is
+transferred rather than copied, so the cost does not depend on the length of
+the text. The source is emptied, so its destructor frees nothing.
+
+An inline source has no buffer to take: its bytes are inside it, so they are
+copied and the source is left empty.
+
+```
+export fn __init__(this &String, other &&String) void {
+    if (other.inline_q()) {
+        len usize = other.len_of();
+        this.set_inline(len);
+        bytes *char = this.text_mut();
+        source *const char = other.text();
+        index usize = 0;
+        while (index <= len) {
+            bytes[index] = source[index];
+            index += 1;
+        }
+        other.set_empty_inline();
+        return;
+    }
+    this._data = other._data;
+    this._len = other._len;
+    this._cap = other._cap;
+    other._data = nullptr;
+    other._len = 0;
+    other._cap = 0;
+}
+```
+
+### `fn shares_bytes(this &const String, other *const String) bool`
+
+Returns `true` when two strings are the same object.
+
+Compares the bytes' addresses: for a buffer that is the buffer, and for an
+inline string it is the object, which is what makes `s = s` a no-op in both
+modes.
+- `other`: the string to compare addresses with; it is read, not copied
+
+```
+fn shares_bytes(this &const String, other *const String) bool
+```
+
+### `export fn __assign__(this &String, other &const String) void {`
+
+Replaces this string's text with a copy of another's.
+
+This is *assignment*: `b = a;`, where `b` already holds text. The existing
+buffer is reused when it is big enough, because freeing and reallocating on
+every assignment would make a loop of assignments quadratic. A short text
+moves back into the object and releases the buffer it no longer needs.
+
+Declared before the move form below. Assignment takes the moving form for a
+dying source and otherwise the first `__assign__` whose parameter the value
+fits; a value fits `&const String` and `&&String` alike, so for a source that
+outlives the statement the order is what decides. With the move form first,
+`b = a;` would take the buffer out of the named `a` and leave it empty. A copy
+is what assignment means for such a source.
+
+```
+export fn __assign__(this &String, other &const String) void {
+    // Assigning a string to itself must do nothing: the copy below would read
+    // and write the same bytes.
+    if (this.shares_bytes(other)) {
+        return;
+    }
+    len usize = other.len_of();
+    if (len <= INLINE_CAPACITY) {
+        // Short: copy into the object and give back whatever buffer this held.
+        if (!this.inline_q()) {
+            util.free(this._data);
+        }
+        this.set_inline(len);
+        bytes *char = this.text_mut();
+        source *const char = other.text();
+        index usize = 0;
+        while (index <= len) {
+            bytes[index] = source[index];
+            index += 1;
+        }
+        return;
+    }
+    if (this.inline_q() || this.cap_of() < len + 1) {
+        if (!this.inline_q()) {
+            util.free(this._data);
+        }
+        this._data = util.allocate(len + 1) as *char;
+        this._cap = len + 1;
+    }
+    this._len = len;
+    source *const char = other.text();
+    index usize = 0;
+    while (index <= len) {
+        this._data[index] = source[index];
+        index += 1;
+    }
+}
+```
+
+### `export fn __assign__(this &String, other &&String) void {`
+
+Takes another string's buffer in place of this one's.
+
+The move form of assignment: the receiver's own buffer is released first, so
+taking the source's does not leak it, and the source is emptied so its
+destructor frees nothing. A source sharing this buffer -- `s = s;` -- is left
+alone: releasing it first would free the buffer this is about to take.
+
+Declared *after* the copying form, deliberately: see the note there. The
+checker takes this form when the source is dying, which is the only time the
+buffer may be taken; the copying form is what a named source reaches.
+
+```
+export fn __assign__(this &String, other &&String) void {
+    if (this.shares_bytes(other)) {
+        return;
+    }
+    if (other.inline_q()) {
+        if (!this.inline_q()) {
+            util.free(this._data);
+        }
+        len usize = other.len_of();
+        this.set_inline(len);
+        bytes *char = this.text_mut();
+        source *const char = other.text();
+        index usize = 0;
+        while (index <= len) {
+            bytes[index] = source[index];
+            index += 1;
+        }
+        other.set_empty_inline();
+        return;
+    }
+    if (!this.inline_q()) {
+        util.free(this._data);
+    }
+    this._data = other._data;
+    this._len = other._len;
+    this._cap = other._cap;
+    other._data = nullptr;
+    other._len = 0;
+    other._cap = 0;
+}
+```
+
+### `export fn __drop__(this &String) void {`
+
+Releases the buffer.
+
+An inline string owns nothing, so this does nothing at all for one. The fields
+are left null and empty rather than dangling, so that a second `__drop__` --
+which a move would leave behind -- frees nothing rather than freeing the same
+buffer twice.
+
+```
+export fn __drop__(this &String) void {
+    if (!this.inline_q() && this._data != nullptr) {
+        util.free(this._data);
+    }
+    this._data = nullptr;
+    this._len = 0;
+    this._cap = 0;
+}
+```
+
+### `export fn length(this &const String) usize {`
+
+------------------------------------------------------------------- queries
+Returns the length in bytes, not counting the terminator.
+
+```
+export fn length(this &const String) usize {
+    return this.len_of();
+}
+```
+
+### `export fn capacity(this &const String) usize {`
+
+Returns how many bytes are allocated, the terminator included.
+
+An inline string answers with the room the object itself provides, so a
+caller sizing a buffer sees the same meaning in both modes.
+
+```
+export fn capacity(this &const String) usize {
+    return this.cap_of();
+}
+```
+
+### `export fn empty(this &const String) bool {`
+
+Returns `true` when there is no text.
+
+```
+export fn empty(this &const String) bool {
+    return this.len_of() == 0;
+}
+```
+
+### `export fn data(this &const String) *const char {`
+
+Returns the buffer, as a C string.
+
+The pointer is borrowed: it stays valid until this `String` is changed or
+destroyed, and writing through it is not allowed.
+
+The pointer is never null, and it is never the empty literal either: an empty
+string has bytes of its own, inline, holding just the terminator. `data()` is
+handed to C, so it has to be a C string in every state a caller can observe.
+
+```
+export fn data(this &const String) *const char {
+    return this.text();
+}
+```
+
+### `export fn __getitem__(this &String, index usize) &char {`
+
+Returns the `index`th byte as a place that can be written.
+
+The index is a *byte* index, so it agrees with `length()`. An index past the
+end is a programming error, and aborts rather than reading whatever follows
+the buffer.
+
+```
+export fn __getitem__(this &String, index usize) &char {
+    if (index >= this.len_of()) {
+        util.panic("String index out of range");
+    }
+    return this.text_mut()[index];
+}
+```
+
+### `export fn __getitem__(this &const String, index usize) &const char {`
+
+Returns the `index`th byte as a place that can be read but not written.
+
+The pair exists because the receiver says what is allowed, exactly as
+`Array.front` and `Array.back` do: a `&String` may hand out a `&char`, while
+a `&const String` may only hand out a `&const char`. Returning `&char` from
+the read-only one would have been a way to write to a `const` string.
+
+The index is a *byte* index, so it agrees with `length()`. An index past the
+end is a programming error, and aborts rather than reading whatever follows
+the buffer.
+
+```
+export fn __getitem__(this &const String, index usize) &const char {
+    if (index >= this.len_of()) {
+        util.panic("String index out of range");
+    }
+    return this.text()[index];
+}
+```
+
+### `export fn reserve(this &String, wanted usize) void {`
+
+------------------------------------------------------------------- storage
+Makes room for `wanted` bytes of text.
+
+```
+export fn reserve(this &String, wanted usize) void {
+    this.reserve_room(wanted);
+}
+```
+
+### `export fn shrink_to_fit(this &String) void {`
+
+Releases the memory beyond the text.
+
+A string short enough to live inside the object moves back into it, which is
+what makes `shrink_to_fit` give the bytes back as well as the room: an inline
+string holds none of the allocator's memory.
+
+```
+export fn shrink_to_fit(this &String) void {
+    len usize = this.len_of();
+    if (this.inline_q()) {
+        return;
+    }
+    if (len <= INLINE_CAPACITY) {
+        // The bytes are read from the buffer and copied into the object, and
+        // the buffer is released only afterwards: until the copy is done it is
+        // still where the bytes live.
+        buffer *char = this._data;
+        this.set_inline(len);
+        bytes *char = this.text_mut();
+        index usize = 0;
+        while (index <= len) {
+            bytes[index] = buffer[index];
+            index += 1;
+        }
+        util.free(buffer as *byte);
+        return;
+    }
+    wanted usize = len + 1;
+    if (this._cap <= wanted) {
+        return;
+    }
+    tight *char = util.allocate(wanted) as *char;
+    index usize = 0;
+    while (index <= len) {
+        tight[index] = this._data[index];
+        index += 1;
+    }
+    util.free(this._data);
+    this._data = tight;
+    this._cap = wanted;
+}
+```
+
+### `export fn resize(this &String, wanted usize, filler char) void {`
+
+Changes the length, filling any new bytes with `filler`.
+
+The text is *bytes*, not characters: growing by one adds one byte, which may
+be half of a character. That is consistent with `length()` and `s[i]`, and a
+character-aware resize would be a different method with a different name
+rather than the same one behaving differently at the edges.
+
+```
+export fn resize(this &String, wanted usize, filler char) void {
+    len usize = this.len_of();
+    if (wanted > len) {
+        // The capacity wants room for the new length *and* the terminator, so
+        // `wanted` is what is asked for and the terminator's byte comes with it.
+        this.reserve_room(wanted);
+        // The length goes down *before* the text does. An inline string keeps
+        // its bytes in the object itself, so the first byte written here lands
+        // on `_data` -- and `inline_q` falls back to "all-zero means inline"
+        // for a string that has never been initialised. Writing the text first
+        // therefore made the object look like a *buffer* whose pointer was the
+        // first character, and the marker byte was never written at all:
+        // `s String; s.push('a');` crashed on the terminator store.
+        this.set_len(wanted);
+        bytes *char = this.text_mut();
+        index usize = len;
+        while (index < wanted) {
+            bytes[index] = filler;
+            index += 1;
+        }
+    } else {
+        this.set_len(wanted);
+    }
+    // The terminator follows the text wherever the text now ends, which is what
+    // keeps `data()` a valid C string after shrinking as well as growing.
+    this.text_mut()[wanted] = ZERO;
+}
+```
+
+### `export fn clear(this &String) void {`
+
+Empties the string without releasing its buffer.
+
+The capacity is kept, so refilling a cleared string does not allocate again.
+An inline string has nothing to release in the first place.
+
+```
+export fn clear(this &String) void {
+    this.set_len(0);
+    this.text_mut()[0] = ZERO;
+}
+```
+
+### `export fn push(this &String, ch char) void {`
+
+---------------------------------------------------------------- appending
+Appends one byte.
+
+A byte rather than a character, so that this agrees with `s[i]` and
+`length()`: what is appended is what an index would read back. A `char` is a
+single byte, so the two are the same thing.
+
+```
+export fn push(this &String, ch char) void {
+    this.resize(this.len_of() + 1, ch);
+}
+```
+
+### `export fn push(this &String, text_value &const String) void {`
+
+Appends another string's bytes.
+
+The bytes are copied, so the argument may be destroyed afterwards. It is
+taken by `&const` because a `String` is more than a word and copying it to
+read it would be wasteful, and because appending does not change it.
+
+```
+export fn push(this &String, text_value &const String) void {
+    added usize = text_value.len_of();
+    if (added == 0) {
+        return;
+    }
+    start usize = this.len_of();
+    this.resize(start + added, '\0');
+    // Read through a pointer taken *after* the resize: the argument may be this
+    // very string, and growing it would leave an older pointer dangling.
+    source *const char = text_value.text();
+    bytes *char = this.text_mut();
+    index usize = 0;
+    while (index < added) {
+        bytes[start + index] = source[index];
+        index += 1;
+    }
+}
+```
+
+### `export fn push(this &String, text_ptr *const char) void {`
+
+Appends a C string.
+
+This is the overload that makes `s.push("text")` work, which is how a literal
+reaches a string.
+
+```
+export fn push(this &String, text_ptr *const char) void {
+    added usize = c_strlen(text_ptr);
+    if (added == 0) {
+        return;
+    }
+    start usize = this.len_of();
+    this.resize(start + added, '\0');
+    // Copied byte by byte rather than with `memcpy`: the argument is a C string
+    // that already overlaps this one only if a caller passed `data()`, which is
+    // borrowed and must not be modified -- so the simple loop is the safe one.
+    bytes *char = this.text_mut();
+    index usize = 0;
+    while (index < added) {
+        bytes[start + index] = text_ptr[index];
+        index += 1;
+    }
+}
+```
+
+### `export fn insert(this &String, index usize, ch char) void {`
+
+Inserts `ch` at `index`, moving the rest along.
+
+# Cost
+
+**Linear in the number of characters after `index`**, because every one of
+them moves up by one -- and the terminator moves too, so a `String` of `n`
+characters moves `n - index + 1` bytes. Appending with `push` is the cheap
+case.
+
+`index` is a *byte* index and may be the length, which appends.
+
+```
+export fn insert(this &String, index usize, ch char) void {
+    start usize = this.len_of();
+    if (index > start) {
+        util.panic("String insert past the end");
+    }
+    this.resize(start + 1, ZERO);
+    // Backwards, including the terminator: each byte moves into the space the
+    // one after it has just left. Forwards would overwrite what is about to
+    // move.
+    bytes *char = this.text_mut();
+    moved usize = start;
+    while (moved > index) {
+        bytes[moved] = bytes[moved - 1];
+        moved -= 1;
+    }
+    bytes[index] = ch;
+}
+```
+
+### `export fn insert(this &String, index usize, text_value &const String) void {`
+
+Inserts `text` at `index`, moving the rest along.
+
+# Cost
+
+**Linear**, for the same reason the single-character form is: the tail and
+the terminator both move, and the argument is copied in as well.
+
+```
+export fn insert(this &String, index usize, text_value &const String) void {
+    start usize = this.len_of();
+    if (index > start) {
+        util.panic("String insert past the end");
+    }
+    added usize = text_value.len_of();
+    if (added == 0) {
+        return;
+    }
+    this.resize(start + added, ZERO);
+    bytes *char = this.text_mut();
+    // The tail first, then the argument into the gap it left -- backwards, so
+    // the bytes being moved are still there when they are read.
+    moved usize = start;
+    while (moved > index) {
+        bytes[moved + added - 1] = bytes[moved - 1];
+        moved -= 1;
+    }
+    source *const char = text_value.text();
+    index2 usize = 0;
+    while (index2 < added) {
+        bytes[index + index2] = source[index2];
+        index2 += 1;
+    }
+}
+```
+
+### `export fn insert(this &String, at *char, ch char) void {`
+
+Removes the character at `index`, moving the rest back, and returns it.
+
+# Cost
+
+**Linear in the number of characters after `index`**: they all move down by
+one, and the terminator with them. Removing the last character is the cheap
+case. The relative order of the rest is kept.
+
+`index` is a *byte* index.
+Inserts a character at a *position* in the text.
+
+The position is a `String` iterator: `s.insert(s.begin() + 3, 'x')`. It is
+the same operation as the index form above, which stays because a byte index
+is the natural thing to have when the program computed one.
+
+```
+export fn insert(this &String, at *char, ch char) void {
+    offset isize = at - this.text_mut();
+    if (offset < 0) {
+        util.panic("String insert past the end");
+    }
+    this.insert(offset as usize, ch);
+}
+```
+
+### `export fn insert(this &String, at *char, text_value &const String) void {`
+
+Inserts a string at a position.
+
+```
+export fn insert(this &String, at *char, text_value &const String) void {
+    offset isize = at - this.text_mut();
+    if (offset < 0) {
+        util.panic("String insert past the end");
+    }
+    this.insert(offset as usize, text_value);
+}
+```
+
+### `export fn erase(this &String, index usize) char {`
+
+```
+export fn erase(this &String, index usize) char {
+    len usize = this.len_of();
+    if (index >= len) {
+        util.panic("String erase past the end");
+    }
+    bytes *char = this.text_mut();
+    removed char = bytes[index];
+    moved usize = index;
+    // Through the terminator inclusive, so the string stays terminated.
+    while (moved < len) {
+        bytes[moved] = bytes[moved + 1];
+        moved += 1;
+    }
+    this.set_len(len - 1);
+    return removed;
+}
+```
+
+### `export fn erase(this &String, at *char) char {`
+
+Removes the character at a position, returning it.
+
+```
+export fn erase(this &String, at *char) char {
+    offset isize = at - this.text_mut();
+    if (offset < 0) {
+        util.panic("String erase past the end");
+    }
+    return this.erase(offset as usize);
+}
+```
+
+### `export fn __iadd__(this &String, ch char) void {`
+
+`+=` appends, and is `push` under another name.
+
+A compound assignment is written in terms of the operator it compounds, so
+there is nothing here that `push` does not already do; the method exists so
+that the *name* the compiler looks for is present. It takes a byte for the
+same reason `push` does.
+
+```
+export fn __iadd__(this &String, ch char) void {
+    this.push(ch);
+}
+```
+
+### `export fn __str__(this &const String) String {`
+
+-------------------------------------------------------------------- text
+A string's own text is itself.
+
+`__str__` is what `str(x)` asks for when the type declares one. The result is
+a value the caller owns, so it cannot share this string's buffer: the copy
+constructor copies the bytes, inline or not.
+
+The receiver is `&const` because rendering never changes what is rendered,
+which lets `str(s)` work on a constant string as well as a mutable one.
+
+`this` is a *reference*, so it is already the string: the copy constructor
+takes it as it stands. There is no `*` here, and there could not be -- `*`
+follows a pointer, and a reference is what the parameter already is.
+
+```
+export fn __str__(this &const String) String {
+    copy String = this;
+    return copy;
+}
+```
+
+### `export fn __repr__(this &const String) String {`
+
+The unambiguous form.
+
+`repr` differs from `str` for types whose readable form is not a valid
+literal -- a string being the standard example: `str(s)` is the text, and
+`repr(s)` is that text quoted, so that reading it back gives the same value.
+Quoting it means building a new buffer rather than copying this one.
+
+```
+export fn __repr__(this &const String) String {
+    result String = "";
+    result.push('"');
+    length_here usize = this.len_of();
+    source *const char = this.text();
+    index usize = 0;
+    while (index < length_here) {
+        // Read directly rather than through `__getitem__`, because that method
+        // is bound under a receiver-qualified name and is not in scope here by
+        // its written name. The bounds check is not needed: the loop condition
+        // is already the length.
+        ch char = source[index];
+        if (ch == '\\') {
+            result.push('\\');
+            result.push('\\');
+        } else if (ch == '"') {
+            result.push('\\');
+            result.push('"');
+        } else {
+            result.push(ch);
+        }
+        index += 1;
+    }
+    result.push('"');
+    return result;
+}
+```
+
+### `export fn __add__(this &const String, other &const String) String {`
+
+--------------------------------------------------------------- operators
+Concatenation.
+
+The receiver is `&const` because concatenating does not change either
+operand, and the result is a new `String` that owns its bytes: `a + b` leaves
+both `a` and `b` alone, which is what makes the operator usable on constants.
+
+The result starts with `this` copied and then has `other` appended, so the
+bytes are copied once each and the allocation is sized once by `reserve`
+through `push`.
+
+```
+export fn __add__(this &const String, other &const String) String {
+    result String = this;
+    result.push(other);
+    return result;
+}
+```
+
+### `export fn __iadd__(this &String, other &const String) void {`
+
+Appending, as `+=`.
+
+`s += t` could be written `s = s + t`, but that would allocate a new buffer
+and copy both strings every time. Doing it in place is the whole point of the
+operator, so the method appends to the receiver's own buffer.
+
+```
+export fn __iadd__(this &String, other &const String) void {
+    this.push(other);
+}
+```
+
+### `export fn __mul__(this &const String, times usize) String {`
+
+Repetition: `s * n` is `s` written `n` times.
+
+A count of zero gives an empty string, which is the identity `+` needs:
+`s + "" * 3` is `s`. A negative count cannot be expressed -- the parameter is
+`usize` -- so there is no error case to report.
+
+```
+export fn __mul__(this &const String, times usize) String {
+    result String = "";
+    // The whole result is reserved at once, so the loop below does not grow the
+    // buffer repeatedly for a large count.
+    result.reserve(this.len_of() * times);
+    round usize = 0;
+    while (round < times) {
+        result.push(this);
+        round += 1;
+    }
+    return result;
+}
+```
+
+### `export fn __eq__(this &const String, other &const String) bool {`
+
+------------------------------------------------------------- comparisons
+Equality is bytewise.
+
+Two strings are equal when they have the same bytes in the same order, which
+for UTF-8 is the same as being the same text. The lengths are compared first
+because it is O(1) and decides most unequal pairs.
+
+```
+export fn __eq__(this &const String, other &const String) bool {
+    len usize = this.len_of();
+    if (len != other.len_of()) {
+        return false;
+    }
+    return c_memcmp(this.text() as *const byte, other.text() as *const byte, len) == 0;
+}
+```
+
+### `export fn __ne__(this &const String, other &const String) bool {`
+
+```
+export fn __ne__(this &const String, other &const String) bool {
+    return !(this == other);
+}
+```
+
+### `export fn __lt__(this &const String, other &const String) bool {`
+
+Ordering is bytewise, and therefore lexicographic.
+
+This is what `memcmp` gives, and it is the order C's `strcmp` uses, so the two
+agree. It is *not* an order on characters: comparing by byte compares UTF-8
+code units, and a code point above U+007F is encoded as several bytes, all of
+them above 0x7F. The order is stable and total, which is what a comparison
+needs; it is not the same as an order by code point.
+
+```
+export fn __lt__(this &const String, other &const String) bool {
+    return this.compare(other) < 0;
+}
+```
+
+### `export fn __le__(this &const String, other &const String) bool {`
+
+```
+export fn __le__(this &const String, other &const String) bool {
+    return this.compare(other) <= 0;
+}
+```
+
+### `export fn __gt__(this &const String, other &const String) bool {`
+
+```
+export fn __gt__(this &const String, other &const String) bool {
+    return this.compare(other) > 0;
+}
+```
+
+### `export fn __ge__(this &const String, other &const String) bool {`
+
+```
+export fn __ge__(this &const String, other &const String) bool {
+    return this.compare(other) >= 0;
+}
+```
+
+### `export fn __cmp__(this &const String, other &const String) int {`
+
+A three-way comparison, for sorting.
+
+The shorter prefix decides when one string is a prefix of the other, which is
+the rule `memcmp` alone cannot express: it compares only the bytes both
+strings have, so `"ab"` and `"abc"` would come out equal.
+
+```
+export fn __cmp__(this &const String, other &const String) int {
+    return this.compare(other);
+}
+```
+
+### `fn compare(this &const String, other &const String) int`
+
+The comparison itself, which every relational operator is written in terms of.
+
+Private, because it is the implementation rather than an interface: a caller
+writes `<` or `<=>` and gets this.
+- `other`: the string to order this one against; the two are compared
+  byte by byte over the part they share, and then by length
+
+```
+fn compare(this &const String, other &const String) int
+```
+
+### `export fn __as__(this &const String, target *int) int except {`
+
+--------------------------------------------------------------- parsing
+Reads the whole text as an `int`.
+
+```
+export fn __as__(this &const String, target *int) int except {
+    parsed int = 0;
+    if (!this.parse_int(&parsed)) {
+        raise "ValueError": "the text is not an integer";
+    }
+    return parsed;
+}
+```
+
+### `export fn __as__(this &const String, target *usize) usize except {`
+
+Reads the whole text as a `usize`.
+
+```
+export fn __as__(this &const String, target *usize) usize except {
+    parsed usize = 0;
+    if (!this.parse_size(&parsed)) {
+        raise "ValueError": "the text is not a count";
+    }
+    return parsed;
+}
+```
+
+### `export fn __as__(this &const String, target *f64) f64 except {`
+
+Reads the whole text as a real number.
+
+```
+export fn __as__(this &const String, target *f64) f64 except {
+    parsed f64 = 0.0;
+    if (!this.parse_real(&parsed)) {
+        raise "ValueError": "the text is not a number";
+    }
+    return parsed;
+}
+```
+
+### `fn parse_int(this &const String, value &int) bool`
+
+Parses the whole text as a decimal integer.
+
+Returns `false` for anything that is not exactly an integer: an empty string,
+a stray character, or a magnitude that does not fit an `int`. Nothing is
+reported through an exception, because "is this text a number?" is a question
+a caller may be asking rather than a failure.
+- `value`: receives the number when the text is one; it is written only
+  when this returns `true`
+
+```
+fn parse_int(this &const String, value &int) bool
+```
+
+### `fn parse_size(this &const String, value &usize) bool`
+
+Parses the whole text as a decimal `usize`.
+- `value`: receives the count when the text is one; it is written only
+  when this returns `true`
+
+```
+fn parse_size(this &const String, value &usize) bool
+```
+
+### `fn parse_real(this &const String, value &f64) bool`
+
+Parses the whole text as a real number.
+
+Digits, one optional `.`, and an optional exponent are the whole grammar;
+anything else -- including trailing text -- makes it not a number.
+- `value`: receives the number when the text is one; it is written only
+  when this returns `true`
+
+```
+fn parse_real(this &const String, value &f64) bool
+```
+
+### `export fn find(this &const String, needle &const String) isize {`
+
+----------------------------------------------------------- modification
+Returns the first position where `needle` starts, or `-1`.
+
+`isize`, not `usize`, because "not there" has to be a value the result can
+take and no byte position can be. A caller that only wants the answer uses
+`contains`.
+
+```
+export fn find(this &const String, needle &const String) isize {
+    hay_len usize = this.len_of();
+    needle_len usize = needle.len_of();
+    if (needle_len == 0) {
+        return 0;
+    }
+    if (needle_len > hay_len) {
+        return -1 as isize;
+    }
+    hay *const char = this.text();
+    pattern *const char = needle.text();
+    last usize = hay_len - needle_len;
+    start usize = 0;
+    while (start <= last) {
+        matches bool = true;
+        offset usize = 0;
+        while (offset < needle_len) {
+            if (hay[start + offset] != pattern[offset]) {
+                matches = false;
+                break;
+            }
+            offset += 1;
+        }
+        if (matches) {
+            return start as isize;
+        }
+        start += 1;
+    }
+    return -1 as isize;
+}
+```
+
+### `export fn find(this &const String, start usize, needle &const String) isize {`
+
+Returns the first position at or after `from` where `needle` starts, or `-1`.
+
+```
+export fn find(this &const String, start usize, needle &const String) isize {
+    if (start > this.len_of()) {
+        return -1 as isize;
+    }
+    found isize = this.substring(start, this.len_of() - start).find(needle);
+    if (found < 0) {
+        return -1 as isize;
+    }
+    return found + start as isize;
+}
+```
+
+### `export fn contains(this &const String, needle &const String) bool {`
+
+Whether `needle` occurs anywhere in the text.
+
+```
+export fn contains(this &const String, needle &const String) bool {
+    return this.find(needle) >= 0;
+}
+```
+
+### `export fn starts_with(this &const String, prefix &const String) bool {`
+
+Whether the text begins with `prefix`.
+
+```
+export fn starts_with(this &const String, prefix &const String) bool {
+    if (prefix.len_of() > this.len_of()) {
+        return false;
+    }
+    return this.substring(0, prefix.len_of()) == prefix;
+}
+```
+
+### `export fn ends_with(this &const String, suffix &const String) bool {`
+
+Whether the text ends with `suffix`.
+
+```
+export fn ends_with(this &const String, suffix &const String) bool {
+    if (suffix.len_of() > this.len_of()) {
+        return false;
+    }
+    return this.substring(this.len_of() - suffix.len_of(), suffix.len_of()) == suffix;
+}
+```
+
+### `export fn substring(this &const String, start usize, count usize) String {`
+
+Returns `count` bytes starting at `start`.
+
+The range is clamped to the text: a request past the end gives the bytes that
+are there, and one at or past the end gives an empty string. Clamping is what
+a reader of a file wants -- "give me the last line" asks for more than there
+is when the file ends without a newline -- while an out-of-range *index* stays
+an error, because `s[i]` names one byte that either exists or does not.
+
+```
+export fn substring(this &const String, start usize, count usize) String {
+    out String = String();
+    length usize = this.len_of();
+    if (start >= length) {
+        return out;
+    }
+    available usize = length - start;
+    wanted usize = count;
+    if (wanted > available) {
+        wanted = available;
+    }
+    out.reserve(wanted);
+    bytes *const char = this.text();
+    index usize = 0;
+    while (index < wanted) {
+        out.push(bytes[start + index]);
+        index += 1;
+    }
+    return out;
+}
+```
+
+### `export fn trimmed(this &const String) String {`
+
+Returns the text without leading and trailing whitespace.
+
+Whitespace is space, tab, newline, carriage return, form feed and vertical
+tab -- the characters C's `isspace` accepts -- so a line read from a file
+trims to its content.
+
+```
+export fn trimmed(this &const String) String {
+    length usize = this.len_of();
+    bytes *const char = this.text();
+    start usize = 0;
+    while (start < length && is_space(bytes[start])) {
+        start += 1;
+    }
+    end usize = length;
+    while (end > start && is_space(bytes[end - 1])) {
+        end -= 1;
+    }
+    return this.substring(start, end - start);
+}
+```
+
+### `export fn split(this &const String, separator char, into &Array<String>) void {`
+
+Splits the text at every `separator`, appending the pieces to `into`.
+
+A separator at either end gives an empty piece, because the text between two
+separators -- or before the first and after the last -- is a piece even when
+it is empty. That is what makes `"a,b,"` three pieces and `""` one.
+
+```
+export fn split(this &const String, separator char, into &Array<String>) void {
+    start usize = 0;
+    length usize = this.len_of();
+    index usize = 0;
+    while (index < length) {
+        if (this.text()[index] == separator) {
+            into.push(this.substring(start, index - start));
+            start = index + 1;
+        }
+        index += 1;
+    }
+    into.push(this.substring(start, length - start));
+}
+```
+
+### `fn is_space(value char) bool`
+
+Whether `value` is one of the characters `trimmed` removes.
+- `value`: the byte to test; space, tab, newline, carriage return, form
+  feed and vertical tab count, and nothing else does
+
+```
+fn is_space(value char) bool
+```
+
+### `export fn reverse(this &String) void {`
+
+Reverses the *bytes*.
+
+This is a byte reversal, not a character reversal, and the two differ for any
+text outside ASCII: reversing the bytes of a multi-byte UTF-8 character
+leaves those bytes in an order that is not valid UTF-8 at all.
+
+It is written this way because `length()` counts bytes and `s[i]` is a byte,
+so a byte reversal is the operation those two describe. Reversing by codepoint
+is a different operation and needs a different name; it is not this one.
+
+```
+export fn reverse(this &String) void {
+    len usize = this.len_of();
+    if (len < 2) {
+        return;
+    }
+    bytes *char = this.text_mut();
+    left usize = 0;
+    right usize = len - 1;
+    while (left < right) {
+        hold char = bytes[left];
+        bytes[left] = bytes[right];
+        bytes[right] = hold;
+        left += 1;
+        right -= 1;
+    }
+}
+```
+
+### `export type Exception {`
+
+-------------------------------------------------------------- exceptions
+The value a `raise` produces and an `except` block handles.
+
+An exception is not special storage: it is a value, carried in the error arm
+of a throwing function's result. A function marked `except` returns either its
+own result or one of these, and a handler is handed the one it caught. There
+is no global state to inspect and nothing to clean up if an exception is
+discarded.
+
+It lives here, beside `String`, because it *is* two of them -- and because
+the string operations below are the ones that run out of memory, so they are
+the ones that have to be able to say so.
+
+# Why the name and the message are strings
+
+An exception's kind is a name, not a type: `raise "ValueError": "..."` is
+legal without anything declaring `ValueError`, and `except` catches
+everything, so the handler compares names. That keeps the language free of an
+exception hierarchy, and it makes the handler's decision visible where it is
+made -- `if (e.name() == "ValueError")` -- rather than hidden in a dispatcher.
+
+```
+export type Exception {
+    // The name `raise` was given, e.g. `"ValueError"`.
+    _type String;
+    // The message, empty when the raise gave none.
+    _what String;
+}
+```
+
+### `export fn name(this &const Exception) String {`
+
+Returns the name the exception was raised with.
+
+```
+export fn name(this &const Exception) String {
+    return this._type;
+}
+```
+
+### `export fn what(this &const Exception) String {`
+
+Returns the message, or the empty string when `raise` gave none.
+
+```
+export fn what(this &const Exception) String {
+    return this._what;
+}
+```
+
+### `export fn __ft_exception(type_name *const char, message *const char) Exception {`
+
+Builds the value the compiler's `raise` lowering returns.
+
+This is the whole of the runtime: an exception is two `String`s and nothing
+else. The compiler puts it in the error arm of the function's result, so there
+is no state to keep anywhere and no cleanup to do if it is ignored.
+
+The texts are copied, because an exception outlives the statement that raised
+it: the handler may run after the string it was raised with is gone. A copy
+that needs memory can fail, and that failure has one answer -- raise
+`MemoryError`, whose own two texts are short enough to live inside their
+`String`s, so the substitute cannot fail for the same reason.
+
+```
+export fn __ft_exception(type_name *const char, message *const char) Exception {
+    e Exception;
+    if (!e._type.try_init(type_name)) {
+        return __ft_memory_error();
+    }
+    if (!e._what.try_init(message)) {
+        return __ft_memory_error();
+    }
+    return e;
+}
+```
+
+### `export fn __ft_memory_error() Exception {`
+
+The exception raised when building another one ran out of memory.
+
+```
+export fn __ft_memory_error() Exception {
+    e Exception;
+    // Both texts are short enough to live inside their `String`s, so these
+    // constructions cannot allocate and the substitute cannot fail.
+    e._type.try_init("MemoryError");
+    e._what.try_init("out of memory while raising");
+    return e;
+}
+```
+
+### `export fn exception() &const Exception {`
+
+Returns the exception being handled.
+
+Only meaningful inside an `except` block: outside one there is no handler, and
+the pointer is null.
+
+```
+export fn exception() &const Exception {
+    return *__ft_handled();
+}
+```
+
+### `export fn begin(this &String) *char {`
+
+------------------------------------------------------------------ iteration
+Returns a pointer at the first byte of the text.
+
+A `String`'s iterator is a pointer at a `char`, for the same reason an
+`Array`'s is: the bytes are contiguous. `text_mut` answers with the object's
+own bytes when the string is inline and with the buffer when it is not, so a
+walk reads whichever the string is using.
+
+```
+export fn begin(this &String) *char {
+    return this.text_mut();
+}
+```
+
+### `export fn end(this &String) *char {`
+
+Returns a pointer one past the last byte -- at the terminator, which is not
+part of the text.
+
+```
+export fn end(this &String) *char {
+    return this.text_mut() + this.length();
+}
+```
+
+### `export fn begin(this &const String) *const char {`
+
+The read-only half of the same walk.
+
+```
+export fn begin(this &const String) *const char {
+    return this.text();
+}
+```
+
+### `export fn end(this &const String) *const char {`
+
+```
+export fn end(this &const String) *const char {
+    return this.text() + this.length();
+}
+```
+
+### `export fn cbegin(this &const String) *const char {`
+
+The read-only forward walk, named as C++ names it.
+
+```
+export fn cbegin(this &const String) *const char {
+    return this.text();
+}
+```
+
+### `export fn cend(this &const String) *const char {`
+
+The read-only walk's stop.
+
+```
+export fn cend(this &const String) *const char {
+    return this.text() + this.length();
+}
+```

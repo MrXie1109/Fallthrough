@@ -1,7 +1,7 @@
 // UUIDs: generating version 4, parsing and printing.
 //
-//     identifier Uuid = uuid.v4()??;
-//     text String = identifier.to_string();
+//     identifier Uuid = Uuid()??;
+//     text String = identifier as String;
 //     same bool = identifier == uuid.parse(&text)??;
 //
 // # Storage
@@ -30,29 +30,27 @@ export type Uuid {
 }
 
 // Creates a version 4 (random) UUID from the system's entropy.
-export fn v4() Uuid except {
+export fn __init__(this &Uuid) void except {
     generator Random = Random();
     if (!generator.seed_from_entropy()??) {
         raise "UuidError": "the entropy source could not be read";
     }
-    first_word u32 = generator();
-    second_word u32 = generator();
-    third_word u32 = generator();
-    fourth_word u32 = generator();
+    first_word uint = generator();
+    second_word uint = generator();
+    third_word uint = generator();
+    fourth_word uint = generator();
     // Version 4 is the high nibble of byte six, which is the second byte of the
     // second word.
     second_word = (second_word & 0xffff0fffu32) | 0x00004000u32;
     // The RFC 4122 variant is the two high bits of byte eight, the first byte of
     // the third word.
     third_word = (third_word & 0x3fffffffu32) | 0x80000000u32;
-    high u64 = ((first_word as u64) << 32) | (second_word as u64);
-    low u64 = ((third_word as u64) << 32) | (fourth_word as u64);
-    identifier Uuid = .{ high, low };
-    return identifier;
+    this._high = ((first_word as u64) << 32) | (second_word as u64);
+    this._low = ((third_word as u64) << 32) | (fourth_word as u64);
 }
 
 // The text of a UUID: eight, four, four, four and twelve hex digits.
-export fn to_string(this &const Uuid) String {
+export fn __as__(this &const Uuid, target *String) String {
     text String = String();
     push_group(&text, (this._high >> 32) & 0xffffffffu64, 8usize);
     text.push('-');
@@ -67,7 +65,9 @@ export fn to_string(this &const Uuid) String {
 }
 
 // One hexadecimal digit.
-fn hex_char(digit u32) char {
+//
+// - `digit`: the value, 0 through 15
+fn hex_char(digit uint) char {
     if (digit < 10u32) {
         return ('0' as int + digit as int) as char;
     }
@@ -75,10 +75,14 @@ fn hex_char(digit u32) char {
 }
 
 // Appends the lowest `digits` hex digits of `value`.
+//
+// - `text`: the string the digits are appended to
+// - `value`: the number to write
+// - `digits`: how many hex digits to write, counting from the lowest
 fn push_group(text &String, value u64, digits usize) void {
     shift int = ((digits * 4usize) as int) - 4;
     while (shift >= 0) {
-        digit u32 = ((value >> shift as u64) & 0x0fu64) as u32;
+        digit uint = ((value >> shift as u64) & 0x0fu64) as uint;
         text.push(hex_char(digit));
         shift -= 4;
     }
@@ -95,7 +99,7 @@ export fn parse_uuid(text &const String) Uuid except {
     count usize = 0;
     while (index < text.length()) {
         character char = text[index] as char;
-        if (character == '-' as char) {
+        if (character == '-') {
             if (index != 8usize && index != 13usize && index != 18usize && index != 23usize) {
                 raise "UuidError": "a UUID has dashes at fixed places";
             }
@@ -121,15 +125,17 @@ export fn parse_uuid(text &const String) Uuid except {
 }
 
 // The value of one hex digit.
-fn hex_digit(character char) u32 except {
-    if (character >= '0' as char && character <= '9' as char) {
-        return (character as int - '0' as int) as u32;
+//
+// - `character`: the digit, in either case
+fn hex_digit(character char) uint except {
+    if (character >= '0' && character <= '9') {
+        return (character as int - '0' as int) as uint;
     }
-    if (character >= 'a' as char && character <= 'f' as char) {
-        return (character as int - 'a' as int + 10) as u32;
+    if (character >= 'a' && character <= 'f') {
+        return (character as int - 'a' as int + 10) as uint;
     }
-    if (character >= 'A' as char && character <= 'F' as char) {
-        return (character as int - 'A' as int + 10) as u32;
+    if (character >= 'A' && character <= 'F') {
+        return (character as int - 'A' as int + 10) as uint;
     }
     raise "UuidError": "a UUID contains a non-hex character";
 }
@@ -156,5 +162,5 @@ export fn __ne__(this &const Uuid, other &const Uuid) bool {
 
 // The text of a UUID, so `{}` prints it in the usual form.
 export fn __str__(this &const Uuid) String {
-    return this.to_string();
+    return this as String;
 }

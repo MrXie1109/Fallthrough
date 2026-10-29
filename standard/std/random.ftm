@@ -3,7 +3,7 @@
 //
 // # The one call
 //
-//     n u32 = std.random();               // 32 random bits
+//     n uint = std.random();               // 32 random bits
 //     die int = std.random.uniform(1, 6); // 1..=6, both ends included
 //
 // `std.random` is one `Random` value for the whole program. It is seeded at
@@ -41,21 +41,21 @@ STATE_WORDS const usize = 624;
 SHIFT_OFFSET const usize = 397;
 
 // The bit that makes the twisted value a member of the field.
-MATRIX_A const u32 = 0x9908b0dfu32;
+MATRIX_A const uint = 0x9908b0dfu32;
 
 // The high and low halves of two consecutive words, split for the twist.
-UPPER_MASK const u32 = 0x80000000u32;
-LOWER_MASK const u32 = 0x7fffffffu32;
+UPPER_MASK const uint = 0x80000000u32;
+LOWER_MASK const uint = 0x7fffffffu32;
 
 // The default seed, the one C++'s `std::mt19937` is constructed with.
-DEFAULT_SEED const u32 = 5489;
+DEFAULT_SEED const uint = 5489;
 
 // A Mersenne Twister generator.
 //
 // The state is the whole object: copying a `Random` copies its stream, which is
 // what a function that takes one by value would do with any other value.
 export type Random {
-    _state [624]u32;
+    _state [624]uint;
     _index usize;
 }
 
@@ -65,7 +65,7 @@ export fn __init__(this &Random) void {
 }
 
 // Creates a generator from a seed.
-export fn __init__(this &Random, seed u32) void {
+export fn __init__(this &Random, seed uint) void {
     this.seed(seed);
 }
 
@@ -73,9 +73,9 @@ export fn __init__(this &Random, seed u32) void {
 fn _generate(this &Random) void {
     index usize = 0;
     while (index < STATE_WORDS) {
-        y u32 = (this._state[index] & UPPER_MASK)
+        y uint = (this._state[index] & UPPER_MASK)
             | (this._state[(index + 1) % STATE_WORDS] & LOWER_MASK);
-        twisted u32 = this._state[(index + SHIFT_OFFSET) % STATE_WORDS] ^ (y >> 1);
+        twisted uint = this._state[(index + SHIFT_OFFSET) % STATE_WORDS] ^ (y >> 1);
         if ((y & 1u32) != 0u32) {
             twisted = twisted ^ MATRIX_A;
         }
@@ -92,11 +92,11 @@ fn _generate(this &Random) void {
 // and the standard's tempering so that the bits are equally likely in every
 // position. The public spelling is `random()`; the word count is not part of
 // the surface a program decides about.
-fn next_u32(this &Random) u32 {
+fn next_u32(this &Random) uint {
     if (this._index >= STATE_WORDS) {
         this._generate();
     }
-    y u32 = this._state[this._index];
+    y uint = this._state[this._index];
     this._index += 1;
     y = y ^ (y >> 11);
     y = y ^ ((y << 7) & 0x9d2c5680);
@@ -109,7 +109,7 @@ fn next_u32(this &Random) u32 {
 //
 // `std.random()` is one draw; it is the generator's one public way to produce a
 // word, and every distribution below is built on it.
-export fn __call__(this &Random) u32 {
+export fn __call__(this &Random) uint {
     return this.next_u32();
 }
 
@@ -117,13 +117,13 @@ export fn __call__(this &Random) u32 {
 //
 // The state is filled the way MT19937's reference implementation fills it, so
 // the same seed produces the same stream as C++'s `std::mt19937`.
-export fn seed(this &Random, value u32) void {
+export fn seed(this &Random, value uint) void {
     this._state[0] = value;
     index usize = 1;
     while (index < STATE_WORDS) {
-        previous u32 = this._state[index - 1];
-        mixed u32 = previous ^ (previous >> 30);
-        this._state[index] = ((mixed as u64) * 1812433253u64 + (index as u64)) as u32;
+        previous uint = this._state[index - 1];
+        mixed uint = previous ^ (previous >> 30);
+        this._state[index] = ((mixed as u64) * 1812433253u64 + (index as u64)) as uint;
         index += 1;
     }
     this._index = STATE_WORDS;
@@ -141,10 +141,10 @@ export fn seed_from_entropy(this &Random) bool except {
     }
     index usize = 0;
     while (index < STATE_WORDS) {
-        word u32 = 0;
+        word uint = 0;
         byte_index usize = 0;
         while (byte_index < 4) {
-            word = word | ((bytes[index * 4 + byte_index] as u32) << ((byte_index * 8) as u32));
+            word = word | ((bytes[index * 4 + byte_index] as uint) << ((byte_index * 8) as uint));
             byte_index += 1;
         }
         this._state[index] = word;
@@ -165,6 +165,9 @@ export fn seed_from_entropy(this &Random) bool except {
 // form (rejection sampling, no modulo bias), a floating type draws in
 // `[low, high)`. The compiler's `IsFloating` trait decides at compile time, so
 // there is one call to remember and no `_real` suffix.
+//
+// - `low`: the smallest value the draw may give
+// - `high`: the largest, included
 export
 template <T type>
 fn uniform(this &Random, low T, high T) T {
@@ -176,6 +179,9 @@ fn uniform(this &Random, low T, high T) T {
 }
 
 // Draws an integer in `[low, high]`, included at both ends, by rejection.
+//
+// - `low`: the smallest value the draw may give
+// - `high`: the largest, included; a `high` at or below `low` gives `low`
 fn uniform_int(this &Random, low int, high int) int {
     if (high <= low) {
         return low;
@@ -246,7 +252,7 @@ export fn lognormal(this &Random, mean f64, deviation f64) f64 {
 // below `exp(-mean)`, and the number of factors is the count. A large mean takes
 // the normal approximation, which keeps the loop bounded; the mean and variance
 // of both are `mean`.
-export fn poisson(this &Random, mean f64) u32 {
+export fn poisson(this &Random, mean f64) uint {
     if (mean < 0.0) {
         util.panic("poisson needs a non-negative mean");
     }
@@ -255,11 +261,11 @@ export fn poisson(this &Random, mean f64) u32 {
         if (draw < 0.0) {
             return 0u32;
         }
-        return C.round(draw) as u32;
+        return C.round(draw) as uint;
     }
     limit f64 = C.exp(0.0 - mean);
     product f64 = 1.0;
-    count u32 = 0;
+    count uint = 0;
     while (product > limit) {
         product = product * this.uniform_real(0.0, 1.0);
         count += 1;
@@ -287,7 +293,7 @@ export fn binomial(this &Random, trials usize, chance f64) usize {
 //
 // The support is `1, 2, 3, ...`, and the mean is `1 / chance`. `chance` must be
 // in `(0, 1]`.
-export fn geometric(this &Random, chance f64) u32 {
+export fn geometric(this &Random, chance f64) uint {
     if (chance <= 0.0 || chance > 1.0) {
         util.panic("geometric needs a chance in (0, 1]");
     }
@@ -298,10 +304,12 @@ export fn geometric(this &Random, chance f64) u32 {
     if (u <= 0.0) {
         u = 1.0 / 4294967296.0;
     }
-    return (C.log(1.0 - u) / C.log(1.0 - chance)) as u32 + 1u32;
+    return (C.log(1.0 - u) / C.log(1.0 - chance)) as uint + 1u32;
 }
 
 // Picks one element of `values`, every element equally likely.
+//
+// - `values`: the elements to pick from; it must not be empty
 export
 template <T type>
 fn choice(this &Random, values &const Array<T>) &const T {
@@ -317,6 +325,9 @@ fn choice(this &Random, values &const Array<T>) &const T {
 // The weights are relative, not a distribution: `{1, 3}` means the second
 // element is three times as likely. Both arrays must be the same length, and at
 // least one weight must be positive.
+//
+// - `values`: the elements to pick from
+// - `weights`: how likely each element is, relative to the others
 export
 template <T type>
 fn weighted_choice(
@@ -361,6 +372,8 @@ fn weighted_choice(
 //
 // Fisher-Yates: for each position from the end, swap it with a position drawn
 // from the prefix that ends there.
+//
+// - `values`: the sequence to shuffle in place
 export
 template <T type>
 fn shuffle(this &Random, values *Array<T>) void {
@@ -390,7 +403,7 @@ fn shuffle(this &Random, values *Array<T>) void {
 // a library that must not disturb the program's stream makes its own `Random`.
 export random Random;
 
-__setup__ {
+fn __setup__() void {
     random = Random();
     seeded bool = false;
     try {

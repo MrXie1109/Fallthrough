@@ -241,18 +241,40 @@ impl TypeChecker {
             // `C.printf(..)` and `p.show()` are written identically, and only
             // name resolution can tell them apart: `C` is a module, `p` is a
             // value. That is the decision the grammar deliberately left open.
-            if let ExprKind::Name(object) = &ast.expr(field.object).kind
-                && self.names_a_module(resolutions, ast, field.object)
-            {
-                return self.type_of_module_call(
-                    ast,
-                    resolutions,
-                    types,
-                    object,
-                    field,
-                    node,
-                    span,
-                );
+            //
+            // A module's name may itself be dotted: `std.uuid.v4()` calls `v4`
+            // in the module `std.uuid`, which the umbrella module publishes as
+            // a name of its own. The object half is then not a `Name` but a
+            // path, so the whole written path is split at its longest module
+            // prefix rather than at its first dot.
+            if let Some(path) = written_path(ast, field.object) {
+                let mut module = path.as_str();
+                let mut rest = field.field.as_str();
+                let mut prefix = None;
+                loop {
+                    if self.is_module(module)
+                        && resolutions.resolve(ast.expr(field.object).span).is_none()
+                    {
+                        prefix = Some(module.to_owned());
+                        break;
+                    }
+                    let Some(sep) = module.rfind('.') else {
+                        break;
+                    };
+                    rest = &path[sep + 1..];
+                    module = &path[..sep];
+                }
+                if let Some(module) = prefix {
+                    return self.type_of_module_call(
+                        ast,
+                        resolutions,
+                        types,
+                        &module,
+                        rest,
+                        node,
+                        span,
+                    );
+                }
             }
             return self.type_of_method_call(ast, resolutions, types, field, node, span);
         }
@@ -380,10 +402,23 @@ impl TypeChecker {
         // Every function with this name is a candidate; which one applies is
         // decided by the arguments.
         let disabled = &self.disabled_functions;
+        // A definition written here replaces an `@overridable` default, so the
+        // defaults are dropped as soon as any other definition of the name
+        // exists. This is what a library states a fallback with: the program
+        // that wants its own writes a definition and says nothing else.
+        let has_replacement = resolutions.defs.iter().any(|def| {
+            def.name == *name
+                && !disabled.contains(&def.name_span)
+                && !def.is_overridable
+                && def.signature.as_ref().is_some_and(|signature| {
+                    signature.template_params.is_empty() && signature.pack.is_none()
+                })
+        });
         let candidates: Vec<FunctionSignature> = resolutions
             .defs
             .iter()
             .filter(|def| def.name == *name && !disabled.contains(&def.name_span))
+            .filter(|def| !has_replacement || !def.is_overridable)
             // A module-qualified name names a free function: a member's `this`
             // is a receiver the call did not write.
             .filter(|def| {
@@ -404,7 +439,6 @@ impl TypeChecker {
             })
             .filter_map(|def| def.signature.clone())
             .collect();
-
         if candidates.is_empty() {
             // A name whose only declarations `@enable_if` removed is not an
             // unknown name: the declaration exists, and the condition said it
@@ -1110,12 +1144,12 @@ impl TypeChecker {
         resolutions: &Resolutions,
         types: &mut TypeTable,
         module: &str,
-        field: &FieldExpr,
+        member: &str,
         node: &CallExpr,
         span: fallc_span::Span,
     ) -> Option<Type> {
         let _ = ast;
-        let qualified = format!("{module}.{}", field.field);
+        let qualified = format!("{module}.{member}");
         // A function the module publishes is called exactly like a local one:
         // the import is its declaration and its module's body is its
         // definition, so overloads, templates and defaults are decided by the
@@ -1152,8 +1186,7 @@ impl TypeChecker {
         } else {
             self.diagnostics.push(
                 Diagnostic::error(format!(
-                    "module `{module}` does not export `{}`",
-                    field.field
+                    "module `{module}` does not export `{member}`"
                 ))
                 .with_code(DiagnosticCode::sema(4))
                 .with_span(span)

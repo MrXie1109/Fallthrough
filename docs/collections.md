@@ -223,16 +223,21 @@ itself provides (24, terminator included).
 ```ft
 import std;
 fn main() int {
-    short String = "hi";                 // inline, no malloc
-    long String = "this text is long enough to allocate for sure";
-    C.printf("%lu %lu\n", short.capacity(), long.capacity());   // 23 46
-    short.shrink_to_fit();               // already inline, does nothing
-    long.clear();
-    long.push('a');
-    long.shrink_to_fit();                // short enough for the object, so it moves back in
+    small String = "hi";                 // inline, no malloc
+    large String = "this text is long enough to allocate for sure";
+    C.printf("%lu %lu\n", small.capacity(), large.capacity());   // 23 46
+    small.shrink_to_fit();               // already inline, does nothing
+    large.clear();
+    large.push('a');
+    large.shrink_to_fit();               // short enough for the object, so it moves back in
+    C.printf("%lu\n", large.capacity());  // 23
     return 0;
 }
 ```
+
+This program prints `23 46`, then `23`: a `String` holds twenty-two bytes inside the
+object itself, so `"hi"` never allocates, and after being emptied and shrunk the long one
+moves back in.
 
 | Member | Description |
 | ---- | ---- |
@@ -483,7 +488,10 @@ no other module can call them:
 ```ft
 // thing.ftm
 export type Thing { v int; }
-export fn __drop__(this &Thing) void { /* ... */ }
+export fn make_thing(v int) Thing {
+    return .{ v };
+}
+export fn __drop__(this &Thing) void { }
 ```
 
 ```ft

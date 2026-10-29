@@ -6,19 +6,29 @@
 places:
 
 ```ft
+@constexpr
 template <values ...int>
-@constexpr fn sum() int {
+fn sum() int {
     return (values + ...);          // fold: combines the elements in turn
 }
 
+@constexpr
 template <values ...int>
-@constexpr fn count() usize {
+fn count() usize {
     return sizeof...(values);       // count: how many elements are in the pack
 }
 
+@constexpr
 template <values ...int>
-@constexpr fn second() int {
+fn second() int {
     return values[1];               // element selection: the subscript must be constant
+}
+
+import C;
+
+fn main() int {
+    C.printf("%d %zu %d\n", sum<1, 2, 3>(), count<1, 2, 3>(), second<10, 20, 30>());
+    return 0;
 }
 ```
 
@@ -68,11 +78,19 @@ error: counting needs no identity element.
 Because the result is a compile-time constant, it can be an array length directly:
 
 ```ft
+@constexpr
 template <values ...int>
-@constexpr fn buffer() int {
+fn buffer() int {
     a [sizeof...(values)]int;       // three elements are 3 i32s
     a[2] = 5;
     return a[2];
+}
+
+import C;
+
+fn main() int {
+    C.printf("%d\n", buffer<1, 2, 3>());   // 5
+    return 0;
 }
 ```
 
@@ -108,8 +126,9 @@ A call to a `constexpr` template is a constant, so it can stand directly where a
 constant is required:
 
 ```ft
+@constexpr
 template <values ...int>
-@constexpr fn sum() int {
+fn sum() int {
     return (values + ...);
 }
 
@@ -141,11 +160,18 @@ series of compile-time values, one name standing for a series. A function can al
 **parameter pack**, which is a series of **run-time arguments**:
 
 ```ft
+import C;
+
 template <Ts ...type>
 fn total(values ...Ts) int {
     sum int = 0;
     (sum += values, ...);
     return sizeof...(values) as int + sum;
+}
+
+fn main() int {
+    C.printf("%d\n", total(1, 2, 3));   // 9: three arguments, plus 1 + 2 + 3
+    return 0;
 }
 ```
 

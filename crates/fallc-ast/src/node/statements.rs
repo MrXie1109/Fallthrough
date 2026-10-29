@@ -96,8 +96,14 @@ pub struct StaticAssert {
 /// An expression statement.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ExprStmt {
-    /// The expression, whose value is discarded.
+    /// The expression.
     pub expr: ExprId,
+    /// Whether this is the value of the block it ends.
+    ///
+    /// The last expression of a block may be written without a `;`, and it is
+    /// then the block's value: `{ t int = 3; t * 2 }` is `6`. Every other
+    /// expression statement discards what it computes.
+    pub yields_value: bool,
 }
 
 /// A variable binding.
@@ -258,6 +264,14 @@ pub struct IfStmt {
     /// things that do not exist for this instantiation. A plain `if` checks
     /// both branches and emits only the one taken.
     pub is_constexpr: bool,
+    /// Whether the condition was written `auto`, asking whether the block
+    /// compiles rather than testing a value.
+    ///
+    /// `if (auto) @constexpr { .. } else { .. }` runs the branch whose block
+    /// this build can check: the `then` block is tried, and if it does not
+    /// compile the `else` block is used instead. `condition` is then a
+    /// placeholder with no meaning.
+    pub probes_compilable: bool,
     /// The condition. Truthiness is allowed, so this need not be boolean.
     pub condition: ExprId,
     /// Attributes written after the condition: `if (cond) @likely {`.
@@ -368,6 +382,9 @@ pub struct ReturnStmt {
 pub struct Throws {
     /// The condition, absent for a plain `??`.
     pub condition: Option<ExprId>,
+    /// Whether it was written `except(auto)`: the compiler decides whether the
+    /// function can raise, instead of the declaration saying so.
+    pub is_auto: bool,
     /// The annotation's own source range.
     pub span: Span,
 }

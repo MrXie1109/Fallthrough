@@ -1,0 +1,212 @@
+# `std.variant`
+
+Variants: a value that is one of a fixed list of types.
+
+`Variant2<A, B>` holds either an `A` or a `B`, and says which. The tag is the
+position in the list, so `is_first()`/`is_second()` answer without a
+conversion and `first()`/`second()` raise `TypeError` when the value is the
+other one -- a wrong question raises rather than reinterpreting storage.
+
+    value Variant2<int, String> = Variant2<int, String>(3);
+    if (value.is_first()) {
+        std.print("{}\n", value.first()??)??;
+    }
+
+# Storage
+
+The alternatives live on the heap, one pointer each, and only the pointer of
+the alternative the variant holds is non-null. Both alternatives are then
+always in a state `__drop__` can read -- the inactive one is a null pointer,
+not uninitialised bytes -- and a variant can hold a type with no default
+constructor. The trade is one allocation for the held value.
+
+## Declarations
+
+### `type Variant2 {`
+
+A value that is either an `A` or a `B`.
+
+```
+export
+template <A type, B type>
+type Variant2 {
+    // Which alternative is held: 0 for `A`, 1 for `B`, -1 for neither.
+    _tag int;
+    // The `A` alternative, or null.
+    _first *A;
+    // The `B` alternative, or null.
+    _second *B;
+}
+```
+
+### `fn __init__(this &Variant2<A, B>) void`
+
+Creates an empty variant.
+
+```
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>) void
+```
+
+### `fn __init__(this &Variant2<A, B>, value A) void`
+
+Creates a variant holding an `A`.
+
+- `value`: the `A` to hold; it is copied into a fresh allocation, so the
+  caller keeps its own
+
+```
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>, value A) void
+```
+
+### `fn make_second(this &Variant2<A, B>, value B) void`
+
+Creates a variant holding a `B`.
+
+- `value`: the `B` to hold; it replaces whatever was held and is copied into
+  a fresh allocation
+
+```
+export
+template <A type, B type>
+fn make_second(this &Variant2<A, B>, value B) void
+```
+
+### `fn __init__(this &Variant2<A, B>, other &const Variant2<A, B>) void`
+
+Copies another variant's value.
+
+- `other`: the variant to copy; an empty one leaves this one empty too
+
+```
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>, other &const Variant2<A, B>) void
+```
+
+### `fn __init__(this &Variant2<A, B>, other &&Variant2<A, B>) void`
+
+Takes another variant's value.
+
+- `other`: the variant to take from; its pointers move and it is left empty,
+  so its destructor frees nothing
+
+```
+export
+template <A type, B type>
+fn __init__(this &Variant2<A, B>, other &&Variant2<A, B>) void
+```
+
+### `fn __assign__(this &Variant2<A, B>, other &const Variant2<A, B>) void`
+
+Copies another variant into this one.
+
+- `other`: the variant to copy; this one releases what it held first, so it
+  must not be `other` itself
+
+```
+export
+template <A type, B type>
+fn __assign__(this &Variant2<A, B>, other &const Variant2<A, B>) void
+```
+
+### `fn __assign__(this &Variant2<A, B>, other &&Variant2<A, B>) void`
+
+Moves another variant's value into this one.
+
+- `other`: the variant to take from, left empty; a variant assigned to
+  itself is released and ends empty
+
+```
+export
+template <A type, B type>
+fn __assign__(this &Variant2<A, B>, other &&Variant2<A, B>) void
+```
+
+### `fn release(this &Variant2<A, B>) void`
+
+Releases the held value.
+
+```
+template <A type, B type>
+fn release(this &Variant2<A, B>) void
+```
+
+### `fn __drop__(this &Variant2<A, B>) void`
+
+Releases the held value.
+
+```
+export
+template <A type, B type>
+fn __drop__(this &Variant2<A, B>) void
+```
+
+### `fn is_first(this &const Variant2<A, B>) bool`
+
+Whether the variant holds an `A`.
+
+```
+export
+template <A type, B type>
+fn is_first(this &const Variant2<A, B>) bool
+```
+
+### `fn is_second(this &const Variant2<A, B>) bool`
+
+Whether the variant holds a `B`.
+
+```
+export
+template <A type, B type>
+fn is_second(this &const Variant2<A, B>) bool
+```
+
+### `fn first(this &const Variant2<A, B>) A except`
+
+The held `A`, or a raise when the variant holds a `B`.
+
+```
+export
+template <A type, B type>
+fn first(this &const Variant2<A, B>) A except
+```
+
+### `fn second(this &const Variant2<A, B>) B except`
+
+The held `B`, or a raise when the variant holds an `A`.
+
+```
+export
+template <A type, B type>
+fn second(this &const Variant2<A, B>) B except
+```
+
+### `fn set_first(this &Variant2<A, B>, value A) void`
+
+Stores an `A`.
+
+- `value`: the `A` to hold; it is copied into a fresh allocation after the
+  old value is released
+
+```
+export
+template <A type, B type>
+fn set_first(this &Variant2<A, B>, value A) void
+```
+
+### `fn set_second(this &Variant2<A, B>, value B) void`
+
+Stores a `B`.
+
+- `value`: the `B` to hold; it is copied into a fresh allocation after the
+  old value is released
+
+```
+export
+template <A type, B type>
+fn set_second(this &Variant2<A, B>, value B) void
+```

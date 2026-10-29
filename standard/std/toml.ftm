@@ -2,7 +2,7 @@
 //
 //     document TomlDocument = toml.parse(&text)??;
 //     port TomlValue = document.get(&String("server"), &String("port")).value()??;
-//     n i64 = port.as_int()??;
+//     n i64 = port as i64??;
 //
 // # The subset
 //
@@ -97,7 +97,7 @@ export fn kind(this &const TomlValue) TomlKind {
 }
 
 // The string, or a raise when the value is another kind.
-export fn as_string(this &const TomlValue) String except {
+export fn __as__(this &const TomlValue, target *String) String except {
     if (this.kind() != TomlKind.STRING) {
         raise "ValueError": "the value is not a string";
     }
@@ -105,7 +105,7 @@ export fn as_string(this &const TomlValue) String except {
 }
 
 // The integer, or a raise when the value is another kind.
-export fn as_int(this &const TomlValue) i64 except {
+export fn __as__(this &const TomlValue, target *i64) i64 except {
     if (this.kind() != TomlKind.INTEGER) {
         raise "ValueError": "the value is not an integer";
     }
@@ -113,7 +113,7 @@ export fn as_int(this &const TomlValue) i64 except {
 }
 
 // The real, or a raise when the value is another kind.
-export fn as_real(this &const TomlValue) f64 except {
+export fn __as__(this &const TomlValue, target *f64) f64 except {
     if (this.kind() != TomlKind.REAL) {
         raise "ValueError": "the value is not a real";
     }
@@ -121,7 +121,7 @@ export fn as_real(this &const TomlValue) f64 except {
 }
 
 // The boolean, or a raise when the value is another kind.
-export fn as_bool(this &const TomlValue) bool except {
+export fn __as__(this &const TomlValue, target *bool) bool except {
     if (this.kind() != TomlKind.BOOLEAN) {
         raise "ValueError": "the value is not a boolean";
     }
@@ -240,13 +240,16 @@ export fn get(
 //
 // The substring helper returns a fresh string; the parser needs one without the
 // spaces a table line may carry inside its brackets.
+
+// - `text`: the string to trim; only spaces and tabs are removed, and a
+//   newline is not, so a table's name keeps a line break inside
 fn trim_spaces(text &String) String {
     start usize = 0;
-    while (start < text.length() && (text[start] == ' ' as char || text[start] == '\t' as char)) {
+    while (start < text.length() && (text[start] == ' ' || text[start] == '\t')) {
         start += 1;
     }
     end usize = text.length();
-    while (end > start && (text[end - 1] == ' ' as char || text[end - 1] == '\t' as char)) {
+    while (end > start && (text[end - 1] == ' ' || text[end - 1] == '\t')) {
         end -= 1;
     }
     return text.substring(start, end - start);
@@ -261,6 +264,11 @@ type Parser {
 }
 
 // Creates a parser over `text`.
+
+// - `text`: the whole TOML text the parser reads from, copied into the
+//   parser
+// - `document`: the document entries are appended to, pointed at rather than
+//   copied, so it must outlive the parser
 fn __init__(this &Parser, text &const String, document *TomlDocument) void {
     (&this._text)->__init__(text);
     this._index = 0usize;
@@ -331,11 +339,11 @@ fn parse_key(this &Parser) String except {
     start usize = this._index;
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if ((character >= 'a' as char && character <= 'z' as char)
-            || (character >= 'A' as char && character <= 'Z' as char)
-            || (character >= '0' as char && character <= '9' as char)
-            || character == '_' as char || character == '-' as char
-            || character == '.' as char)
+        if ((character >= 'a' && character <= 'z')
+            || (character >= 'A' && character <= 'Z')
+            || (character >= '0' && character <= '9')
+            || character == '_' || character == '-'
+            || character == '.')
         {
             this._index += 1;
         } else {
@@ -375,11 +383,11 @@ fn parse_value(this &Parser) TomlValue except {
     real bool = false;
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if ((character >= '0' as char && character <= '9' as char)
-            || character == '-' as char || character == '+' as char)
+        if ((character >= '0' && character <= '9')
+            || character == '-' || character == '+')
         {
             this._index += 1;
-        } else if (character == '.' as char || character == 'e' as char || character == 'E' as char) {
+        } else if (character == '.' || character == 'e' || character == 'E') {
             real = true;
             this._index += 1;
         } else {
@@ -411,10 +419,10 @@ fn parse_string(this &Parser) String except {
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
         this._index += 1;
-        if (character == '"' as char) {
+        if (character == '"') {
             return result;
         }
-        if (character != '\\' as char) {
+        if (character != '\\') {
             result.push(character);
             continue;
         }
@@ -423,12 +431,12 @@ fn parse_string(this &Parser) String except {
         }
         escape char = this._text[this._index];
         this._index += 1;
-        if (escape == '"' as char || escape == '\\' as char) {
+        if (escape == '"' || escape == '\\') {
             result.push(escape);
-        } else if (escape == 'n' as char) {
-            result.push('\n' as char);
-        } else if (escape == 't' as char) {
-            result.push('\t' as char);
+        } else if (escape == 'n') {
+            result.push('\n');
+        } else if (escape == 't') {
+            result.push('\t');
         } else {
             raise "ValueError": "unknown string escape";
         }
@@ -440,19 +448,19 @@ fn parse_string(this &Parser) String except {
 fn skip_space_and_comments(this &Parser) void {
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if (character == ' ' as char  || character == '\t' as char) {
+        if (character == ' '  || character == '\t') {
             this._index += 1;
             continue;
         }
-        if (character == '\n' as char) {
+        if (character == '\n') {
             this._index += 1;
             continue;
         }
-        if (character == '\r' as char) {
+        if (character == '\r') {
             this._index += 1;
             continue;
         }
-        if (character == '#' as char) {
+        if (character == '#') {
             while (this._index < this._text.length() && !this.at('\n')) {
                 this._index += 1;
             }
@@ -466,7 +474,7 @@ fn skip_space_and_comments(this &Parser) void {
 fn skip_horizontal(this &Parser) void {
     while (this._index < this._text.length()) {
         character char = this._text[this._index];
-        if (character == ' ' as char  || character == '\t' as char) {
+        if (character == ' '  || character == '\t') {
             this._index += 1;
         } else {
             return;
@@ -475,6 +483,9 @@ fn skip_horizontal(this &Parser) void {
 }
 
 // Whether the parser is looking at `character`.
+
+// - `character`: the character to look for; it is compared with the byte at
+//   the current position
 fn at(this &Parser, character char) bool {
     if (this._index >= this._text.length()) {
         return false;
@@ -483,6 +494,9 @@ fn at(this &Parser, character char) bool {
 }
 
 // Consumes `word` or raises.
+
+// - `word`: a null-terminated C string, compared byte for byte with the
+//   text at the current position and then consumed
 fn expect_word(this &Parser, word *const char) void except {
     length usize = c_length(word);
     if (this._index + length > this._text.length()) {
@@ -499,6 +513,9 @@ fn expect_word(this &Parser, word *const char) void except {
 }
 
 // The length of a C string.
+
+// - `word`: a null-terminated C string; the bytes before the terminator
+//   are counted, and the terminator is not
 fn c_length(word *const char) usize {
     length usize = 0;
     while (word[length] != '\0') {

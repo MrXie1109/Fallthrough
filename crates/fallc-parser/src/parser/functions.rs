@@ -33,7 +33,7 @@ impl Parser {
         // A definition may leave the return type out: it then means `auto`,
         // deduced from the body's `return` statements. A declaration has no body
         // to deduce from, so it must write its type -- `void` included, as
-        // `extern "C" fn exit(status int) void;` does. That is also what a
+        // `@extern_C fn exit(status int) void;` does. That is also what a
         // defaulted or deleted function is: a declaration.
         let return_type = if stream.at(TokenKind::Punct(Punctuation::OpenBrace)) {
             TypeSyntax::Auto(stream.current_span())
@@ -70,16 +70,28 @@ impl Parser {
         // happens.
         let throws = if stream.at(TokenKind::Keyword(Keyword::Except)) {
             let start = stream.advance().span;
+            // `except(auto)` asks the compiler to decide whether the function
+            // can raise, instead of the declaration saying so. `auto` is a
+            // keyword, so it cannot be a condition expression.
+            let mut is_auto = false;
             let condition = if stream.at(TokenKind::Punct(Punctuation::OpenParen)) {
                 stream.advance();
-                let condition = self.parse_expr_no_comma(stream, ast)?;
-                self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
-                Some(condition)
+                if stream.at(TokenKind::Keyword(Keyword::Auto)) {
+                    stream.advance();
+                    is_auto = true;
+                    self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
+                    None
+                } else {
+                    let condition = self.parse_expr_no_comma(stream, ast)?;
+                    self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
+                    Some(condition)
+                }
             } else {
                 None
             };
             Some(fallc_ast::Throws {
                 condition,
+                is_auto,
                 span: start,
             })
         } else {
@@ -96,6 +108,16 @@ impl Parser {
             (Some(body), false, span)
         };
 
+        // `fn __setup__() void { .. }` is the module's setup: a function in
+        // form, so that it is declared, checked and called like one, and a
+        // distinct item in the tree because what runs it is the program's
+        // start rather than a call anyone wrote.
+        if name == "__setup__"
+            && let Some(body) = body
+        {
+            let span = start.to(ast.block(body).span);
+            return Some(ast.builder().alloc_item(ItemKind::Setup(body), span));
+        }
         Some(ast.builder().alloc_item(
             ItemKind::Function(FunctionItem {
                 is_constexpr,
@@ -438,14 +460,19 @@ impl Parser {
                 false
             };
             let span = keyword.span.to(returns.span());
-            return Some(TypeSyntax::Function(fallc_ast::FunctionTypeSyntax {
+            // `fn(int) int` is the function's address, which is what a value of
+            // that type holds: there is nothing to store but where it lives.
+            // Writing `*fn(int) int` says the same thing, so the bare form is
+            // read as the pointer and the two spellings name one type.
+            let function = TypeSyntax::Function(fallc_ast::FunctionTypeSyntax {
                 abi,
                 parameters,
                 variadic,
                 throws,
                 returns: Box::new(returns),
                 span,
-            }));
+            });
+            return Some(TypeSyntax::Pointer(Box::new(function)));
         }
 
         // `auto`, alone or under a modifier: `&auto`, `*auto`, `const auto`.
@@ -498,6 +525,15 @@ impl Parser {
                 return Some(TypeSyntax::PointerToConst(Box::new(inner)));
             }
             let inner = self.parse_type_impl(stream, ast, in_parameter)?;
+            // `fn(..) ..` already denotes the function's address, so `*fn(..)
+            // ..` would say it twice; the two spellings name one type, and the
+            // bare one is what a value of it holds.
+            if matches!(
+                inner,
+                TypeSyntax::Pointer(ref inner) if is_function_type(inner)
+            ) {
+                return Some(inner);
+            }
             return Some(TypeSyntax::Pointer(Box::new(inner)));
         }
 
@@ -847,4 +883,10 @@ impl Parser {
 
     // ----------------------------------------------------------- statements
 
+}
+
+/// Whether a written type is the bare `fn(..) ..`, which already means an
+/// address.
+fn is_function_type(ty: &TypeSyntax) -> bool {
+    matches!(ty, TypeSyntax::Function(_))
 }

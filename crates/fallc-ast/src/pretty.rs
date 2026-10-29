@@ -64,6 +64,15 @@ fn unresolved_text(u: &Unresolved) -> String {
 impl Visitor for Dumper {
     fn visit_item(&mut self, _ast: &Ast, id: ItemId, item: &crate::node::Item) {
         match &item.kind {
+            ItemKind::Conditional(node) => {
+                self.open("Conditional");
+                self.line(&format!(
+                    "then: {} else: {}",
+                    node.then_items.len(),
+                    node.else_items.len()
+                ));
+                self.close();
+            }
             ItemKind::EnumDeclaration(node) => {
                 self.open(&format!("Enum {}", node.name));
                 self.line(&format!("members: {}", node.members.len()));
@@ -382,6 +391,22 @@ impl Visitor for Dumper {
                     pattern.as_raw()
                 ));
             }
+            crate::node::ExprKind::ArrayLiteral(node) => {
+                let items: Vec<String> = node
+                    .elements
+                    .iter()
+                    .map(|element| format!("expr#{}", element.as_raw()))
+                    .collect();
+                self.line(&format!("Expr {id} array-literal [{}]", items.join(", ")));
+            }
+            crate::node::ExprKind::Range(node) => {
+                let op = if node.inclusive { "..=" } else { ".." };
+                self.line(&format!(
+                    "Expr {id} range `{op}` expr#{} expr#{}",
+                    node.low.as_raw(),
+                    node.high.as_raw()
+                ));
+            }
             crate::node::ExprKind::ThrowQuery(inner) => {
                 self.line(&format!("Expr {id} throw-query expr#{}", inner.as_raw()));
             }
@@ -393,6 +418,19 @@ impl Visitor for Dumper {
             }
             crate::node::ExprKind::Propagate(node) => {
                 self.line(&format!("Expr {id} propagate expr#{}", node.value.as_raw()));
+            }
+            crate::node::ExprKind::IfValue(node) => {
+                self.line(&format!(
+                    "Expr {id} if-value condition=expr#{} then=block#{}",
+                    node.condition.as_raw(),
+                    node.then_block.as_raw()
+                ));
+            }
+            crate::node::ExprKind::Builtin(node) => {
+                self.line(&format!("Expr {id} @{} ({})", node.name, node.argument));
+            }
+            crate::node::ExprKind::Block(block) => {
+                self.line(&format!("Expr {id} block#{}", block.as_raw()));
             }
             crate::node::ExprKind::Abort(node) => {
                 self.line(&format!("Expr {id} abort expr#{}", node.value.as_raw()));

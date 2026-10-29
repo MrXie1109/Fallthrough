@@ -15,7 +15,7 @@ use super::*;
 /// A function merely *declared* in two files is fine, and is the whole point of
 /// a declaration: it says the definition lives somewhere else.
 ///
-/// A definition is an item with a body. `extern "C" export fn puts(text *const
+/// A definition is an item with a body. `@extern_C export fn puts(text *const
 /// c8) int;` has none, so any number of files may declare it.
 ///
 /// Returns the first violation, with both places named.
@@ -452,6 +452,27 @@ pub(super) fn compile_file(
         return Outcome::Failure;
     }
     let mut ast: Ast = parsed.ast;
+    // A top-level `if (cond) @constexpr` keeps only the branch its condition
+    // selects. The other is dropped here, before anything is resolved or
+    // checked, which is what lets it name what this build does not have.
+    // Two facts are the compiler's own, and both are answerable here because
+    // neither needs the program: the platform it is building for, and the
+    // types the language supplies without a declaration. Everything else --
+    // a type a module declares, a function this file imports -- is a question
+    // for the checker, which is the side that has the tables.
+    ast.select_conditional_items(&|name| match name {
+        "linux" => Some(cfg!(target_os = "linux")),
+        "windows" => Some(cfg!(target_os = "windows")),
+        "macos" => Some(cfg!(target_os = "macos")),
+        "unix" => Some(cfg!(unix)),
+        // A name the language supplies is a yes; any other name may still be
+        // a type this program declares or imports, which only the checker
+        // knows -- so it is left unanswered rather than called absent. Saying
+        // `false` here made `@meta.defined(JsonDocument)` false for a document
+        // type the file had just imported.
+        other if fallc_sema::Type::from_name(other).is_some() => Some(true),
+        _ => None,
+    });
     // Whether a name is overloaded is a property of the whole file, so it is
     // decided once parsing is complete.
     ast.mark_overloads();
@@ -597,7 +618,7 @@ pub(super) fn compile_file(
     register_imported_enums(&mut checker, &imported_enums);
     register_imported_interfaces(&mut checker, &imported_interfaces);
     // The third field says whether the object is one per thread; an
-    // `extern "C"` variable is a plain global.
+    // `@extern_C` variable is a plain global.
     let mut external_globals: std::collections::HashMap<
         String,
         (fallc_sema::Type, String, bool),
@@ -769,6 +790,7 @@ pub(super) fn compile_file(
         &checked.in_place_by_address,
         &checked.init_calls,
         &checked.method_calls,
+        &checked.indirect_receivers,
         &checked.assign_methods,
         &checked.deref_reads,
         &checked.pointer_targets,
@@ -971,6 +993,7 @@ pub(super) fn configure_lowerer(
     in_place_by_address: &std::collections::HashMap<fallc_span::Span, bool>,
     init_calls: &std::collections::HashMap<fallc_span::Span, String>,
     method_calls: &std::collections::HashMap<fallc_span::Span, String>,
+    indirect_receivers: &std::collections::HashMap<fallc_span::Span, String>,
     assign_methods: &std::collections::HashMap<fallc_span::Span, String>,
     deref_reads: &std::collections::HashMap<fallc_span::Span, fallc_sema::Type>,
     pointer_targets: &std::collections::HashMap<fallc_span::Span, fallc_sema::Type>,
@@ -1034,6 +1057,7 @@ pub(super) fn configure_lowerer(
     lowerer.set_in_place_by_address(in_place_by_address.clone());
     lowerer.set_init_calls(init_calls.clone());
     lowerer.set_method_calls(method_calls.clone());
+    lowerer.set_indirect_receivers(indirect_receivers.clone());
     lowerer.set_assign_methods(assign_methods.clone());
     lowerer.set_throwing_calls(throwing_calls.clone(), propagating_calls.clone());
     lowerer.set_deref_reads(deref_reads.clone());

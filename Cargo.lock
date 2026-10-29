@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "fallc"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "fallc-ast",
  "fallc-diag",
@@ -39,21 +39,21 @@ dependencies = [
 
 [[package]]
 name = "fallc-ast"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "fallc-span",
 ]
 
 [[package]]
 name = "fallc-diag"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "fallc-span",
 ]
 
 [[package]]
 name = "fallc-ir"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "fallc-ast",
  "fallc-diag",
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "fallc-lexer"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "fallc-diag",
  "fallc-span",
@@ -73,7 +73,7 @@ dependencies = [
 
 [[package]]
 name = "fallc-parser"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "fallc-ast",
  "fallc-diag",
@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "fallc-sema"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "fallc-ast",
  "fallc-diag",
@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "fallc-span"
-version = "0.1.3"
+version = "0.2.0"
 
 [[package]]
 name = "find-msvc-tools"

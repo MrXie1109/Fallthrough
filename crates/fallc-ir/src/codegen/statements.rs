@@ -1335,6 +1335,35 @@ impl<'ctx> Lowerer<'ctx> {
                     return Ok(());
                 }
 
+                // An array is initialised by position: each value is stored
+                // into the slot at its index, in the order written.
+                if let fallc_sema::Type::Array { element, len } = ty.unqualified() {
+                    let mapper = TypeMapper::new(self.backend.context());
+                    let element_ty = mapper.map(element).ok_or_else(|| {
+                        CodegenError::waiting_for_spec("this array's element", designated.span)
+                    })?;
+                    for (index, &value) in designated.elements.iter().enumerate() {
+                        if index as u64 >= *len {
+                            break;
+                        }
+                        let Some(lowered) =
+                            self.lower_expr(ast, types, builder, value)?
+                        else {
+                            continue;
+                        };
+                        let subscript = self
+                            .backend
+                            .context()
+                            .i32_type()
+                            .const_int(index as u64, false);
+                        let slot = build_index_gep(builder, element_ty, alloca, subscript)?;
+                        builder
+                            .build_store(slot, lowered)
+                            .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                    }
+                    self.register_binding(&node.name, &ty, alloca, llvm_ty);
+                    return Ok(());
+                }
                 let Some(nominal) = ty.as_nominal() else {
                     return Err(CodegenError::waiting_for_spec(
                         "a designated initialiser for this type",

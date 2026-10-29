@@ -1,0 +1,396 @@
+# `std.bytes`
+
+A sequence of bytes.
+
+`Bytes` is the untyped sibling of `String`: the same storage (a contiguous
+run of bytes) without the promise that the bytes are text. A file, a hash, a
+protocol buffer and a copy of a string are all sequences of bytes, and none of
+them is a `String`; this is the type that says "bytes" and not "text".
+
+    data Bytes = "hello";          // copy the bytes of a literal
+    data.push(0u8);
+    std.print("{:x}\n", data[0])??;
+
+# A wrapper, not a second array
+
+The storage and its growth are `Array<u8>`'s: `Bytes` is the wrapper that
+names the element and offers the conversions to and from `String`. Anything
+`Array` can do to a run of bytes, `Bytes` does by forwarding.
+
+## Declarations
+
+### `export type Bytes {`
+
+A sequence of bytes.
+
+```
+export type Bytes {
+    // The bytes, in order.
+    _data Array<u8>;
+}
+```
+
+### `export fn __init__(this &Bytes) void {`
+
+Creates an empty byte sequence.
+
+```
+export fn __init__(this &Bytes) void {
+    (&this._data)->__init__();
+}
+```
+
+### `export fn __init__(this &Bytes, text &const String) void {`
+
+Copies the bytes of a string.
+
+The text's characters are its bytes: `String` already stores them that way,
+so this is a copy and not a decoding step.
+
+```
+export fn __init__(this &Bytes, text &const String) void {
+    (&this._data)->__init__();
+    index usize = 0;
+    while (index < text.length()) {
+        this._data.push(text[index] as u8);
+        index += 1;
+    }
+}
+```
+
+### `export fn __im_init__(this &Bytes, text *const char) void {`
+
+Copies the bytes of a C string, up to its terminator.
+
+This is the constructor a string literal reaches: a literal is a character
+array with a terminator, and its bytes are exactly what a `Bytes` wants.
+
+```
+export fn __im_init__(this &Bytes, text *const char) void {
+    (&this._data)->__init__();
+    length usize = C.strlen(text);
+    index usize = 0;
+    while (index < length) {
+        this._data.push(text[index] as u8);
+        index += 1;
+    }
+}
+```
+
+### `export fn __init__(this &Bytes, other &const Bytes) void {`
+
+Copies another byte sequence.
+
+```
+export fn __init__(this &Bytes, other &const Bytes) void {
+    (&this._data)->__init__();
+    index usize = 0;
+    while (index < other.length()) {
+        this._data.push(other._data[index]);
+        index += 1;
+    }
+}
+```
+
+### `export fn __init__(this &Bytes, other &&Bytes) void {`
+
+Takes another byte sequence's storage.
+
+The member is initialised before the move assignment: an uninitialised
+`Array` released whatever pointer its bytes happened to hold.
+
+```
+export fn __init__(this &Bytes, other &&Bytes) void {
+    (&this._data)->__init__();
+    this._data = util.move(other._data);
+}
+```
+
+### `export fn __assign__(this &Bytes, other &const Bytes) void {`
+
+Copies another byte sequence into this one.
+
+```
+export fn __assign__(this &Bytes, other &const Bytes) void {
+    (&this._data)->__assign__(other._data);
+}
+```
+
+### `export fn __assign__(this &Bytes, other &&Bytes) void {`
+
+Moves another byte sequence's storage into this one.
+
+```
+export fn __assign__(this &Bytes, other &&Bytes) void {
+    this._data = util.move(other._data);
+}
+```
+
+### `export fn __drop__(this &Bytes) void {`
+
+Releases the storage.
+
+```
+export fn __drop__(this &Bytes) void {
+    (&this._data)->__drop__();
+}
+```
+
+### `export fn length(this &const Bytes) usize {`
+
+The number of bytes.
+
+```
+export fn length(this &const Bytes) usize {
+    return this._data.length();
+}
+```
+
+### `export fn empty(this &const Bytes) bool {`
+
+Whether there are no bytes.
+
+```
+export fn empty(this &const Bytes) bool {
+    return this._data.empty();
+}
+```
+
+### `export fn data(this &Bytes) *byte {`
+
+The bytes as a pointer, for code that takes a C buffer.
+
+```
+export fn data(this &Bytes) *byte {
+    return this._data.data() as *byte;
+}
+```
+
+### `export fn const_data(this &const Bytes) *const byte {`
+
+The bytes as a read-only pointer.
+
+```
+export fn const_data(this &const Bytes) *const byte {
+    return this._data.data() as *const byte;
+}
+```
+
+### `export fn __getitem__(this &Bytes, index usize) &u8 {`
+
+The byte at `index`; writing through it writes the sequence.
+
+```
+export fn __getitem__(this &Bytes, index usize) &u8 {
+    return this._data[index];
+}
+```
+
+### `export fn __getitem__(this &const Bytes, index usize) &const u8 {`
+
+The byte at `index`, read only.
+
+```
+export fn __getitem__(this &const Bytes, index usize) &const u8 {
+    return this._data[index];
+}
+```
+
+### `export fn push(this &Bytes, value byte) void {`
+
+Adds one byte at the end.
+
+```
+export fn push(this &Bytes, value byte) void {
+    this._data.push(value as u8);
+}
+```
+
+### `export fn push_back(this &Bytes, value byte) void {`
+
+Adds one byte at the end.
+
+The same operation as `push`, under the name a generic sequence expects.
+
+```
+export fn push_back(this &Bytes, value byte) void {
+    this.push(value);
+}
+```
+
+### `export fn push_bytes(this &Bytes, other &const Bytes) void {`
+
+Adds the bytes of `other` at the end.
+
+```
+export fn push_bytes(this &Bytes, other &const Bytes) void {
+    index usize = 0;
+    while (index < other.length()) {
+        this._data.push(other._data[index]);
+        index += 1;
+    }
+}
+```
+
+### `export fn push_text(this &Bytes, text &const String) void {`
+
+Adds the bytes of `text` at the end.
+
+```
+export fn push_text(this &Bytes, text &const String) void {
+    index usize = 0;
+    while (index < text.length()) {
+        this._data.push(text[index] as u8);
+        index += 1;
+    }
+}
+```
+
+### `export fn reserve(this &Bytes, wanted usize) void {`
+
+Makes room for `wanted` bytes.
+
+```
+export fn reserve(this &Bytes, wanted usize) void {
+    this._data.reserve(wanted);
+}
+```
+
+### `export fn resize(this &Bytes, wanted usize, filler byte) void {`
+
+Changes the length, filling any new bytes with `filler`.
+
+```
+export fn resize(this &Bytes, wanted usize, filler byte) void {
+    this._data.resize(wanted, filler as u8);
+}
+```
+
+### `export fn clear(this &Bytes) void {`
+
+Removes every byte.
+
+```
+export fn clear(this &Bytes) void {
+    this._data.clear();
+}
+```
+
+### `export fn begin(this &Bytes) *u8 {`
+
+The first position.
+
+```
+export fn begin(this &Bytes) *u8 {
+    return this._data.begin();
+}
+```
+
+### `export fn end(this &Bytes) *u8 {`
+
+The one-past-the-end position.
+
+```
+export fn end(this &Bytes) *u8 {
+    return this._data.end();
+}
+```
+
+### `export fn begin(this &const Bytes) *const u8 {`
+
+The first position, read only.
+
+```
+export fn begin(this &const Bytes) *const u8 {
+    return this._data.begin();
+}
+```
+
+### `export fn end(this &const Bytes) *const u8 {`
+
+The one-past-the-end position, read only.
+
+```
+export fn end(this &const Bytes) *const u8 {
+    return this._data.end();
+}
+```
+
+### `export fn __as__(this &const Bytes, target *String) String {`
+
+Copies the bytes into a `String`.
+
+No decoding: a `String` is a sequence of bytes too, so this is the same copy
+the constructor from `String` makes in the other direction.
+
+```
+export fn __as__(this &const Bytes, target *String) String {
+    result String = String();
+    index usize = 0;
+    while (index < this.length()) {
+        result.push(this._data[index] as char);
+        index += 1;
+    }
+    return result;
+}
+```
+
+### `export fn __as__(this &const String, target *Bytes) Bytes {`
+
+Copies a string into a byte sequence.
+
+```
+export fn __as__(this &const String, target *Bytes) Bytes {
+    return Bytes(this);
+}
+```
+
+### `export fn __eq__(this &const Bytes, other &const Bytes) bool {`
+
+Whether two byte sequences hold the same bytes.
+
+```
+export fn __eq__(this &const Bytes, other &const Bytes) bool {
+    if (this.length() != other.length()) {
+        return false;
+    }
+    index usize = 0;
+    while (index < this.length()) {
+        if (this._data[index] != other._data[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+```
+
+### `export fn __ne__(this &const Bytes, other &const Bytes) bool {`
+
+Whether two byte sequences differ.
+
+```
+export fn __ne__(this &const Bytes, other &const Bytes) bool {
+    return !(this == other);
+}
+```
+
+### `export fn cbegin(this &const Bytes) *const u8 {`
+
+The first position, read only, named as C++ names it.
+
+```
+export fn cbegin(this &const Bytes) *const u8 {
+    return this._data.begin();
+}
+```
+
+### `export fn cend(this &const Bytes) *const u8 {`
+
+The one-past-the-end position, read only, named as C++ names it.
+
+```
+export fn cend(this &const Bytes) *const u8 {
+    return this._data.end();
+}
+```

@@ -40,6 +40,9 @@ type Less {
 }
 
 // Answers whether `a` comes before `b` under `<`.
+//
+// - `a`: the left element
+// - `b`: the right element
 export
 template <E type>
 fn __call__(this &const Less<E>, a &const E, b &const E) bool {
@@ -56,6 +59,9 @@ type Greater {
 }
 
 // Answers whether `a` comes after `b`.
+//
+// - `a`: the left element
+// - `b`: the right element
 export
 template <E type>
 fn __call__(this &const Greater<E>, a &const E, b &const E) bool {
@@ -122,6 +128,9 @@ fn __init__(this &RBTree<K, V, Cmp, A>) void {
 }
 
 // Creates an empty tree with an order and an allocator of its caller's.
+//
+// - `order`: the comparison that decides where a key goes
+// - `memory`: the allocator to draw nodes from
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &RBTree<K, V, Cmp, A>, order Cmp, memory A) void {
@@ -168,6 +177,8 @@ fn clear(this &RBTree<K, V, Cmp, A>) void {
 }
 
 // Copies every entry of `node`'s subtree into this tree.
+//
+// - `node`: the root of the subtree to copy
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn copy_nodes(this &RBTree<K, V, Cmp, A>, node *const TreeNode<K, V>) void {
     if (node == nullptr) {
@@ -179,6 +190,8 @@ fn copy_nodes(this &RBTree<K, V, Cmp, A>, node *const TreeNode<K, V>) void {
 }
 
 // Copies another tree, nodes and all.
+//
+// - `other`: the tree to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &RBTree<K, V, Cmp, A>, other &const RBTree<K, V, Cmp, A>) void {
@@ -193,6 +206,8 @@ fn __init__(this &RBTree<K, V, Cmp, A>, other &const RBTree<K, V, Cmp, A>) void 
 }
 
 // Takes another tree's nodes.
+//
+// - `other`: the tree to take from, left empty
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &RBTree<K, V, Cmp, A>, other &&RBTree<K, V, Cmp, A>) void {
@@ -205,6 +220,8 @@ fn __init__(this &RBTree<K, V, Cmp, A>, other &&RBTree<K, V, Cmp, A>) void {
 }
 
 // Copies another tree over this one.
+//
+// - `other`: the tree to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &RBTree<K, V, Cmp, A>, other &const RBTree<K, V, Cmp, A>) void {
@@ -218,6 +235,8 @@ fn __assign__(this &RBTree<K, V, Cmp, A>, other &const RBTree<K, V, Cmp, A>) voi
 }
 
 // Takes another tree's nodes over this one.
+//
+// - `other`: the tree to take from, left empty
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &RBTree<K, V, Cmp, A>, other &&RBTree<K, V, Cmp, A>) void {
@@ -258,6 +277,8 @@ fn empty(this &const RBTree<K, V, Cmp, A>) bool {
 //
 // The subtree's in-order sequence is unchanged: the parent's right child becomes
 // the node's left child, and the node takes the parent's place.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn rotate_left(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
     above *TreeNode<K, V> = node->right;
@@ -280,6 +301,8 @@ fn rotate_left(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
 }
 
 // Moves `node` up over its parent, the other way.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn rotate_right(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
     above *TreeNode<K, V> = node->left;
@@ -307,6 +330,8 @@ fn rotate_right(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
 // is repaired by recolouring the uncle or by rotating the parent and the
 // grandparent; each step moves the violation up, so the walk ends at the root,
 // which is painted black.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert_fixup(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
     while (node->parent != nullptr && node->parent->red) {
@@ -351,6 +376,9 @@ fn insert_fixup(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
 //
 // Returns the node that holds the key. The key itself is not replaced: a map's
 // keys are what the order is about, and replacing one could move it.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
@@ -365,6 +393,9 @@ fn insert(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
 // Adds one entry whether or not the key is already there.
 //
 // This is what a multi-container is: one entry per call, in order.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert_multi(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
@@ -372,6 +403,9 @@ fn insert_multi(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
 }
 
 // Adds an entry that is known to be new.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert_new(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
     order Cmp = this.cmp;
@@ -406,6 +440,8 @@ fn insert_new(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
 }
 
 // Returns the node holding `key`, or null.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn find(this &const RBTree<K, V, Cmp, A>, key &const K) *const TreeNode<K, V> {
@@ -424,6 +460,8 @@ fn find(this &const RBTree<K, V, Cmp, A>, key &const K) *const TreeNode<K, V> {
 }
 
 // Returns the node holding `key`, for writing, or null.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn find(this &RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
@@ -442,6 +480,8 @@ fn find(this &RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
 }
 
 // Returns `true` when the key is there.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn contains(this &const RBTree<K, V, Cmp, A>, key &const K) bool {
@@ -449,6 +489,8 @@ fn contains(this &const RBTree<K, V, Cmp, A>, key &const K) bool {
 }
 
 // Returns how many entries have this key.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn count(this &const RBTree<K, V, Cmp, A>, key &const K) usize {
@@ -463,6 +505,8 @@ fn count(this &const RBTree<K, V, Cmp, A>, key &const K) usize {
 }
 
 // Returns the first node whose key is not less than `key`, or null.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn lower_bound(this &const RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
@@ -481,6 +525,8 @@ fn lower_bound(this &const RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
 }
 
 // Returns the first node whose key is greater than `key`, or null.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn upper_bound(this &const RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
@@ -499,6 +545,8 @@ fn upper_bound(this &const RBTree<K, V, Cmp, A>, key &const K) *TreeNode<K, V> {
 }
 
 // Removes the entry with this key, and returns whether there was one.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase(this &RBTree<K, V, Cmp, A>, key &const K) bool {
@@ -511,6 +559,8 @@ fn erase(this &RBTree<K, V, Cmp, A>, key &const K) bool {
 }
 
 // Removes every entry with this key, and returns how many there were.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase_all(this &RBTree<K, V, Cmp, A>, key &const K) usize {
@@ -527,6 +577,8 @@ fn erase_all(this &RBTree<K, V, Cmp, A>, key &const K) usize {
 }
 
 // The leftmost node of the subtree rooted at `node`.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type>
 fn minimum(node *TreeNode<K, V>) *TreeNode<K, V> {
     walk *TreeNode<K, V> = node;
@@ -537,6 +589,8 @@ fn minimum(node *TreeNode<K, V>) *TreeNode<K, V> {
 }
 
 // The rightmost node of the subtree rooted at `node`.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type>
 fn maximum(node *TreeNode<K, V>) *TreeNode<K, V> {
     walk *TreeNode<K, V> = node;
@@ -547,6 +601,8 @@ fn maximum(node *TreeNode<K, V>) *TreeNode<K, V> {
 }
 
 // The node that comes after `node` in order, or null at the end.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type>
 fn successor(node *TreeNode<K, V>) *TreeNode<K, V> {
     if (node == nullptr) {
@@ -565,6 +621,8 @@ fn successor(node *TreeNode<K, V>) *TreeNode<K, V> {
 }
 
 // The node that comes before `node` in order, or null at the beginning.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type>
 fn predecessor(node *TreeNode<K, V>) *TreeNode<K, V> {
     if (node == nullptr) {
@@ -583,6 +641,9 @@ fn predecessor(node *TreeNode<K, V>) *TreeNode<K, V> {
 }
 
 // Puts `replacement` where `node` is.
+//
+// - `node`: the node being taken out of its place
+// - `replacement`: the subtree that takes its place
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn transplant(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>, replacement *TreeNode<K, V>) void {
     if (node->parent == nullptr) {
@@ -603,6 +664,8 @@ fn transplant(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>, replacement *Tre
 // the fix-up repairs by borrowing a black node from a sibling or by pushing the
 // deficit up. The child that takes the removed node's place may be null, so its
 // parent is what the walk follows.
+//
+// - `node`: the node the walk starts or pivots on
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn remove_node(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
     removed *TreeNode<K, V> = node;
@@ -646,6 +709,9 @@ fn remove_node(this &RBTree<K, V, Cmp, A>, node *TreeNode<K, V>) void {
 }
 
 // Restores the invariants after a removal.
+//
+// - `start`: the node the double-black sits on, or null
+// - `start_parent`: its parent, needed when it is null
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase_fixup(this &RBTree<K, V, Cmp, A>, start *TreeNode<K, V>, start_parent *TreeNode<K, V>) void {
     node *TreeNode<K, V> = start;
@@ -757,6 +823,8 @@ fn __init__(this &MapIterator<K, V>) void {
 }
 
 // Creates an iterator standing on a node.
+//
+// - `node`: the node the walk starts or pivots on
 export
 template <K type, V type>
 fn __init__(this &MapIterator<K, V>, node *TreeNode<K, V>) void {
@@ -792,6 +860,8 @@ fn key(this &const MapIterator<K, V>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the value to copy
 export
 template <K type, V type>
 fn __eq__(this &const MapIterator<K, V>, other &const MapIterator<K, V>) bool {
@@ -799,6 +869,8 @@ fn __eq__(this &const MapIterator<K, V>, other &const MapIterator<K, V>) bool {
 }
 
 // Whether two positions differ.
+//
+// - `other`: the value to copy
 export
 template <K type, V type>
 fn __ne__(this &const MapIterator<K, V>, other &const MapIterator<K, V>) bool {
@@ -821,6 +893,8 @@ fn __init__(this &ConstMapIterator<K, V>) void {
 }
 
 // Creates an iterator standing on a node.
+//
+// - `node`: the node the walk starts or pivots on
 export
 template <K type, V type>
 fn __init__(this &ConstMapIterator<K, V>, node *const TreeNode<K, V>) void {
@@ -856,6 +930,8 @@ fn key(this &const ConstMapIterator<K, V>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the value to copy
 export
 template <K type, V type>
 fn __eq__(this &const ConstMapIterator<K, V>, other &const ConstMapIterator<K, V>) bool {
@@ -863,6 +939,8 @@ fn __eq__(this &const ConstMapIterator<K, V>, other &const ConstMapIterator<K, V
 }
 
 // Whether two positions differ.
+//
+// - `other`: the value to copy
 export
 template <K type, V type>
 fn __ne__(this &const ConstMapIterator<K, V>, other &const ConstMapIterator<K, V>) bool {
@@ -885,6 +963,8 @@ fn __init__(this &SetIterator<K>) void {
 }
 
 // Creates an iterator standing on a node.
+//
+// - `node`: the node the walk starts or pivots on
 export
 template <K type>
 fn __init__(this &SetIterator<K>, node *TreeNode<K, Unit>) void {
@@ -913,6 +993,8 @@ fn __deref__(this &SetIterator<K>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the value to copy
 export
 template <K type>
 fn __eq__(this &const SetIterator<K>, other &const SetIterator<K>) bool {
@@ -920,6 +1002,8 @@ fn __eq__(this &const SetIterator<K>, other &const SetIterator<K>) bool {
 }
 
 // Whether two positions differ.
+//
+// - `other`: the value to copy
 export
 template <K type>
 fn __ne__(this &const SetIterator<K>, other &const SetIterator<K>) bool {
@@ -942,6 +1026,8 @@ fn __init__(this &ConstSetIterator<K>) void {
 }
 
 // Creates an iterator standing on a node.
+//
+// - `node`: the node the walk starts or pivots on
 export
 template <K type>
 fn __init__(this &ConstSetIterator<K>, node *const TreeNode<K, Unit>) void {
@@ -970,6 +1056,8 @@ fn __deref__(this &const ConstSetIterator<K>) &const K {
 }
 
 // Whether two positions are the same.
+//
+// - `other`: the value to copy
 export
 template <K type>
 fn __eq__(this &const ConstSetIterator<K>, other &const ConstSetIterator<K>) bool {
@@ -977,6 +1065,8 @@ fn __eq__(this &const ConstSetIterator<K>, other &const ConstSetIterator<K>) boo
 }
 
 // Whether two positions differ.
+//
+// - `other`: the value to copy
 export
 template <K type>
 fn __ne__(this &const ConstSetIterator<K>, other &const ConstSetIterator<K>) bool {
@@ -997,6 +1087,9 @@ type TMap {
 }
 
 // Adds an entry, replacing the value when the key is already there.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TMap<K, V, Cmp, A>, key K, value V) void {
@@ -1004,6 +1097,8 @@ fn insert(this &TMap<K, V, Cmp, A>, key K, value V) void {
 }
 
 // Returns the value for a key, or null.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn find(this &TMap<K, V, Cmp, A>, key &const K) *V {
@@ -1015,6 +1110,8 @@ fn find(this &TMap<K, V, Cmp, A>, key &const K) *V {
 }
 
 // Returns the value for a key, or null, for reading.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn find(this &const TMap<K, V, Cmp, A>, key &const K) *const V {
@@ -1026,6 +1123,8 @@ fn find(this &const TMap<K, V, Cmp, A>, key &const K) *const V {
 }
 
 // Returns the value for a key, and aborts when there is none.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn at(this &TMap<K, V, Cmp, A>, key &const K) &V {
@@ -1037,6 +1136,8 @@ fn at(this &TMap<K, V, Cmp, A>, key &const K) &V {
 }
 
 // Returns the value for a key, and aborts when there is none, for reading.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn at(this &const TMap<K, V, Cmp, A>, key &const K) &const V {
@@ -1048,6 +1149,8 @@ fn at(this &const TMap<K, V, Cmp, A>, key &const K) &const V {
 }
 
 // Indexes the map: `m[key]` is the value, and a missing key aborts.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __getitem__(this &TMap<K, V, Cmp, A>, key &const K) &V {
@@ -1055,6 +1158,8 @@ fn __getitem__(this &TMap<K, V, Cmp, A>, key &const K) &V {
 }
 
 // Whether the key is there.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn contains(this &const TMap<K, V, Cmp, A>, key &const K) bool {
@@ -1062,6 +1167,8 @@ fn contains(this &const TMap<K, V, Cmp, A>, key &const K) bool {
 }
 
 // How many entries have this key. A map has at most one.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn count(this &const TMap<K, V, Cmp, A>, key &const K) usize {
@@ -1069,6 +1176,8 @@ fn count(this &const TMap<K, V, Cmp, A>, key &const K) usize {
 }
 
 // Removes the entry with this key, and returns whether there was one.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase(this &TMap<K, V, Cmp, A>, key &const K) bool {
@@ -1135,6 +1244,8 @@ type TSet {
 }
 
 // Adds a key, and does nothing when it is already there.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TSet<K, Cmp, A>, key K) void {
@@ -1143,6 +1254,8 @@ fn insert(this &TSet<K, Cmp, A>, key K) void {
 }
 
 // Whether the key is there.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn contains(this &const TSet<K, Cmp, A>, key &const K) bool {
@@ -1150,6 +1263,8 @@ fn contains(this &const TSet<K, Cmp, A>, key &const K) bool {
 }
 
 // How many entries have this key. A set has at most one.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn count(this &const TSet<K, Cmp, A>, key &const K) usize {
@@ -1157,6 +1272,8 @@ fn count(this &const TSet<K, Cmp, A>, key &const K) usize {
 }
 
 // Removes the key, and returns whether it was there.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase(this &TSet<K, Cmp, A>, key &const K) bool {
@@ -1226,6 +1343,9 @@ type TMMap {
 }
 
 // Adds an entry, whether or not the key is already there.
+//
+// - `key`: the key to place
+// - `value`: the value to store with it
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TMMap<K, V, Cmp, A>, key K, value V) void {
@@ -1233,6 +1353,8 @@ fn insert(this &TMMap<K, V, Cmp, A>, key K, value V) void {
 }
 
 // Returns the first value for a key, or null.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn find(this &TMMap<K, V, Cmp, A>, key &const K) *V {
@@ -1244,6 +1366,8 @@ fn find(this &TMMap<K, V, Cmp, A>, key &const K) *V {
 }
 
 // Whether the key is there.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn contains(this &const TMMap<K, V, Cmp, A>, key &const K) bool {
@@ -1251,6 +1375,8 @@ fn contains(this &const TMMap<K, V, Cmp, A>, key &const K) bool {
 }
 
 // How many entries have this key.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn count(this &const TMMap<K, V, Cmp, A>, key &const K) usize {
@@ -1258,6 +1384,8 @@ fn count(this &const TMMap<K, V, Cmp, A>, key &const K) usize {
 }
 
 // Removes the first entry with this key, and returns whether there was one.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase(this &TMMap<K, V, Cmp, A>, key &const K) bool {
@@ -1265,6 +1393,8 @@ fn erase(this &TMMap<K, V, Cmp, A>, key &const K) bool {
 }
 
 // Removes every entry with this key, and returns how many there were.
+//
+// - `key`: the key to look for
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase_all(this &TMMap<K, V, Cmp, A>, key &const K) usize {
@@ -1317,6 +1447,8 @@ type TMSet {
 }
 
 // Adds a key, whether or not it is already there.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TMSet<K, Cmp, A>, key K) void {
@@ -1325,6 +1457,8 @@ fn insert(this &TMSet<K, Cmp, A>, key K) void {
 }
 
 // Whether the key is there.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn contains(this &const TMSet<K, Cmp, A>, key &const K) bool {
@@ -1332,6 +1466,8 @@ fn contains(this &const TMSet<K, Cmp, A>, key &const K) bool {
 }
 
 // How many copies of the key are there.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn count(this &const TMSet<K, Cmp, A>, key &const K) usize {
@@ -1339,6 +1475,8 @@ fn count(this &const TMSet<K, Cmp, A>, key &const K) usize {
 }
 
 // Removes one copy of the key, and returns whether it was there.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase(this &TMSet<K, Cmp, A>, key &const K) bool {
@@ -1346,6 +1484,8 @@ fn erase(this &TMSet<K, Cmp, A>, key &const K) bool {
 }
 
 // Removes every copy of the key, and returns how many there were.
+//
+// - `key`: the key to look for
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn erase_all(this &TMSet<K, Cmp, A>, key &const K) usize {
@@ -1397,35 +1537,60 @@ fn __init__(this &TMap<K, V, Cmp, A>) void {
 }
 
 
-// Copies another tmap through its tree.
+// - Copies another map through its tree.
+//
+// - The tree copies every node, so the two maps share nothing afterwards.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMap<K, V, Cmp, A>, other &const TMap<K, V, Cmp, A>) void {
     (&this.tree)->__init__(other.tree);
 }
 
-// Takes another tmap's tree.
+// - Takes another map's tree.
+//
+// - The tree is taken rather than copied, so `other` is left with an empty
+//   one.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMap<K, V, Cmp, A>, other &&TMap<K, V, Cmp, A>) void {
     (&this.tree)->__init__(util.move(other.tree));
 }
 
-// Copies another tmap over this one.
+// - Copies another map over this one through its tree.
+//
+// - This map's own entries are destroyed first, so afterwards the two share
+//   nothing.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMap<K, V, Cmp, A>, other &const TMap<K, V, Cmp, A>) void {
     this.tree = other.tree;
 }
 
-// Takes another tmap's tree over this one.
+// - Takes another map's tree over this one.
+//
+// - This map's own entries are destroyed first, then the tree is taken rather
+//   than copied, so `other` is left with an empty one.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMap<K, V, Cmp, A>, other &&TMap<K, V, Cmp, A>) void {
     this.tree = util.move(other.tree);
 }
 
-// Creates an empty map with an order and an allocator of its caller's.
+// - Creates an empty map with an order and an allocator of its caller's.
+//
+// - The order decides where every key that is inserted later goes, and the
+//   allocator is where the tree's nodes come from; both are copied.
+//
+// - `order`: the comparison that decides where a key goes
+// - `memory`: the allocator the nodes are drawn from
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMap<K, V, Cmp, A>, order Cmp, memory A) void {
@@ -1440,35 +1605,60 @@ fn __init__(this &TSet<K, Cmp, A>) void {
 }
 
 
-// Copies another tset through its tree.
+// - Copies another set through its tree.
+//
+// - The tree copies every node, so the two sets share nothing afterwards.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TSet<K, Cmp, A>, other &const TSet<K, Cmp, A>) void {
     (&this.tree)->__init__(other.tree);
 }
 
-// Takes another tset's tree.
+// - Takes another set's tree.
+//
+// - The tree is taken rather than copied, so `other` is left with an empty
+//   one.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TSet<K, Cmp, A>, other &&TSet<K, Cmp, A>) void {
     (&this.tree)->__init__(util.move(other.tree));
 }
 
-// Copies another tset over this one.
+// - Copies another set over this one through its tree.
+//
+// - This set's own entries are destroyed first, so afterwards the two share
+//   nothing.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TSet<K, Cmp, A>, other &const TSet<K, Cmp, A>) void {
     this.tree = other.tree;
 }
 
-// Takes another tset's tree over this one.
+// - Takes another set's tree over this one.
+//
+// - This set's own entries are destroyed first, then the tree is taken rather
+//   than copied, so `other` is left with an empty one.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TSet<K, Cmp, A>, other &&TSet<K, Cmp, A>) void {
     this.tree = util.move(other.tree);
 }
 
-// Creates an empty set with an order and an allocator of its caller's.
+// - Creates an empty set with an order and an allocator of its caller's.
+//
+// - The order decides where every key that is inserted later goes, and the
+//   allocator is where the tree's nodes come from; both are copied.
+//
+// - `order`: the comparison that decides where a key goes
+// - `memory`: the allocator the nodes are drawn from
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TSet<K, Cmp, A>, order Cmp, memory A) void {
@@ -1483,35 +1673,61 @@ fn __init__(this &TMMap<K, V, Cmp, A>) void {
 }
 
 
-// Copies another tmmap through its tree.
+// - Copies another multi-map through its tree.
+//
+// - The tree copies every node, so the two multi-maps share nothing
+//   afterwards.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMMap<K, V, Cmp, A>, other &const TMMap<K, V, Cmp, A>) void {
     (&this.tree)->__init__(other.tree);
 }
 
-// Takes another tmmap's tree.
+// - Takes another multi-map's tree.
+//
+// - The tree is taken rather than copied, so `other` is left with an empty
+//   one.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMMap<K, V, Cmp, A>, other &&TMMap<K, V, Cmp, A>) void {
     (&this.tree)->__init__(util.move(other.tree));
 }
 
-// Copies another tmmap over this one.
+// - Copies another multi-map over this one through its tree.
+//
+// - This multi-map's own entries are destroyed first, so afterwards the two
+//   share nothing.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMMap<K, V, Cmp, A>, other &const TMMap<K, V, Cmp, A>) void {
     this.tree = other.tree;
 }
 
-// Takes another tmmap's tree over this one.
+// - Takes another multi-map's tree over this one.
+//
+// - This multi-map's own entries are destroyed first, then the tree is taken
+//   rather than copied, so `other` is left with an empty one.
+//
+// - `other`: the value to copy
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMMap<K, V, Cmp, A>, other &&TMMap<K, V, Cmp, A>) void {
     this.tree = util.move(other.tree);
 }
 
-// Creates an empty multi-map with an order and an allocator of its caller's.
+// - Creates an empty multi-map with an order and an allocator of its caller's.
+//
+// - The order decides where every key that is inserted later goes, and the
+//   allocator is where the tree's nodes come from; both are copied.
+//
+// - `order`: the comparison that decides where a key goes
+// - `memory`: the allocator the nodes are drawn from
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMMap<K, V, Cmp, A>, order Cmp, memory A) void {
@@ -1526,37 +1742,119 @@ fn __init__(this &TMSet<K, Cmp, A>) void {
 }
 
 
-// Copies another tmset through its tree.
+// - Copies another multi-set through its tree.
+//
+// - The tree copies every node, so the two multi-sets share nothing
+//   afterwards.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMSet<K, Cmp, A>, other &const TMSet<K, Cmp, A>) void {
     (&this.tree)->__init__(other.tree);
 }
 
-// Takes another tmset's tree.
+// - Takes another multi-set's tree.
+//
+// - The tree is taken rather than copied, so `other` is left with an empty
+//   one.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMSet<K, Cmp, A>, other &&TMSet<K, Cmp, A>) void {
     (&this.tree)->__init__(util.move(other.tree));
 }
 
-// Copies another tmset over this one.
+// - Copies another multi-set over this one through its tree.
+//
+// - This multi-set's own entries are destroyed first, so afterwards the two
+//   share nothing.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMSet<K, Cmp, A>, other &const TMSet<K, Cmp, A>) void {
     this.tree = other.tree;
 }
 
-// Takes another tmset's tree over this one.
+// - Takes another multi-set's tree over this one.
+//
+// - This multi-set's own entries are destroyed first, then the tree is taken
+//   rather than copied, so `other` is left with an empty one.
+//
+// - `other`: the value to copy
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMSet<K, Cmp, A>, other &&TMSet<K, Cmp, A>) void {
     this.tree = util.move(other.tree);
 }
 
-// Creates an empty multi-set with an order and an allocator of its caller's.
+// - Creates an empty multi-set with an order and an allocator of its caller's.
+//
+// - The order decides where every key that is inserted later goes, and the
+//   allocator is where the tree's nodes come from; both are copied.
+//
+// - `order`: the comparison that decides where a key goes
+// - `memory`: the allocator the nodes are drawn from
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMSet<K, Cmp, A>, order Cmp, memory A) void {
     (&this.tree)->__init__(order, memory);
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, V type, Cmp type, A type>
+fn cbegin(this &const TMap<K, V, Cmp, A>) ConstMapIterator<K, V> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, V type, Cmp type, A type>
+fn cend(this &const TMap<K, V, Cmp, A>) ConstMapIterator<K, V> {
+    return this.end();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, V type, Cmp type, A type>
+fn cbegin(this &const TMMap<K, V, Cmp, A>) ConstMapIterator<K, V> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, V type, Cmp type, A type>
+fn cend(this &const TMMap<K, V, Cmp, A>) ConstMapIterator<K, V> {
+    return this.end();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, Cmp type, A type>
+fn cbegin(this &const TSet<K, Cmp, A>) ConstSetIterator<K> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, Cmp type, A type>
+fn cend(this &const TSet<K, Cmp, A>) ConstSetIterator<K> {
+    return this.end();
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <K type, Cmp type, A type>
+fn cbegin(this &const TMSet<K, Cmp, A>) ConstSetIterator<K> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <K type, Cmp type, A type>
+fn cend(this &const TMSet<K, Cmp, A>) ConstSetIterator<K> {
+    return this.end();
 }

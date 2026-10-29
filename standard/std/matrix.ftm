@@ -76,24 +76,21 @@ export fn __drop__(this &Matrix) void {
 }
 
 // Creates a rows-by-columns matrix with every element `filler`.
-export fn matrix(rows usize, columns usize, filler f64) Matrix {
-    values Array<f64> = Array<f64>();
+export fn __init__(this &Matrix, rows usize, columns usize, filler f64) void {
+    this._rows = rows;
+    this._columns = columns;
+    (&this._values)->__init__();
     count usize = rows * columns;
     index usize = 0;
     while (index < count) {
-        values.push(filler);
+        this._values.push(filler);
         index += 1;
     }
-    built Matrix = Matrix();
-    built._rows = rows;
-    built._columns = columns;
-    built._values = util.move(values);
-    return built;
 }
 
 // Creates a zero matrix.
 export fn zeros(rows usize, columns usize) Matrix {
-    return matrix(rows, columns, 0.0);
+    return Matrix(rows, columns, 0.0);
 }
 
 // Creates a matrix with ones on the diagonal.
@@ -209,6 +206,9 @@ export fn transpose(this &const Matrix) Matrix {
 }
 
 // Checks that two matrices have the same shape.
+//
+// - `first`: one matrix
+// - `second`: the other, which must have the same shape
 fn shape_check(first &const Matrix, second &const Matrix) void except {
     if (first._rows != second._rows || first._columns != second._columns) {
         raise "ValueError": "the matrices have different shapes";

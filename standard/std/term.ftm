@@ -35,6 +35,8 @@ export enum Color int {
 }
 
 // The SGR number of a colour.
+//
+// - `color`: the colour to name
 fn code(color Color) int {
     if (color == Color.BLACK) {
         return 30;
@@ -91,13 +93,15 @@ export fn style_reset() String {
 }
 
 // Builds one SGR sequence.
+//
+// - `number`: the SGR parameter to write between the escape and its `m`
 fn sgr(number int) String {
     text String = String();
     text.push(0x1b as char);
-    text.push('[' as char);
+    text.push('[');
     number_text String = str(number);
     text.push(&number_text);
-    text.push('m' as char);
+    text.push('m');
     return text;
 }
 
@@ -107,7 +111,7 @@ fn sgr(number int) String {
 // colour"), `TERM` is `dumb`, and standard output is not a terminal.
 export fn supports_color() bool {
     no_color String = String("NO_COLOR");
-    if (os.has_env(no_color.data())) {
+    if (os.hasenv(no_color.data())) {
         return false;
     }
     term_text String = String("TERM");

@@ -78,6 +78,9 @@ fn __init__(this &Box<T>) void {
 }
 
 // Creates a box holding a copy of `value`.
+//
+// - `value`: the value to copy into a new allocation; it is copied rather than
+//   taken, so the caller still owns what it passed
 export
 template <T type>
 fn __im_init__(this &Box<T>, value T) void {
@@ -85,9 +88,27 @@ fn __im_init__(this &Box<T>, value T) void {
     this._value->__init__(value);
 }
 
+// Copies another box's value into a new allocation.
+//
+// The two boxes own separate values afterwards, so writing through one does not
+// change the other. A box that already holds something releases it first.
+//
+// - `other`: the box to copy; it keeps its own value
+export
+template <T type>
+fn __init__(this &Box<T>, other &const Box<T>) void {
+    this._value = nullptr;
+    if (other._value != nullptr) {
+        this._value = util.allocate(sizeof(T)) as *T;
+        this._value->__init__(*(other._value));
+    }
+}
+
 // Takes another box's value.
 //
 // The pointer moves; the source is left null, so its destructor frees nothing.
+//
+// - `other`: the box to take from; it is left empty and owns nothing afterwards
 export
 template <T type>
 fn __init__(this &Box<T>, other &&Box<T>) void {
@@ -207,6 +228,8 @@ fn __init__(this &Rc<T, A>) void {
 // The value is constructed in the block, so the parameter is the last owner of
 // what it was given: it is moved, not copied. A `T` that is expensive to copy
 // therefore costs one move per `Rc`.
+//
+// - `value`: the value to own; its storage moves into the new block
 export
 template <T type, A type = DefaultAllocator>
 fn __im_init__(this &Rc<T, A>, value T) void {
@@ -218,6 +241,10 @@ fn __im_init__(this &Rc<T, A>, value T) void {
 //
 // This is how a stateful allocator is used: the allocator travels with the block,
 // so the same one gives it back however many owners the value has.
+//
+// - `value`: the value to own; its storage moves into the new block
+// - `memory`: the allocator the block comes from; a copy is kept in the block
+//   and gives it back, so the caller need not outlive the value
 export
 template <T type, A type = DefaultAllocator>
 fn __im_init__(this &Rc<T, A>, value T, memory A) void {
@@ -238,6 +265,9 @@ fn __im_init__(this &Rc<T, A>, value T, memory A) void {
 // makes `Rc<Thing>(Thing(7))` cost one construction instead of two. The overload
 // comes after the by-value one for the reason a container's move form does: a
 // named value is not dying, and only a dying one may be taken apart.
+//
+// - `value`: a dying value whose storage moves into the new block; it cannot be
+//   read afterwards
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Rc<T, A>, value &&T) void {
@@ -246,6 +276,11 @@ fn __init__(this &Rc<T, A>, value &&T) void {
 }
 
 // Creates an owner of a dying value, taking the block from `memory`.
+//
+// - `value`: a dying value whose storage moves into the new block; the block is
+//   built in place from it rather than copied
+// - `memory`: the allocator the block comes from; a copy is kept in the block
+//   and gives it back
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Rc<T, A>, value &&T, memory A) void {
@@ -260,6 +295,9 @@ fn __init__(this &Rc<T, A>, value &&T, memory A) void {
 // Shares another owner's value.
 //
 // The value is not copied; the count says how many owners there are.
+//
+// - `other`: the owner to share with; it is copied as a pointer, and an empty
+//   one gives an empty owner with no counts to raise
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Rc<T, A>, other &const Rc<T, A>) void {
@@ -273,6 +311,8 @@ fn __init__(this &Rc<T, A>, other &const Rc<T, A>) void {
 // Takes another owner's share.
 //
 // The source is left empty, so it releases nothing.
+//
+// - `other`: the owner to take from; its pointer moves and it is left empty
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Rc<T, A>, other &&Rc<T, A>) void {
@@ -281,6 +321,9 @@ fn __init__(this &Rc<T, A>, other &&Rc<T, A>) void {
 }
 
 // Shares another owner's value, releasing what this owner held.
+//
+// - `other`: the owner to share with; this owner first drops its own share, so
+//   assigning an owner to itself still ends with one share held
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Rc<T, A>, other &const Rc<T, A>) void {
@@ -289,6 +332,9 @@ fn __assign__(this &Rc<T, A>, other &const Rc<T, A>) void {
 }
 
 // Takes another owner's share, releasing what this owner held.
+//
+// - `other`: the owner to take from, left empty; when both owners already share
+//   the same block nothing happens and neither share is released
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Rc<T, A>, other &&Rc<T, A>) void {
@@ -422,6 +468,9 @@ fn __init__(this &RcWeak<T, A>) void {
 }
 
 // Observes the same value another observer does.
+//
+// - `other`: the observer to share with; it is copied as a pointer and the
+//   block's weak count goes up, and an empty one gives an observer of nothing
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &RcWeak<T, A>, other &const RcWeak<T, A>) void {
@@ -432,6 +481,9 @@ fn __init__(this &RcWeak<T, A>, other &const RcWeak<T, A>) void {
 }
 
 // Takes another observer's share.
+//
+// - `other`: the observer to take from; its pointer moves and it is left
+//   observing nothing, so its destructor changes no count
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &RcWeak<T, A>, other &&RcWeak<T, A>) void {
@@ -440,6 +492,9 @@ fn __init__(this &RcWeak<T, A>, other &&RcWeak<T, A>) void {
 }
 
 // Observes another observer's value, releasing what this one observed.
+//
+// - `other`: the observer to share with; this one drops its own observation
+//   first, so observing itself still ends with one observation held
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &RcWeak<T, A>, other &const RcWeak<T, A>) void {
@@ -448,6 +503,9 @@ fn __assign__(this &RcWeak<T, A>, other &const RcWeak<T, A>) void {
 }
 
 // Takes another observer's share, releasing what this one observed.
+//
+// - `other`: the observer to take from, left observing nothing; when both
+//   already observe the same block nothing happens
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &RcWeak<T, A>, other &&RcWeak<T, A>) void {
@@ -560,6 +618,9 @@ fn __init__(this &Arc<T, A>) void {
 }
 
 // Creates an owner of `value`, with a strong count of one.
+//
+// - `value`: the value to own; its storage moves into the block, so it is not
+//   copied even once
 export
 template <T type, A type = DefaultAllocator>
 fn __im_init__(this &Arc<T, A>, value T) void {
@@ -568,6 +629,10 @@ fn __im_init__(this &Arc<T, A>, value T) void {
 }
 
 // Creates an owner of `value`, taking the block from `memory`.
+//
+// - `value`: the value to own; its storage moves into the block
+// - `memory`: the allocator the block comes from; a copy is kept in the block
+//   and gives it back
 export
 template <T type, A type = DefaultAllocator>
 fn __im_init__(this &Arc<T, A>, value T, memory A) void {
@@ -580,6 +645,9 @@ fn __im_init__(this &Arc<T, A>, value T, memory A) void {
 }
 
 // Shares another owner's value.
+//
+// - `other`: the owner to share with; the counts are raised atomically, so an
+//   owner that was handed to another thread may be shared from
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Arc<T, A>, other &const Arc<T, A>) void {
@@ -591,6 +659,9 @@ fn __init__(this &Arc<T, A>, other &const Arc<T, A>) void {
 }
 
 // Takes another owner's share.
+//
+// - `other`: the owner to take from; its pointer moves and it is left empty.
+//   Unlike sharing, nothing is counted, so neither thread may touch `other`
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &Arc<T, A>, other &&Arc<T, A>) void {
@@ -599,6 +670,9 @@ fn __init__(this &Arc<T, A>, other &&Arc<T, A>) void {
 }
 
 // Shares another owner's value, releasing what this owner held.
+//
+// - `other`: the owner to share with; this owner first drops its own share, so
+//   assigning an owner to itself still ends with one share held
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Arc<T, A>, other &const Arc<T, A>) void {
@@ -607,6 +681,9 @@ fn __assign__(this &Arc<T, A>, other &const Arc<T, A>) void {
 }
 
 // Takes another owner's share, releasing what this owner held.
+//
+// - `other`: the owner to take from, left empty; when both owners already share
+//   the same block nothing happens and neither share is released
 export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Arc<T, A>, other &&Arc<T, A>) void {
@@ -730,6 +807,9 @@ fn __init__(this &ArcWeak<T, A>) void {
 }
 
 // Observes the same value another observer does.
+//
+// - `other`: the observer to share with; the weak count is raised atomically,
+//   and an empty one gives an observer of nothing
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &ArcWeak<T, A>, other &const ArcWeak<T, A>) void {
@@ -740,6 +820,9 @@ fn __init__(this &ArcWeak<T, A>, other &const ArcWeak<T, A>) void {
 }
 
 // Takes another observer's share.
+//
+// - `other`: the observer to take from; its pointer moves and it is left
+//   observing nothing, so its destructor changes no count
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &ArcWeak<T, A>, other &&ArcWeak<T, A>) void {
@@ -748,6 +831,9 @@ fn __init__(this &ArcWeak<T, A>, other &&ArcWeak<T, A>) void {
 }
 
 // Observes another owner's value.
+//
+// - `other`: the owner whose value is observed; its weak count goes up so the
+//   block outlives the owners, and an empty one gives an observer of nothing
 export
 template <T type, A type = DefaultAllocator>
 fn __init__(this &ArcWeak<T, A>, other &const Arc<T, A>) void {

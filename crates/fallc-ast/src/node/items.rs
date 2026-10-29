@@ -71,6 +71,14 @@ pub enum ItemKind {
     /// importing module's, and the program's own runs last, so that a module's
     /// initialisation may use whatever it imports.
     Setup(BlockId),
+    /// `if (cond) @constexpr { .. } else { .. }` at the top level.
+    ///
+    /// Only the branch the condition selects is declared: the other is read but
+    /// not checked, so it may name things this build does not have. That is
+    /// what makes it a way to write a program that changes shape with its
+    /// build, and it is the top-level form of the `if (c) @constexpr` that runs
+    /// inside a function.
+    Conditional(ConditionalItems),
     /// A top-level declaration the parser could not recognise.
     Unresolved(Unresolved),
 }
@@ -933,4 +941,15 @@ impl InterfaceDecl {
             span: self.span,
         }
     }
+}
+
+/// `if (cond) @constexpr { .. } else { .. }` around top-level declarations.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ConditionalItems {
+    /// The condition. It **must** be a compile-time constant.
+    pub condition: crate::node::ExprId,
+    /// The declarations the condition selects when it holds.
+    pub then_items: Vec<super::ItemId>,
+    /// The declarations selected otherwise, when there is an `else`.
+    pub else_items: Vec<super::ItemId>,
 }

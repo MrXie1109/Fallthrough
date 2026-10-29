@@ -248,6 +248,18 @@ impl Expander<'_> {
                     rhs: self.expr(node.rhs),
                 },
             ),
+            fallc_ast::ExprKind::Range(node) => fallc_ast::ExprKind::Range(
+                fallc_ast::RangeExpr {
+                    low: self.expr(node.low),
+                    high: self.expr(node.high),
+                    inclusive: node.inclusive,
+                },
+            ),
+            fallc_ast::ExprKind::ArrayLiteral(node) => fallc_ast::ExprKind::ArrayLiteral(
+                fallc_ast::ArrayLiteral {
+                    elements: node.elements.iter().map(|&e| self.expr(e)).collect(),
+                },
+            ),
             fallc_ast::ExprKind::Unary(node) => fallc_ast::ExprKind::Unary(
                 fallc_ast::UnaryExpr {
                     op: node.op,
@@ -342,6 +354,17 @@ impl Expander<'_> {
             fallc_ast::ExprKind::Propagate(node) => fallc_ast::ExprKind::Propagate(
                 fallc_ast::PropagateExpr {
                     value: self.expr(node.value),
+                },
+            ),
+            fallc_ast::ExprKind::Builtin(node) => {
+                fallc_ast::ExprKind::Builtin(node.clone())
+            }
+            fallc_ast::ExprKind::Block(block) => fallc_ast::ExprKind::Block(*block),
+            fallc_ast::ExprKind::IfValue(node) => fallc_ast::ExprKind::IfValue(
+                fallc_ast::IfValueExpr {
+                    condition: self.expr(node.condition),
+                    then_block: node.then_block,
+                    else_block: node.else_block,
                 },
             ),
             fallc_ast::ExprKind::Abort(node) => fallc_ast::ExprKind::Abort(
@@ -482,6 +505,7 @@ impl Expander<'_> {
             ),
             fallc_ast::StmtKind::If(node) => fallc_ast::StmtKind::If(fallc_ast::IfStmt {
                 is_constexpr: node.is_constexpr,
+                probes_compilable: node.probes_compilable,
                 condition: self.expr(node.condition),
                 condition_attrs: node.condition_attrs.clone(),
                 then_block: self.block(node.then_block),
@@ -599,7 +623,10 @@ impl Expander<'_> {
                             self.tree
                                 .builder()
                                 .alloc_stmt(fallc_ast::StmtKind::Expr(
-                                    fallc_ast::ExprStmt { expr: cloned },
+                                    fallc_ast::ExprStmt {
+                                        expr: cloned,
+                                        yields_value: false,
+                                    },
                                 ), statement_span),
                         );
                     }
@@ -607,6 +634,7 @@ impl Expander<'_> {
                 }
                 fallc_ast::StmtKind::Expr(fallc_ast::ExprStmt {
                     expr: self.expr(expr.expr),
+                    yields_value: expr.yields_value,
                 })
             }
             fallc_ast::StmtKind::StaticAssert(assert) => {

@@ -196,6 +196,60 @@ impl<'ctx> Lowerer<'ctx> {
         Ok(Some(aggregate.as_basic_value_enum()))
     }
 
+    /// Lowers an array literal, `{a, b, c}`, to the array value it names.
+    ///
+    /// The elements are lowered in order and inserted into an aggregate one at
+    /// a time; the aggregate's type is the literal's own type, which the
+    /// checker gave it from the position the literal was written in. An empty
+    /// literal gives the zero-length array, which has no elements to insert.
+    pub(super) fn lower_array_literal(
+        &mut self,
+        ast: &Ast,
+        types: &TypeTable,
+        builder: &Builder<'static>,
+        expr: fallc_ast::ExprId,
+        literal: &fallc_ast::ArrayLiteral,
+        span: fallc_span::Span,
+    ) -> Result<Option<BasicValueEnum<'static>>, CodegenError> {
+        let ty = types
+            .get(expr)
+            .cloned()
+            .ok_or_else(|| CodegenError::waiting_for_spec("this array literal's type", span))?;
+        let mapped = TypeMapper::new(self.backend.context())
+            .map(&ty)
+            .ok_or_else(|| CodegenError::waiting_for_spec("this array type", span))?;
+        let inkwell::types::BasicTypeEnum::ArrayType(array_ty) = mapped else {
+            return Err(CodegenError::Emit(
+                "internal error: an array literal is not an array".to_owned(),
+            ));
+        };
+        let mut aggregate = array_ty.get_undef();
+        for (index, &element) in literal.elements.iter().enumerate() {
+            let value = self
+                .lower_expr(ast, types, builder, element)?
+                .ok_or_else(|| CodegenError::waiting_for_spec("this array element", span))?;
+            let slot = u32::try_from(index).map_err(|_| {
+                CodegenError::Emit("internal error: an element index exceeds u32".to_owned())
+            })?;
+            aggregate = builder
+                .build_insert_value(aggregate, value, slot, "element")
+                .map_err(|error| CodegenError::Emit(error.to_string()))?
+                .into_array_value();
+        }
+        // An array is reached by address -- `a[i]`, `sizeof`, a loop's `begin`
+        // -- so the value is given storage here and the address is recorded
+        // against the literal, exactly as a call returning an aggregate does.
+        let storage = self.store_temporary(builder, aggregate.as_basic_value_enum(), "array")?;
+        self.temporaries.insert(
+            span,
+            LocalBinding {
+                storage,
+                ty: array_ty.as_basic_type_enum(),
+            },
+        );
+        Ok(Some(aggregate.as_basic_value_enum()))
+    }
+
     /// Lowers a member access to a `getelementptr` and a load.
     ///
     /// `pointer->field` is `(*pointer).field`, so the arrow form first loads
@@ -490,7 +544,14 @@ impl<'ctx> Lowerer<'ctx> {
             (binding.storage, object_ty)
         };
 
-        let Some(nominal) = nominal.as_nominal() else {
+        // `volatile` is a property of the access, not of the type the fields
+        // belong to: a field of a `volatile T` is a field of `T`, reached
+        // through the same layout.
+        let nominal = match &nominal {
+            fallc_sema::Type::Volatile(inner) => inner.as_nominal().cloned(),
+            other => other.as_nominal().cloned(),
+        };
+        let Some(nominal) = nominal else {
             return Err(CodegenError::waiting_for_spec(
                 "member access on a non-struct",
                 span,

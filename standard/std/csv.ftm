@@ -36,9 +36,9 @@ export fn parse_rows(text &const String) Array<Array<String>> except {
     while (index < text.length()) {
         character char = text[index];
         if (quoted) {
-            if (character == '"' as char) {
-                if (index + 1 < text.length() && text[index + 1] == '"' as char) {
-                    field.push('"' as char);
+            if (character == '"') {
+                if (index + 1 < text.length() && text[index + 1] == '"') {
+                    field.push('"');
                     index += 2;
                     continue;
                 }
@@ -50,7 +50,7 @@ export fn parse_rows(text &const String) Array<Array<String>> except {
             index += 1;
             continue;
         }
-        if (character == '"' as char) {
+        if (character == '"') {
             if (!field.empty()) {
                 raise "ValueError": "a quote in the middle of an unquoted field";
             }
@@ -58,13 +58,13 @@ export fn parse_rows(text &const String) Array<Array<String>> except {
             index += 1;
             continue;
         }
-        if (character == ',' as char) {
+        if (character == ',') {
             row.push(field);
             field = String();
             index += 1;
             continue;
         }
-        if (character == '\n' as char) {
+        if (character == '\n') {
             row.push(field);
             rows.push(util.move(row));
             row = Array<String>();
@@ -72,7 +72,7 @@ export fn parse_rows(text &const String) Array<Array<String>> except {
             index += 1;
             continue;
         }
-        if (character == '\r' as char) {
+        if (character == '\r') {
             // A carriage return is the other half of a line break; the newline
             // after it is what ends the row.
             index += 1;
@@ -116,13 +116,19 @@ export fn write_rows(rows &const Array<Array<String>>) String {
 }
 
 // Appends one field, quoting it when the rule requires.
+
+// - `text`: the buffer the field is appended to, quoting and all; its
+//   existing text is kept
+// - `field`: the field's text; quoted when it holds a comma, a quote or a
+//   line break, with every quote inside doubled, and written as it is
+//   otherwise
 fn write_field(text &String, field &const String) void {
     needs_quotes bool = false;
     index usize = 0;
     while (index < field.length()) {
         character char = field[index];
-        if (character == ',' as char || character == '"' as char
-            || character == '\n' as char || character == '\r' as char)
+        if (character == ',' || character == '"'
+            || character == '\n' || character == '\r')
         {
             needs_quotes = true;
         }
@@ -136,7 +142,7 @@ fn write_field(text &String, field &const String) void {
     index = 0;
     while (index < field.length()) {
         character char = field[index];
-        if (character == '"' as char) {
+        if (character == '"') {
             text.push('"');
         }
         text.push(character);

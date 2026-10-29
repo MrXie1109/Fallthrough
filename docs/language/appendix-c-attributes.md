@@ -34,8 +34,33 @@ and `@cold` suggest, and a conforming implementation may ignore either.
 | `@enable_if(cond)` | one condition | the declaration exists only when `cond` is true; `cond` **must** be a compile-time constant |
 | `@constexpr` | — | the function may be called in a constant position |
 | `@extern_C` | — | use the C ABI: the symbol is not mangled |
+| `@overridable` | — | a default implementation; a definition of the same name replaces it |
 
 C.3.1 `@noreturn` on a function returning anything but `void` is an error.
+
+C.3.1.1 `@overridable` states a fallback. A definition of the same name and the same
+parameter list elsewhere in the program replaces it, with nothing written at the call
+site: the default is a candidate only while no other definition of the name exists. The
+replaced default is not checked and emits no symbol, so the two never meet.
+
+```ft
+import C;
+
+@overridable fn scale(n int) int { return n * 2; }
+
+fn scale(n int) int { return n * 10; }
+
+fn main() int {
+    C.printf("%d\n", scale(3));
+    return 0;
+}
+```
+
+This program prints `30`: the program's own `scale` replaced the library's default, so the
+call reached the doubling one never.
+
+C.3.1.2 Two definitions that are *not* `@overridable` do not replace each other: a call
+that fits both is ambiguous and is reported (`S0037`).
 
 C.3.2 `@enable_if` is decided once per instantiation. For a template it is evaluated with
 the deduced arguments, which is what makes a member exist for some arguments and not for

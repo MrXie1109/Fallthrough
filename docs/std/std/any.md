@@ -1,0 +1,340 @@
+# `std.any`
+
+A value of any type, kept as its text and the name of its type.
+
+`Any` lets one holder carry values of different types: the value is rendered
+and remembered with its type's name, and the accessors turn it back. A wrong
+question raises instead of reinterpreting bits.
+
+    held Any = Any(42);
+    std.print("{} {}\n", held.type_name(), held as int??)??;
+
+# Why text
+
+The language has two ways to carry a value whose type is not known here: an
+interface needs the concrete type to declare the methods, and a box needs to
+know the type. Both are per-type work the holder cannot do for a caller it
+has not met. A value's rendering and its type's name are the two things every
+type already has, so they are what the holder stores -- enough for printing,
+comparing, and turning back into a number or text when the caller names the
+type. It is the representation a config value or a JSON node wants.
+
+The price is that two values that render alike are equal: `Any(1)` and
+`Any(1u8)` differ only in their type names, and `Any(1.0)` and `Any(1)`
+differ in both.
+
+## Declarations
+
+### `export type Any {`
+
+A value of any type, as text and a type name.
+
+```
+export type Any {
+    // The value's rendering.
+    _text String;
+    // The value's type's name, as the accessors compare it.
+    _type String;
+    // Whether the holder holds anything.
+    _present bool;
+}
+```
+
+### `export fn __init__(this &Any) void {`
+
+Creates an empty holder.
+
+```
+export fn __init__(this &Any) void {
+    (&this._text)->__init__();
+    (&this._type)->__init__();
+    this._present = false;
+}
+```
+
+### `export fn __im_init__(this &Any, value bool) void {`
+
+Boxes a `bool`.
+
+```
+export fn __im_init__(this &Any, value bool) void {
+    (&this._text)->__init__(str(value));
+    (&this._type)->__init__(String("bool"));
+    this._present = true;
+}
+```
+
+### `export fn __im_init__(this &Any, value int) void {`
+
+Boxes an `int`.
+
+```
+export fn __im_init__(this &Any, value int) void {
+    (&this._text)->__init__(str(value));
+    (&this._type)->__init__(String("int"));
+    this._present = true;
+}
+```
+
+### `export fn __im_init__(this &Any, value f64) void {`
+
+Boxes a real.
+
+```
+export fn __im_init__(this &Any, value f64) void {
+    (&this._text)->__init__(str(value));
+    (&this._type)->__init__(String("f64"));
+    this._present = true;
+}
+```
+
+### `export fn __im_init__(this &Any, value &const String) void {`
+
+Boxes text.
+
+```
+export fn __im_init__(this &Any, value &const String) void {
+    (&this._text)->__init__(value);
+    (&this._type)->__init__(String("String"));
+    this._present = true;
+}
+```
+
+### `export fn __im_init__(this &Any, value *const char) void {`
+
+Boxes a string literal or C string as text.
+
+```
+export fn __im_init__(this &Any, value *const char) void {
+    (&this._text)->__im_init__(value);
+    (&this._type)->__init__(String("String"));
+    this._present = true;
+}
+```
+
+### `export fn __init__(this &Any, other &const Any) void {`
+
+Makes a copy of another holder.
+
+```
+export fn __init__(this &Any, other &const Any) void {
+    (&this._text)->__init__(other._text);
+    (&this._type)->__init__(other._type);
+    this._present = other._present;
+}
+```
+
+### `export fn __init__(this &Any, other &&Any) void {`
+
+Takes another holder's text.
+
+```
+export fn __init__(this &Any, other &&Any) void {
+    (&this._text)->__init__();
+    (&this._type)->__init__();
+    this._text = util.move(other._text);
+    this._type = util.move(other._type);
+    this._present = other._present;
+    other._present = false;
+}
+```
+
+### `export fn __assign__(this &Any, other &const Any) void {`
+
+Copies another holder into this one.
+
+```
+export fn __assign__(this &Any, other &const Any) void {
+    this._text = other._text;
+    this._type = other._type;
+    this._present = other._present;
+}
+```
+
+### `export fn __assign__(this &Any, other &&Any) void {`
+
+Moves another holder's text into this one.
+
+```
+export fn __assign__(this &Any, other &&Any) void {
+    this._text = util.move(other._text);
+    this._type = util.move(other._type);
+    this._present = other._present;
+    other._present = false;
+}
+```
+
+### `export fn __drop__(this &Any) void {`
+
+Releases the text.
+
+```
+export fn __drop__(this &Any) void {
+    (&this._text)->__drop__();
+    (&this._type)->__drop__();
+}
+```
+
+### `export fn present(this &const Any) bool {`
+
+Whether the holder holds anything.
+
+```
+export fn present(this &const Any) bool {
+    return this._present;
+}
+```
+
+### `export fn __bool__(this &const Any) bool {`
+
+Whether the holder holds anything, for `if (held)`.
+
+```
+export fn __bool__(this &const Any) bool {
+    return this._present;
+}
+```
+
+### `export fn type_name(this &const Any) String {`
+
+The name of the held type, or an empty string when empty.
+
+```
+export fn type_name(this &const Any) String {
+    if (!this._present) {
+        return String();
+    }
+    return this._type;
+}
+```
+
+### `export fn text(this &const Any) String {`
+
+The held value rendered as text.
+
+```
+export fn text(this &const Any) String {
+    if (!this._present) {
+        return String();
+    }
+    return this._text;
+}
+```
+
+### `export fn __str__(this &const Any) String {`
+
+The held value rendered as text.
+
+```
+export fn __str__(this &const Any) String {
+    return this.text();
+}
+```
+
+### `export fn __format__(this &const Any) String {`
+
+The held value rendered as text.
+
+```
+export fn __format__(this &const Any) String {
+    return this.text();
+}
+```
+
+### `export fn reset(this &Any) void {`
+
+Forgets the value.
+
+```
+export fn reset(this &Any) void {
+    (&this._text)->__drop__();
+    (&this._type)->__drop__();
+    (&this._text)->__init__();
+    (&this._type)->__init__();
+    this._present = false;
+}
+```
+
+### `export fn __as__(this &const Any, target *int) int except {`
+
+The held value as an `int`, or a raise when the type or the text is not one.
+
+```
+export fn __as__(this &const Any, target *int) int except {
+    if (!this._present || !(this._type == String("int"))) {
+        raise "TypeError": "the holder does not contain an int";
+    }
+    return this._text as int??;
+}
+```
+
+### `export fn __as__(this &const Any, target *f64) f64 except {`
+
+The held value as a real, or a raise when the type or the text is not one.
+
+```
+export fn __as__(this &const Any, target *f64) f64 except {
+    if (!this._present || !(this._type == String("f64"))) {
+        raise "TypeError": "the holder does not contain a real";
+    }
+    return this._text as f64??;
+}
+```
+
+### `export fn __as__(this &const Any, target *bool) bool except {`
+
+The held value as a `bool`, or a raise when the type or the text is not one.
+
+```
+export fn __as__(this &const Any, target *bool) bool except {
+    if (!this._present || !(this._type == String("bool"))) {
+        raise "TypeError": "the holder does not contain a bool";
+    }
+    if (this._text == String("true")) {
+        return true;
+    }
+    if (this._text == String("false")) {
+        return false;
+    }
+    raise "TypeError": "the holder does not contain a bool";
+}
+```
+
+### `export fn __as__(this &const Any, target *String) String except {`
+
+The held value as text, or a raise when the type or the text is not one.
+
+```
+export fn __as__(this &const Any, target *String) String except {
+    if (!this._present || !(this._type == String("String"))) {
+        raise "TypeError": "the holder does not contain text";
+    }
+    return this._text;
+}
+```
+
+### `export fn __eq__(this &const Any, other &const Any) bool {`
+
+Whether two holders describe equal values of the same type.
+
+```
+export fn __eq__(this &const Any, other &const Any) bool {
+    if (this._present != other._present) {
+        return false;
+    }
+    if (!this._present) {
+        return true;
+    }
+    return this._type == other._type && this._text == other._text;
+}
+```
+
+### `export fn __ne__(this &const Any, other &const Any) bool {`
+
+Whether two holders differ.
+
+```
+export fn __ne__(this &const Any, other &const Any) bool {
+    return !(this == other);
+}
+```

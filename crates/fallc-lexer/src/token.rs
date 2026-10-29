@@ -341,8 +341,6 @@ pub enum Keyword {
     Delete,
     /// `defer` — runs a block when its scope exits.
     Defer,
-    /// `dynamic` — the dynamic link kind in a `link` declaration.
-    Dynamic,
     /// `enum`
     ///
     /// Declares a named integer type whose values have names: `enum Color int
@@ -456,7 +454,6 @@ impl Keyword {
             Keyword::Define => "define",
             Keyword::Delete => "delete",
             Keyword::Defer => "defer",
-            Keyword::Dynamic => "dynamic",
             Keyword::Enum => "enum",
             Keyword::Union => "union",
             Keyword::Break => "break",
@@ -528,7 +525,6 @@ pub static KEYWORDS: &[(&str, Keyword)] = &[
     ("defer", Keyword::Defer),
     ("define", Keyword::Define),
     ("delete", Keyword::Delete),
-    ("dynamic", Keyword::Dynamic),
     ("else", Keyword::Else),
     ("enum", Keyword::Enum),
     ("except", Keyword::Except),
@@ -599,6 +595,10 @@ pub enum Punctuation {
     Comma,
     /// `...` — a variadic parameter list.
     DotDotDot,
+    /// `..` — a range: `low .. high`, the high end excluded.
+    DotDot,
+    /// `..=` — a range with the high end included.
+    DotDotEq,
     /// `.` — member access, as in `e.type()` and `std.exception()`.
     Dot,
     /// `.{` — the designated-initialiser opener.
@@ -720,6 +720,8 @@ impl Punctuation {
             Punctuation::Comma => ",",
             Punctuation::Dot => ".",
             Punctuation::DotDotDot => "...",
+            Punctuation::DotDot => "..",
+            Punctuation::DotDotEq => "..=",
             Punctuation::DotBrace => ".{",
             Punctuation::Dollar => "$",
             Punctuation::At => "@",
@@ -850,7 +852,9 @@ pub static PUNCTUATION: &[(&str, Punctuation)] = &[
     ("-=", Punctuation::MinusEq),
     ("->", Punctuation::Arrow),
     (".", Punctuation::Dot),
+    ("..", Punctuation::DotDot),
     ("...", Punctuation::DotDotDot),
+    ("..=", Punctuation::DotDotEq),
     (".{", Punctuation::DotBrace),
     ("/", Punctuation::Slash),
     ("/=", Punctuation::SlashEq),

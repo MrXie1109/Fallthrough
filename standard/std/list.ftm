@@ -52,7 +52,21 @@ fn __init__(this &List<T>) void {
     this._len = 0;
 }
 
-// Appends `value`.
+// Adds `value` at the end.
+//
+// The same operation as `push_back`, under the shorter name.
+//
+// - `value`: the element to copy into a new node at the back
+export
+template <T type>
+fn push(this &List<T>, value T) void {
+    this.push_back(value);
+}
+
+// Adds `value` at the end.
+//
+// - `value`: the element to copy into a new node at the back, which becomes
+//   the list's last element
 export
 template <T type>
 fn push_back(this &List<T>, value T) void {
@@ -70,6 +84,9 @@ fn push_back(this &List<T>, value T) void {
 }
 
 // Prepends `value`.
+//
+// - `value`: the element to copy into a new node at the front, which becomes
+//   the list's first element
 export
 template <T type>
 fn push_front(this &List<T>, value T) void {
@@ -113,6 +130,10 @@ fn pop_back(this &List<T>) ?T {
 }
 
 // Unlinks and frees `node`, taking its value out first.
+//
+// - `node`: the node to remove, which must belong to this list and not be
+//   null; its value is destroyed and the node is freed, so nothing may use it
+//   afterwards
 template <T type>
 fn unlink(this &List<T>, node *ListNode<T>) void {
     if (node._previous != nullptr) {
@@ -217,6 +238,9 @@ fn __init__(this &ListIterator<T>) void {
 }
 
 // Creates a position at `node`.
+//
+// - `node`: the node the position stands on; null makes the end position, the
+//   same position the constructor without an argument makes
 export
 template <T type>
 fn __init__(this &ListIterator<T>, node *ListNode<T>) void {
@@ -240,6 +264,9 @@ fn __deref__(this &ListIterator<T>) &T {
 }
 
 // Whether two positions stand on the same node.
+//
+// - `other`: the position to compare with; two end positions are equal, and a
+//   position equals itself
 export
 template <T type>
 fn __eq__(this &const ListIterator<T>, other &const ListIterator<T>) bool {
@@ -247,8 +274,25 @@ fn __eq__(this &const ListIterator<T>, other &const ListIterator<T>) bool {
 }
 
 // Whether two positions stand on different nodes.
+//
+// - `other`: the position to compare with; this is the negation of `==`, so a
+//   position is never unequal to itself
 export
 template <T type>
 fn __ne__(this &const ListIterator<T>, other &const ListIterator<T>) bool {
     return this._node != other._node;
+}
+
+// The first position, read only, named as C++ names it.
+export
+template <T type>
+fn cbegin(this &const List<T>) ListIterator<T> {
+    return this.begin();
+}
+
+// The one-past-the-end position, read only, named as C++ names it.
+export
+template <T type>
+fn cend(this &const List<T>) ListIterator<T> {
+    return this.end();
 }

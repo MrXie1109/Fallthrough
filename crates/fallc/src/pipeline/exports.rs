@@ -84,7 +84,7 @@ pub(super) fn external_signature(
     // call site asked for the bare name while the module emitted a mangled one,
     // and the link failed with an undefined symbol.
     //
-    // A function implemented elsewhere keeps its declared name: `extern "C"`
+    // A function implemented elsewhere keeps its declared name: `@extern_C`
     // names a symbol the C library exports under exactly that spelling, and
     // mangling it would look for something that was never there.
     let symbol = if signature.instantiated {

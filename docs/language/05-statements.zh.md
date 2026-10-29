@@ -59,23 +59,58 @@
 选中，`@unlikely` 表示很少被选中。
 
 ```ft
-if (ready) @likely {
-    run();
-} else @unlikely {
-    wait();
+import C;
+
+fn run() int { return 1; }
+fn wait() int { return 2; }
+
+fn classify(code int) int {
+    switch (code) {
+        case 200 @likely:
+            return 1;
+        default:
+            return 0;
+    }
 }
 
-switch (code) {
-    case 200 @likely:
-        return OK;
-    default:
-        return ERROR;
+fn main() int {
+    ready bool = true;
+    if (ready) @likely {
+        C.printf("run=%d\n", run());
+    } else @unlikely {
+        C.printf("wait=%d\n", wait());
+    }
+    C.printf("%d %d\n", classify(200), classify(500));
+    return 0;
 }
 ```
+
+该程序先输出 `run=1`，再输出 `1 0`。权重是对代码生成的建议，不是条件：走哪个分支
+只由 `ready` 与 `code` 决定。
 
 3.2.6 分支权重只影响代码生成，不改变求值顺序与结果；同一分支**最多**写一个权重
 属性。把它写在其他位置是错误。
 
+3.2.7 在需要值的位置上，两个分支都有的 `if` 本身就是那个值：每个分支是一个块，块给出什么，
+`if` 就给出什么（见 [09 作用域 §2.2](09-scopes.zh.md#作用域)）。两个分支**必须**给出相同的
+类型；没有 `else` 的 `if` 给不出值。两边都是单个表达式时，条件表达式 `cond ? a : b` 表达
+同一件事。
+
+```ft
+import C;
+import std;
+
+fn sign(n int) int { return if (n < 0) { -1 } else { 1 }; }
+
+fn main() int except {
+    C.printf("%d %d\n", sign(-5), sign(5));
+    return 0;
+}
+```
+
+该程序输出 `-1 1`：这个 `if` 就是 `sign` 返回的值，每个分支的块给出其中写下的那个数。
+
+### 编译期断言
 ### 编译期断言
 
 3.3.1 `static_assert(cond)` 或 `static_assert(cond, message)` 在编译期检查
@@ -87,15 +122,64 @@ switch (code) {
 
 3.3.4 条件**必须**是编译器能够求值的常量。
 
+### 探测一个块能否编译
+
+3.4.1 `if (auto) @constexpr { … } else { … }` 请编译器**试着**编译后面的块。条件不写：
+问题就是那个块能否编译。能，则块就是程序；不能，则 `else` 块是，而试编期间产生的诊断
+被丢弃。
+
+3.4.2 没被选中的一侧**完全不作检查**，所以块里可以写对某些类型并不存在的名字。只有致命
+诊断才让试编失败：警告——比如某个变量从未被读过——不算。
+
+3.4.3 问一个**名字**能否编译用 `@meta.compilable(T)`（见
+[07 表达式 §7.9](07-expressions.zh.md#编译期查询)）；问一个**块**能否编译用
+`if (auto) @constexpr`。
+
+```ft
+import C;
+import std;
+
+type Point { x int; y int; }
+
+fn main() int except {
+    if (auto) @constexpr {
+        p Point = .{1, 2};
+        n int = p.x;
+        C.printf("a Point has x\n");
+    } else {
+        C.printf("no point here\n");
+    }
+    return 0;
+}
+```
+
+该程序输出 `a Point has x`：块能编译，所以保留的是它。若块里写了 `Point` 没有的字段，
+走的就会是 `else`，而对这次试编不会报告任何东西。
 ## 循环
 
 4.1 三种循环形式都可以带 `else` 子句。
 
 ```ft
-while (cond) { ... } else { ... }
-for (init; cond; update) { ... } else { ... }
-for (item T : range) { ... } else { ... }
+import C;
+
+fn main() int {
+    n int = 0;
+    while (n < 3) {
+        n = n + 1;
+    } else {
+        C.printf("while else ran\n");
+    }
+    for (i int = 0; i < 2; i = i + 1) {
+        C.printf("%d ", i);
+    } else {
+        C.printf("for else ran\n");
+    }
+    return 0;
+}
 ```
+
+该程序先输出 `while else ran`，再输出 `0 1 for else ran`：循环的 `else` 在循环未经过
+`break` 而正常结束时执行，这里两个循环都是如此。
 
 4.1.1 `else` 子句在循环正常结束时执行：条件变为假，或范围形式走到 `end()`。
 
@@ -153,8 +237,86 @@ for (; $it != $end; ++$it) {
 
 5.1.4 遍历期间**不得**使容器增长或重新分配；此类行为是未定义行为。
 
-5.1.5 数组与字符串字面量本身不提供 `begin()`/`end()`，**不得**直接作为范围循环的
-范围。
+5.1.5 定长数组按键的元素遍历。它的 `begin()` 与 `end()` 来自标准库，标准库为每一种
+元素类型和长度只声明一次：
+
+```ft
+export
+template <T type, N usize>
+fn begin(this &const [N]const T) *const T {
+    return &this[0];
+}
+```
+
+长度 `N` 由实参自身的长度推出，所以一处声明服务所有数组。字符串字面量就是
+`[N]c8`，因此按同样的方式遍历，**可以**直接作为范围循环的范围：
+
+```ft
+import C;
+import std;
+
+fn main() int except {
+    for (ch c8 : "abc") {
+        C.printf("%c ", ch);
+    }
+    C.printf("\n");
+    return 0;
+}
+```
+
+该程序输出 `a b c`。
+
+5.1.6 定长数组的元素连续排列，因此迭代器是指向它的指针，`end()` 就是
+`begin() + N`。具名数组就地遍历；字面量先绑定到临时对象，这是 5.1.2 的要求。
+
+### 以范围为被遍历对象
+
+5.2.1 遍历一段整数序列的常规写法是范围字面量。`1 .. n` 走 1 到 `n - 1`，`1 ..= n`
+走 1 到 `n`（见 [01 词法 §6.6](01-lexical.zh.md#范围字面量)）。循环变量是 `i64`，
+即 `Range` 的元素类型：
+
+```ft
+import C;
+import std;
+
+fn main() int except {
+    total i64 = 0i64;
+    for (i i64 : 1 ..= 10) {
+        total += i;
+    }
+    C.printf("%ld\n", total);
+    return 0;
+}
+```
+
+该程序输出 `55`，即 1 到 10 之和：`..=` 含上界，所以遍历到 10。
+
+5.2.2 范围循环的对象可以是任何支持上表所列操作的值，范围字面量是其中之一。`Range`
+值也可以存下来反复遍历，同一个范围用两次就是走两遍：它是值，不是游标。
+
+5.2.3 给 `[N]T` 补上这两个操作，定长数组就能遍历。长度是模板的值参数，所以一份声明适用
+于所有长度；数组字面量也是普通对象：
+
+```ft
+import C;
+import std;
+
+template <T type, N usize>
+fn begin(this &const [N]T) *const T { return &this[0]; }
+template <T type, N usize>
+fn end(this &const [N]T) *const T { return &this[0] + N; }
+
+fn main() int except {
+    for (ch c8 : "abc") { C.printf("%c ", ch); }
+    C.printf("| ");
+    for (v int : {10, 20, 30}) { C.printf("%d ", v); }
+    C.printf("\n");
+    return 0;
+}
+```
+
+该程序输出 `a b c | 10 20 30 `：字符串字面量是 `[N]const c8`，数组字面量是 `[N]T`，
+两者都经上面两个声明遍历。末尾的空格是循环体在最后一个元素之后写出的那个。
 
 ## `switch`
 

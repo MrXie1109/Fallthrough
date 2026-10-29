@@ -31,9 +31,13 @@ parameters, constants and trait parameters.
 | `auto`, `type(auto)` | only for declarations and return types whose type is deduced |
 
 2.3 The qualifiers `const` and `volatile` are written before the type and constrain the
-layer of indirection that follows them. Declaration modifiers (`static`, `mutable`,
+layer of indirection that follows them. Declaration modifiers (`@static`, `mutable`,
 `@align`) are written after the type, see
 [03 Declarations](03-declarations.md#declaration-modifiers).
+
+2.4 A range has no type of its own: `1 .. 10` is an `i64` range, which is the standard
+library's `Range`, so a range is written wherever a `Range` is expected. Its lexical form
+is given in [01 Lexical §6.6](01-lexical.md#range-literals).
 
 ## Basic types
 
@@ -179,11 +183,82 @@ reference is an error.
 
 7.1.1 Array elements are inlined in the array object, with no level of indirection.
 
-7.1.2 In argument position an array is **adjusted** to a pointer to its first element,
-`*T`.
+7.1.1.1 An array has no layer of its own for a qualifier to sit on: its elements **are**
+the array. `const [N]T`, `[N]const T` and `const [N]const T` therefore denote **one type**,
+in which the elements are read-only, and writing an element of any of them is an error
+(`S0044`). This is what distinguishes an array from a pointer, where `const *T` and `*const
+T` are two types: a pointer has a layer of its own.
+
+```ft
+import C;
+import std;
+
+fn read(a const [4]c8) c8 { return a[0]; }
+
+fn main() int except {
+    C.printf("%c\n", read("abc"));
+    return 0;
+}
+```
+
+This program prints `a`: `const [4]c8` and the `[4]const c8` a string literal has are the
+same type, so the literal is the argument.
+
+7.1.2 An array is an ordinary value: passing one to a `[N]T` parameter **copies** it, so a
+function that writes an element of its parameter does not change the caller's array. This
+is what makes `[4]int` a first-class type rather than a spelling of a pointer.
+
+7.1.2.1 A call whose parameter is `*T` takes an array of `T` by *adjusting* it to a
+pointer to its first element, as C does. The adjustment is only that direction: an array
+is not a pointer, and a `[N]T` parameter is not satisfied by a `*T`.
+
+```ft
+import C;
+import std;
+
+fn by_value(a [3]int) int { a[0] = 99; return a[0]; }
+fn by_pointer(p *int) int { return p[0]; }
+
+fn main() int except {
+    a [3]int = {1, 2, 3};
+    C.printf("%d %d %d\n", by_value(a), by_pointer(a), a[0]);
+    return 0;
+}
+```
+
+This program prints `99 1 1`: the parameter `a` of `by_value` is a copy, whose first
+element the body changed; the caller's array still begins with 1, and `by_pointer` read
+that same first element through the adjusted pointer.
 
 7.1.3 An array **must not** be returned by value. When a function's return type has
 array form, the implementation **must** report a diagnostic.
+
+7.1.4 An array literal is written `{a, b, c}` in an expression. Its **length is the
+number of elements**, so it is not written out: `{1, 2, 3}` is a `[3]int` once the
+element type is known. This is a different form from `.{ … }`, which is the aggregate
+initialiser and takes its type from the declaration it initialises.
+
+7.1.5 A length may be a template's value parameter: `template <N usize> fn f(a &const
+[N]int)` accepts an array of any length, with `N` bound to it. `[N]T` against a
+`[4]const c8` binds `N` to 4 and `T` to `c8`; the element's own qualifier is not part of
+`T`.
+
+```ft
+import C;
+import std;
+
+fn sum(a [3]int) int { return a[0] + a[1] + a[2]; }
+
+fn main() int except {
+    a [3]int = {1, 2, 3};
+    b auto = {4, 5, 6};
+    C.printf("%d %d %d\n", sum(a), a[2], b[1]);
+    return 0;
+}
+```
+
+This program prints `6 3 5`: `{1, 2, 3}` is a three-element array, and `b auto = {4, 5, 6}`
+gives `b` the same type.
 
 ### Subscripts
 
@@ -201,6 +276,8 @@ spelling; multiple values are carried by a nominal type.
 ### Declaration forms
 
 ```ft
+import C;
+
 type Point {
     x int;
     y int;
@@ -218,7 +295,22 @@ enum Color int {
 }
 
 type Id = usize;
+
+fn main() int {
+    p Point = .{1, 2};
+    v Value;
+    v.i = 65;
+    id Id = 7usize;
+    C.printf("%d %d\n", p.x, p.y);
+    C.printf("%d %d\n", v.i, v.b as int);
+    C.printf("%d %d %ld\n", Color.RED as int, Color.BLUE as int, id as i64);
+    return 0;
+}
 ```
+
+This program prints `1 2`, then `65 65`, then `0 6 7`: the structure's fields are the
+values written, the union's two members read the same 65 because they share an
+address, `RED` is 0, `BLUE` follows `GREEN = 5` as 6, and the alias `Id` is a `usize`.
 
 8.1.1 `type Name { … }` declares a structure: fields are laid out in the order written.
 

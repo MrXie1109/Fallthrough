@@ -551,6 +551,7 @@ pub struct ModuleResolutions {
     pub init_calls: HashMap<Span, String>,
     /// Which method each call resolved to.
     pub method_calls: HashMap<Span, String>,
+    pub indirect_receivers: HashMap<Span, String>,
     /// Which `__assign__` each assignment resolved to.
     pub assign_methods: HashMap<Span, String>,
     /// Where a `__deref__` result is read as a value.
@@ -608,6 +609,7 @@ impl ModuleResolutions {
             in_place_by_address: checked.in_place_by_address.clone(),
             init_calls: checked.init_calls.clone(),
             method_calls: checked.method_calls.clone(),
+            indirect_receivers: checked.indirect_receivers.clone(),
             assign_methods: checked.assign_methods.clone(),
             deref_reads: checked.deref_reads.clone(),
             pointer_targets: checked.pointer_targets.clone(),
@@ -1235,6 +1237,7 @@ pub struct Lowerer<'ctx> {
     /// The checker decides this, because only it knows which definition the
     /// call selected.
     method_calls: HashMap<Span, String>,
+    indirect_receivers: HashMap<Span, String>,
     /// The calls whose callee may raise, so a check follows each one.
     throwing_calls: std::collections::HashSet<Span>,
     /// Those written with `??`, whose exception leaves the function rather than

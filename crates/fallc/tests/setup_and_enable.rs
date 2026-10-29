@@ -1,6 +1,6 @@
-//! `__setup__ { .. }` and `@enable_if(cond)`.
+//! `fn __setup__()` and `@enable_if(cond)`.
 //!
-//! A module's `__setup__` block runs before `main`, after the setups of every
+//! A module's `__setup__` function runs before `main`, after the setups of every
 //! module it imports -- so a module may use what it imports, and the program's
 //! own setup runs last. `@enable_if(cond)` decides whether a declaration
 //! exists: a false condition removes it, so a call finds whatever else is there
@@ -60,7 +60,7 @@ fn a_setup_block_runs_before_main() {
 
 value int = 0;
 
-__setup__ {
+fn __setup__() void {
     value = 41;
     C.printf("setup ");
 }
@@ -81,7 +81,7 @@ fn main() int {
 fn a_setup_may_return_early() {
     let source = r#"import std;
 
-__setup__ {
+fn __setup__() void {
     C.printf("a ");
     if (true) {
         return;
@@ -106,15 +106,15 @@ fn setup_blocks_run_in_dependency_order_with_the_main_module_last() {
     let scratch = Scratch::new("order");
     scratch.write(
         "inner.ftm",
-        "import C;\n\n__setup__ {\n    C.printf(\"inner \");\n}\n",
+        "import C;\n\nfn __setup__() void {\n    C.printf(\"inner \");\n}\n",
     );
     scratch.write(
         "outer.ftm",
-        "import C;\nimport inner;\n\n__setup__ {\n    C.printf(\"outer \");\n}\n",
+        "import C;\nimport inner;\n\nfn __setup__() void {\n    C.printf(\"outer \");\n}\n",
     );
     let main = scratch.write(
         "main.ft",
-        "import C;\nimport outer;\n\n__setup__ {\n    C.printf(\"unit \");\n}\n\nfn main() int {\n    C.printf(\"run\\n\");\n    return 0;\n}\n",
+        "import C;\nimport outer;\n\nfn __setup__() void {\n    C.printf(\"unit \");\n}\n\nfn main() int {\n    C.printf(\"run\\n\");\n    return 0;\n}\n",
     );
     let (built, output) = scratch.build(&[main], "app");
     assert!(built, "the program did not compile");
@@ -123,7 +123,7 @@ fn setup_blocks_run_in_dependency_order_with_the_main_module_last() {
 
 #[test]
 fn a_module_may_have_only_one_setup() {
-    let source = "__setup__ {\n}\n\n__setup__ {\n}\n\nfn main() int {\n    return 0;\n}\n";
+    let source = "fn __setup__() void {\n}\n\nfn __setup__() void {\n}\n\nfn main() int {\n    return 0;\n}\n";
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
     assert!(
@@ -134,7 +134,7 @@ fn a_module_may_have_only_one_setup() {
 
 #[test]
 fn a_setup_block_cannot_return_a_value() {
-    let source = "__setup__ {\n    return 5;\n}\n\nfn main() int {\n    return 0;\n}\n";
+    let source = "fn __setup__() void {\n    return 5;\n}\n\nfn main() int {\n    return 0;\n}\n";
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
     assert!(diagnostics.contains("expected void"), "{diagnostics}");

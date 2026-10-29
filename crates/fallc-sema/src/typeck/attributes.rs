@@ -1,6 +1,6 @@
 //! Attributes, alignment, and the layout questions attributes ask.
 //!
-//! `@align`, `alignas`, `sizeof` and `alignof` all come down to the same
+//! `@align`, `sizeof` and `alignof` all come down to the same
 //! layout rules, so they are answered in one place.
 
 use super::*;
@@ -25,10 +25,10 @@ impl TypeChecker {
         probe.resolve_type_syntax(ty, false)
     }
 
-    /// Reads and checks the `alignas` of each field.
+    /// Reads and checks the `@align` of each field.
     ///
     /// A requested alignment has to be a compile-time constant, a positive
-    /// power of two, and no weaker than the field's own: `alignas` *raises* a
+    /// power of two, and no weaker than the field's own: `@align` *raises* a
     /// field's alignment, and a request that would lower it is a mistake rather
     /// than a hint. What is returned is the requested alignment; the layout
     /// takes the larger of it and the type's own, so a request equal to the
@@ -47,6 +47,7 @@ impl TypeChecker {
         ast: &Ast,
         attrs: &[fallc_ast::Attr],
         name: &str,
+        name_span: fallc_span::Span,
         return_type: &fallc_ast::TypeSyntax,
     ) {
         for attr in attrs {
@@ -101,7 +102,7 @@ impl TypeChecker {
                         Diagnostic::error("`@align` applies to a variable, not to a function")
                             .with_code(DiagnosticCode::sema(157))
                             .with_span(attr.span)
-                            .with_note("write `alignas(..)` after the type of a variable instead"),
+                            .with_note("write `@align(..)` after the type of a variable instead"),
                     );
                 }
                 // Attributes that replace an old declaration keyword. The
@@ -110,6 +111,17 @@ impl TypeChecker {
                 // unknown while their finer semantics are filled in.
                 "must_use" => {
                     self.must_use_functions.insert(name.to_owned());
+                }
+                // `@overridable` marks a default implementation: a library
+                // states one, and a program that writes a definition with the
+                // same name and the same parameter list replaces it. The
+                // replacement is silent, which is the point -- the two do not
+                // meet at a call site, so nothing there has to choose.
+                "overridable" => {
+                    if !attr.arguments.is_empty() {
+                        self.attribute_arity(attr, 0);
+                    }
+                    self.overridable_functions.insert(name_span);
                 }
                 "export" | "extern_C" | "constexpr" | "noinline" | "maybe_unused"
                 | "cold" => {}
@@ -120,8 +132,8 @@ impl TypeChecker {
 
     /// Checks the attributes written before a module-level variable.
     ///
-    /// `@align(..)` is the one that applies, and it is the request `alignas(..)`
-    /// makes, written the other way round.
+    /// `@align(..)` is the one that applies: it raises a declaration's
+    /// alignment above the type's own.
     pub(super) fn check_variable_attributes(
         &mut self,
         ast: &Ast,
@@ -287,7 +299,7 @@ impl TypeChecker {
         );
     }
 
-    /// Reads and checks the `alignas` of a binding.
+    /// Reads and checks the `@align` of a binding.
     ///
     /// The same rules a field's alignment follows: a compile-time constant (or
     /// a type, which is `alignof` of it), a positive power of two, and no
@@ -313,7 +325,7 @@ impl TypeChecker {
 
     /// Applies one alignment request to a binding.
     ///
-    /// `alignas(..)` and `@align(..)` are the same request written two ways, so
+    /// The alignment request is written `@align(..)`, so
     /// the rule about what a request may ask for is stated once.
     pub(super) fn apply_alignment_request(
         &mut self,
@@ -337,7 +349,7 @@ impl TypeChecker {
         };
         if value <= 0 || (value & (value - 1)) != 0 {
             self.diagnostics.push(
-                Diagnostic::error(format!("`alignas({value})` is not a power of two"))
+                Diagnostic::error(format!("`@align({value})` is not a power of two"))
                     .with_code(DiagnosticCode::sema(138))
                     .with_span(span)
                     .with_note("an alignment is a power of two, and it must be positive"),
@@ -348,7 +360,7 @@ impl TypeChecker {
         if value < natural {
             self.diagnostics.push(
                 Diagnostic::error(format!(
-                    "`alignas({value})` is weaker than `{name}`'s own alignment of {natural} byte(s)"
+                    "`@align({value})` is weaker than `{name}`'s own alignment of {natural} byte(s)"
                 ))
                 .with_code(DiagnosticCode::sema(139))
                 .with_span(span)
@@ -362,7 +374,7 @@ impl TypeChecker {
             .insert(name_span, u64::try_from(value).expect("a positive alignment"));
     }
 
-    /// Reads the value an `alignas(..)` asks for.
+    /// Reads the value an `@align(..)` asks for.
     ///
     /// The argument is a constant expression, or a *type*: `alignas(T)` is
     /// `alignas(alignof(T))`, and the two spellings mean the same thing. Which
@@ -425,7 +437,7 @@ impl TypeChecker {
             if value <= 0 || (value & (value - 1)) != 0 {
                 self.diagnostics.push(
                     Diagnostic::error(format!(
-                        "`alignas({value})` is not a power of two"
+                        "`@align({value})` is not a power of two"
                     ))
                     .with_code(DiagnosticCode::sema(138))
                     .with_span(span)
@@ -437,7 +449,7 @@ impl TypeChecker {
             if value < natural {
                 self.diagnostics.push(
                     Diagnostic::error(format!(
-                        "`alignas({value})` is weaker than `{name}`'s own alignment of {natural} byte(s)"
+                        "`@align({value})` is weaker than `{name}`'s own alignment of {natural} byte(s)"
                     ))
                     .with_code(DiagnosticCode::sema(139))
                     .with_span(span)

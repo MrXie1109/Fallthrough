@@ -34,6 +34,9 @@ type Ring {
 }
 
 // Creates a ring with room for `capacity` elements.
+//
+// - `capacity`: how many elements the ring may hold at once; it is fixed for
+//   the ring's whole life, and zero makes a ring that every push fails on
 export
 template <T type>
 fn __init__(this &Ring<T>, capacity usize) void {
@@ -58,12 +61,18 @@ fn __drop__(this &Ring<T>) void {
 }
 
 // The element at logical position `index`.
+//
+// - `index`: the element's position, counting from the oldest element as zero
+//   and never from the buffer's start
 template <T type>
 fn slot(this &Ring<T>, index usize) *T {
     return this._storage + ((this._head + index) % this._cap);
 }
 
 // The element at logical position `index`, read only.
+//
+// - `index`: the element's position, counting from the oldest element as zero
+//   and never from the buffer's start
 template <T type>
 fn slot(this &const Ring<T>, index usize) *const T {
     return this._storage + ((this._head + index) % this._cap);
@@ -98,6 +107,9 @@ fn full(this &const Ring<T>) bool {
 }
 
 // Appends `value`, returning whether there was room.
+//
+// - `value`: the element to copy into the next free slot; it is copied rather
+//   than consumed, and is not stored at all when the ring is full
 export
 template <T type>
 fn push(this &Ring<T>, value T) bool {
@@ -146,6 +158,9 @@ fn back(this &const Ring<T>) ?T {
 }
 
 // The element at logical position `index`, or an absent optional.
+//
+// - `index`: the element's position, counting from the oldest element as zero;
+//   at or past the length there is no such element and the result is absent
 export
 template <T type>
 fn get(this &const Ring<T>, index usize) ?T {

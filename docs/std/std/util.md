@@ -1,0 +1,226 @@
+# `std.util`
+
+The pieces the rest of the library is built from.
+
+Nothing here is a data structure: these are the primitives a value type is
+written with. `fake` gives a value no program can have, so that `except(expr)`
+can ask about a type's behaviour without constructing anything; `move` names a
+move explicitly, for the same reason -- "does this type's move assignment
+raise?" can only be asked about a value that is dying, and a named value is not
+dying. The allocator and the aborting primitive follow. The types built on top
+of them -- `Box`, `Rc`, the containers -- live in their own modules, so that a
+program can take the allocation primitives without taking the data structures.
+
+## Declarations
+
+### `fn fake() T`
+
+A value that exists only for a compile-time probe.
+
+`except(expr)` asks a question about the *type* of an expression -- "would
+this possibly raise?" -- and to ask it the expression has to be writeable
+without any value existing. That is what `fake<T>()` is: a call the checker
+analyses and never emits.
+
+The return type is the parameter itself, which is what makes the two probe
+spellings mean what they look like: `fake<&T>()` is a place of type `T`, so
+it can stand on the left of `=`, and `fake<&&T>()` is an rvalue, so it
+selects the move form.
+
+The body panics so that a program which somehow calls it says so, rather than
+returning whatever the stack held. Reaching it means the probe escaped into
+code that runs, which is a compiler bug.
+
+```
+export
+template <T type>
+fn fake() T
+```
+
+### `fn move(value &T) &&T`
+
+An explicit move.
+
+The language moves a value when the compiler can see that it is dying -- a
+call's result, a temporary. A named value is not dying, so this is how a
+program says "treat this one as if it were": the reference it returns is an
+rvalue reference, which is what selects the move constructor or the move form
+of an assignment.
+
+- `value`: the lvalue to turn into an rvalue reference
+
+```
+export
+template <T type>
+fn move(value &T) &&T
+```
+
+### `fn forward(value T) &&T`
+
+Forwards a value with the value category the caller gave it.
+
+The template argument is the deduced `T` of a forwarding reference: when the
+caller passed an lvalue, `T` is `&U` and this returns an lvalue; when it
+passed an rvalue, `T` is `U` and this returns an rvalue reference. That is
+what lets a wrapper hand its own argument on without deciding for the caller
+whether it may be moved from.
+
+- `value`: the argument to pass on with the caller's value category
+
+```
+export
+template <T type>
+fn forward(value T) &&T
+```
+
+### `export fn alloc(size usize) *byte {`
+
+--------------------------------------------------------------- memory
+Allocates `size` bytes of uninitialised memory.
+
+The result is `*byte`, the untyped pointer, which converts to and from a
+pointer to anything. C's `malloc` returns null on failure, which the caller
+must check.
+
+```
+export fn alloc(size usize) *byte {
+    return C.malloc(size);
+}
+```
+
+### `export fn allocate(size usize) *byte {`
+
+Allocates `size` bytes, or aborts.
+
+Running out of memory is not a condition the language handles: a value being
+built has nowhere to go and a constructor has no way to raise. Aborting is
+defined behaviour, and the message says what happened. The one path that must
+not abort -- building an exception's own texts -- asks `alloc` and checks,
+because those texts are short enough to live inside the value itself.
+
+```
+export fn allocate(size usize) *byte {
+    space *byte = alloc(size);
+    if (space == nullptr) {
+        panic("out of memory");
+    }
+    return space;
+}
+```
+
+### `export fn calloc(count usize, size usize) *byte {`
+
+Allocates `count * size` bytes, zeroed.
+
+```
+export fn calloc(count usize, size usize) *byte {
+    return C.calloc(count, size);
+}
+```
+
+### `export fn realloc(pointer *byte, size usize) *byte {`
+
+Resizes an allocation, which may move it.
+
+```
+export fn realloc(pointer *byte, size usize) *byte {
+    return C.realloc(pointer, size);
+}
+```
+
+### `export fn free(pointer *byte) void {`
+
+Releases an allocation.
+
+Freeing a null pointer is allowed, as it is in C, because that is what lets a
+destructor run on a value that was never filled in.
+
+```
+export fn free(pointer *byte) void {
+    C.free(pointer);
+}
+// --------------------------------------------------------------- aborting
+```
+
+### `export fn panic(message *const char) void {`
+
+Aborts with a message.
+
+`std.panic` is what the compiler emits a call to when a debug-mode guard
+fires, so this is not only for programs that call it themselves. It is the
+real name now; the compiler's own `__builtin_panic` remains the mechanism
+underneath, because the runtime stub is where the message is written.
+
+```
+export fn panic(message *const char) void {
+    __builtin_panic(message);
+}
+```
+
+### `fn move_can_raise() bool`
+
+-------------------------------------------------------------- questions
+Whether moving a `T` can raise.
+
+A move is construction from an rvalue, so the question is `except` of exactly
+that construction: `fake<&&T>()` is an rvalue of type `T`, which selects the
+move constructor, and `T(..)` asks whether that construction can raise. A
+type with no move constructor answers with whatever construction from an
+rvalue resolves to -- usually its copy constructor.
+
+```
+export
+template <T type>
+fn move_can_raise() bool
+```
+
+### `export define MOVES(T) except(T(util.fake<&&T>()))`
+
+The move question as a macro: `$MOVES(T)` asks whether moving a `T` can
+raise.
+
+A `@constexpr` *function* cannot answer this in `if (..) @constexpr`: the
+value is the `except(..)` query of a construction, which the checker folds,
+and a call to a function whose body contains the query is not folded. The
+macro expands to the query itself, so the condition is foldable at the place
+it is written -- which is why the containers use it.
+
+```
+export define MOVES(T) except(T(util.fake<&&T>()))
+```
+
+### `fn __ft_moves() bool`
+
+Whether moving a `T` can raise.
+
+A container that grows has a choice: copy every element into the new buffer,
+or move it and empty the old one. Moving is the cheap path, and it is only
+safe while it cannot raise -- a raise halfway through would leave the
+elements it had not reached yet in the old buffer and the ones it had in the
+new one, with no way to put them back. So the choice is made per element
+type, at compile time, which is what this asks.
+
+The answer comes from `MoveCanRaise(T)`, the compiler's question about
+`T`'s declarations: a move constructor that cannot raise means "no". A type
+with no move constructor at all answers "yes" -- there is no cheap path to
+take, and the copy is what a move would compile to anyway.
+
+```
+export
+template <T type>
+fn __ft_moves() bool
+```
+
+### `export type Unit {`
+
+A type with no fields and one value.
+
+It is what a container stores where it has nothing to store -- a set holds a
+key and a `Unit` -- so that one implementation of the tree or the table
+serves both the sets and the maps. The value costs no space: a struct of no
+fields has no bytes of its own.
+
+```
+export type Unit {
+}
+```

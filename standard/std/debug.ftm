@@ -1,7 +1,7 @@
 // Debugging helpers: assertions, unreachable points, a breakpoint instruction.
 //
 //     $ASSERT_DEBUG(count > 0);
-//     debug.print_trace(&String("reached the parser"));
+//     debug.printtrace(&String("reached the parser"));
 //
 // # Always on
 //
@@ -35,14 +35,14 @@ export fn unreachable(message *const char, file *const char, line int) void exce
 
 // Writes `message` and a newline to standard error.
 
-// Named `print_trace` rather than `trace`: `std.log` already has a `trace`
+// Named `printtrace` rather than `trace`: `std.log` already has a `trace`
 // pack template, and a program that imported both would reach whichever the
 // overload resolution saw first.
 //
 // Through the C runtime rather than `std.io`: the debug module is what a
 // broken program reaches for, and it should not depend on the formatting and
 // file layers when the reason for the trace may be one of those layers.
-export fn print_trace(message &const String) void {
+export fn printtrace(message &const String) void {
     try {
         C.fprintf(C.stderr, "%s\n", message.data());
     } except {

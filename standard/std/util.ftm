@@ -40,6 +40,8 @@ fn fake() T {
 // program says "treat this one as if it were": the reference it returns is an
 // rvalue reference, which is what selects the move constructor or the move form
 // of an assignment.
+//
+// - `value`: the lvalue to turn into an rvalue reference
 export
 template <T type>
 fn move(value &T) &&T {
@@ -57,6 +59,8 @@ fn move(value &T) &&T {
 // passed an rvalue, `T` is `U` and this returns an rvalue reference. That is
 // what lets a wrapper hand its own argument on without deciding for the caller
 // whether it may be moved from.
+//
+// - `value`: the argument to pass on with the caller's value category
 export
 template <T type>
 fn forward(value T) &&T {
@@ -118,7 +122,7 @@ export fn free(pointer *byte) void {
 // fires, so this is not only for programs that call it themselves. It is the
 // real name now; the compiler's own `__builtin_panic` remains the mechanism
 // underneath, because the runtime stub is where the message is written.
-export fn panic(message *const c8) void {
+export fn panic(message *const char) void {
     __builtin_panic(message);
 }
 

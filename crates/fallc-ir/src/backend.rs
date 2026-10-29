@@ -378,32 +378,30 @@ impl Backend {
     pub fn target_machine(
         &self,
         optimization: OptimizationLevel,
-    ) -> Result<TargetMachine, CodegenError> {
+    ) -> Result<std::rc::Rc<TargetMachine>, CodegenError> {
         self.target_machine_with(optimization, RelocMode::Default)
     }
 
+    /// Returns the machine for a level and relocation mode, building it once.
+    ///
+    /// Creating a target machine builds the whole of LLVM's code generator for
+    /// the target -- instruction selection, scheduling, register allocation --
+    /// and that is the most expensive single thing this compiler does. A
+    /// compilation that emits seventy module objects asked for one each time it
+    /// wrote a file, and again for each optimisation, so the same machine was
+    /// built a hundred and forty times; measuring the work by module rather
+    /// than by program made a cold build three times slower.
+    ///
+    /// There is one machine per (level, relocation) pair, kept for the life of
+    /// the process. It is immutable once built -- the machine describes the
+    /// target, and `run_passes` and `write_to_file` take it by reference -- so
+    /// sharing it is what the type already allows.
     fn target_machine_with(
         &self,
         optimization: OptimizationLevel,
         relocation: RelocMode,
-    ) -> Result<TargetMachine, CodegenError> {
-        Target::initialize_native(&InitializationConfig::default()).map_err(|error| {
-            CodegenError::Emit(format!("cannot initialise LLVM target: {error}"))
-        })?;
-
-        let triple = TargetMachine::get_default_triple();
-        let target = Target::from_triple(&triple)
-            .map_err(|error| CodegenError::Emit(format!("unknown target triple: {error}")))?;
-        target
-            .create_target_machine(
-                &triple,
-                &TargetMachine::get_host_cpu_name().to_string(),
-                &TargetMachine::get_host_cpu_features().to_string(),
-                optimization,
-                relocation,
-                CodeModel::Default,
-            )
-            .ok_or_else(|| CodegenError::Emit("cannot create a target machine".to_owned()))
+    ) -> Result<std::rc::Rc<TargetMachine>, CodegenError> {
+        try_cached_target_machine(optimization, relocation)
     }
 
     /// Returns the target's pointer width, in bits.
@@ -512,6 +510,55 @@ impl Backend {
     pub fn host_triple(&self) -> TargetTriple {
         TargetMachine::get_default_triple()
     }
+}
+
+
+// Every target machine this thread has built, by level and relocation.
+//
+// See `Backend::target_machine_with` for why they are kept. Thread-local
+// rather than a `static`, because LLVM's machine is not `Send`: it carries a
+// raw pointer into the target's code generator, and the compiler builds every
+// module on one thread.
+thread_local! {
+    static TARGET_MACHINES: std::cell::RefCell<
+        Vec<(OptimizationLevel, RelocMode, std::rc::Rc<TargetMachine>)>,
+    > = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Returns the cached machine for a level and relocation mode, or builds it.
+fn try_cached_target_machine(
+    optimization: OptimizationLevel,
+    relocation: RelocMode,
+) -> Result<std::rc::Rc<TargetMachine>, CodegenError> {
+    TARGET_MACHINES.with(|cache| {
+        let mut machines = cache.borrow_mut();
+        if let Some((_, _, machine)) = machines
+            .iter()
+            .find(|(level, mode, _)| *level == optimization && *mode == relocation)
+        {
+            return Ok(std::rc::Rc::clone(machine));
+        }
+        Target::initialize_native(&InitializationConfig::default()).map_err(|error| {
+            CodegenError::Emit(format!("cannot initialise LLVM target: {error}"))
+        })?;
+        let triple = TargetMachine::get_default_triple();
+        let target = Target::from_triple(&triple)
+            .map_err(|error| CodegenError::Emit(format!("unknown target triple: {error}")))?;
+        let machine = std::rc::Rc::new(
+            target
+                .create_target_machine(
+                    &triple,
+                    &TargetMachine::get_host_cpu_name().to_string(),
+                    &TargetMachine::get_host_cpu_features().to_string(),
+                    optimization,
+                    relocation,
+                    CodeModel::Default,
+                )
+                .ok_or_else(|| CodegenError::Emit("cannot create a target machine".to_owned()))?,
+        );
+        machines.push((optimization, relocation, std::rc::Rc::clone(&machine)));
+        Ok(machine)
+    })
 }
 
 #[cfg(test)]

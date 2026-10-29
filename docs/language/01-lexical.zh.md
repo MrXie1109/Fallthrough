@@ -42,25 +42,27 @@
 
 ```text
 alignof  as       auto     break    case     const    continue default
-defer    define   delete   dynamic  else     enum     except   export
+defer    define   delete   else     enum     except   export   fallthrough
 false    finally  fn       for      from     if       import   interface
 lambda   link     mutable  nullptr  raise    return   sizeof   static_assert
 switch   template this     traits   true     try      type     union
 volatile while
 ```
 
-5.2 不存在上下文关键字：`dynamic`、`defer`、`delete`、`define` 也是保留字。
-`dynamic` 用在 `link` 的链接方式位置，`defer` 引导一个在作用域结束时执行的块
-（[05 语句 §8](05-statements.zh.md#defer)），`define` 引导逻辑行起始处的宏定义，
-`delete` 标记删除的定义；它们在任何其他位置也不能作为标识符。
+5.2 5.1 的清单是完整集合：除此以外的词都不是保留字，程序可以用其中任何一个作标识符。
+特别是 `alignas`、`constexpr`、`dynamic`、`extern`、`static`、`thread_local` 都是普通
+标识符。它们所描述的声明由属性表达，属性中 `@` 之后的词按普通单词读取而非关键字；
+见 [03 声明 §9](03-declarations.zh.md#属性)。
 
-5.3 `alignas`、`constexpr`、`extern`、`thread_local`、`static` 不是保留字，
-可以作为标识符使用。它们所描述的声明由属性表达，见
-[03 声明 §9](03-declarations.zh.md#属性)。`export` 是关键字：它引导一个可被导入者
-看见的声明，见 [03 声明 §9](03-declarations.zh.md#属性)与
+5.3 `export` **是**保留字：它引导一个可被导入者看见的声明，写在属性表之前而不是作为
+属性，见 [03 声明 §9](03-declarations.zh.md#属性)与
 [08 模块](08-modules.zh.md#导出表)。
 
-5.4 `@` 之后的属性名不是关键字：它按普通单词读取，合法属性及其位置见
+5.4 `delete` 保留给将来的删除表达式，目前没有含义。`define` 引导逻辑行起始处的宏定义；
+它被保留，是为了让定义始终就是它写的样子——只靠读标识符来识别它的预处理器，会让程序
+遮蔽掉那个标识符。
+
+5.5 `@` 之后的属性名不是关键字：它按普通单词读取，合法属性及其位置见
 [03 声明 §9](03-declarations.zh.md#属性)。
 
 ## 字面量
@@ -133,6 +135,39 @@ volatile while
 
 6.6.2 `nullptr` 没有固定的指针类型；它取使用位置要求的指针类型。
 
+### 范围字面量
+
+6.6.3 `low .. high` 与 `low ..= high` 表示一个范围：从 `low` 开始、每次加一的整数序列。
+步长为 1，元素类型为 `i64`。
+
+6.6.4 不带 `=` 的形式不含 `high`，带 `=` 的形式含 `high`：`1 .. 5` 走 1、2、3、4，
+而 `1 ..= 5` 走 1、2、3、4、5。
+
+6.6.5 两端是表达式而非必须是字面量；每一端**必须**是整数类型或可推断为整数类型。
+`1 .. n + 1` 是从 1 到 `n` 的范围，因为范围比任何二元运算符结合得都松。
+
+6.6.6 范围字面量就是标准库的 `Range`：`1 .. 10` 即 `std.range.Range(1, 10, 1)`，
+`1 ..= 10` 即 `std.range.Range(1, 11, 1)`。因此它**需要** `import std;` 或
+`import std.range;`，可以存入 `Range`、用作范围循环的主体（见
+[05 语句](05-statements.zh.md#范围循环)），或传给任何期待 `Range` 的位置。
+
+6.6.7 范围**不得**连写：`1 .. 2 .. 3` 不符合本规范。
+
+下列程序先输出 `1 2 3 4`，再输出 `1 2 3 4 5`：
+
+```ft
+import C;
+import std;
+
+fn main() int except {
+    for (i i64 : 1 .. 5) { C.printf("%ld ", i); }
+    C.printf("| ");
+    for (i i64 : 1 ..= 5) { C.printf("%ld ", i); }
+    C.printf("\n");
+    return 0;
+}
+```
+
 ### 转义序列
 
 6.7.1 字符与字符串字面量支持下列转义：`\n`、`\t`、`\r`、`\\`、`\'`、`\"`、`\0`、
@@ -164,6 +199,10 @@ volatile while
 | 2 | `&&` | 左 |
 | 1 | `\|\|` | 左 |
 | 0 | `?:`、`=` 与复合赋值 | 右 |
+| — | `..`、`..=`（比上面每个运算符都松） | — |
+
+7.1.1 范围不是作用于两个值的运算符：它的两端是整数，整体是一个 `Range`。因此它位于
+`?:` 之下，并把每一端当作完整表达式，所以 `1 .. n + 1` 是从 1 到 `n + 1` 的范围。
 
 7.2 后缀形式（调用、下标、成员访问、`++`、`--`、`??`、`!!`）的优先级高于表中任何二元
 运算符。

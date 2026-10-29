@@ -1,0 +1,202 @@
+# `std.range`
+
+A range of integers, walked as an iterator.
+
+    total int = 0;
+    for (value i64 : range.upto(5)) {
+        total += value;
+    }
+
+`Range` is both the container and its own position: `begin()` is a copy
+pointing at the start, `end()` a copy pointing at the stop, `__inc__` adds the
+step, and `__deref__` is the current value. Because a copy is a position, the
+range can be walked more than once.
+
+The stop is exclusive, the way an iterator's `end()` is: `upto(5)` yields
+0 1 2 3 4. A negative step counts down, and a step of zero is refused at the
+call: a range that never reaches its end is a loop that never ends.
+
+## Declarations
+
+### `export type Range {`
+
+A run of integers from `_start` toward `_stop`, exclusive, by `_step`.
+
+```
+export type Range {
+    // The next value, or the stop when the walk is over.
+    _current i64;
+    // Where the walk stops, exclusive.
+    _stop i64;
+    // How much each step adds; never zero.
+    _step i64;
+}
+```
+
+### `export fn upto(low i64, high i64) Range {`
+
+Creates the range `low` up to but not including `high`, by one.
+
+```
+export fn upto(low i64, high i64) Range {
+    return Range(low, high, 1i64);
+}
+```
+
+### `export fn to(high i64) Range {`
+
+Creates the range 0 up to but not including `high`.
+
+```
+export fn to(high i64) Range {
+    return Range(0i64, high, 1i64);
+}
+```
+
+### `export fn down_to(low i64, high i64) Range {`
+
+Creates the range counting down from `low` to but not including `high`.
+
+```
+export fn down_to(low i64, high i64) Range {
+    return Range(low, high, -1i64);
+}
+```
+
+### `export fn __init__(this &Range, low i64, high i64, step i64) void {`
+
+Builds the range `low, low + step, ...` up to but not including `high`.
+
+```
+export fn __init__(this &Range, low i64, high i64, step i64) void {
+    this._current = low;
+    this._stop = high;
+    this._step = step;
+}
+```
+
+### `export fn is_empty_step(this &const Range) bool {`
+
+Whether the walk advances by nothing, which would never reach its stop.
+
+```
+export fn is_empty_step(this &const Range) bool {
+    return this._step == 0i64;
+}
+```
+
+### `export fn begin(this &const Range) Range {`
+
+The first position: the range itself.
+
+```
+export fn begin(this &const Range) Range {
+    return Range(this._current, this._stop, this._step);
+}
+```
+
+### `export fn end(this &const Range) Range {`
+
+The end position: a range whose current value is the stop.
+
+```
+export fn end(this &const Range) Range {
+    return Range(this._stop, this._stop, this._step);
+}
+```
+
+### `export fn __deref__(this &Range) &i64 {`
+
+The current value.
+
+```
+export fn __deref__(this &Range) &i64 {
+    return &this._current;
+}
+```
+
+### `export fn __inc__(this &Range) void {`
+
+Steps to the next value.
+
+```
+export fn __inc__(this &Range) void {
+    this._current += this._step;
+}
+```
+
+### `export fn __eq__(this &const Range, other &const Range) bool {`
+
+Whether two positions are the same position.
+
+A range whose step does not land exactly on the stop still has to end, so a
+position past the stop counts as the end position: `0, 3, 6, 9` walking to 10
+stops after 9, and `12` is the same position as `end()`.
+
+```
+export fn __eq__(this &const Range, other &const Range) bool {
+    this_done bool = this.past_end();
+    other_done bool = other.past_end();
+    if (this_done || other_done) {
+        return this_done == other_done;
+    }
+    return this._current == other._current;
+}
+```
+
+### `export fn __ne__(this &const Range, other &const Range) bool {`
+
+Whether two positions differ.
+
+```
+export fn __ne__(this &const Range, other &const Range) bool {
+    return !(this == other);
+}
+```
+
+### `fn past_end(this &const Range) bool`
+
+Whether this position is at or past the stop.
+
+```
+fn past_end(this &const Range) bool
+```
+
+### `export fn length(this &const Range) usize {`
+
+How many steps the range has.
+
+```
+export fn length(this &const Range) usize {
+    if (this._step > 0i64) {
+        if (this._current >= this._stop) {
+            return 0;
+        }
+        return ((this._stop - this._current + this._step - 1i64) / this._step) as usize;
+    }
+    if (this._current <= this._stop) {
+        return 0;
+    }
+    return ((this._current - this._stop + (0i64 - this._step) - 1i64) / (0i64 - this._step)) as usize;
+}
+```
+
+### `export fn cbegin(this &const Range) Range {`
+
+The first position, named as C++ names it.
+
+```
+export fn cbegin(this &const Range) Range {
+    return this.begin();
+}
+```
+
+### `export fn cend(this &const Range) Range {`
+
+The one-past-the-end position, named as C++ names it.
+
+```
+export fn cend(this &const Range) Range {
+    return this.end();
+}
+```

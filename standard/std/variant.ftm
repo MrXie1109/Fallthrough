@@ -44,6 +44,9 @@ fn __init__(this &Variant2<A, B>) void {
 }
 
 // Creates a variant holding an `A`.
+//
+// - `value`: the `A` to hold; it is copied into a fresh allocation, so the
+//   caller keeps its own
 export
 template <A type, B type>
 fn __init__(this &Variant2<A, B>, value A) void {
@@ -54,6 +57,9 @@ fn __init__(this &Variant2<A, B>, value A) void {
 }
 
 // Creates a variant holding a `B`.
+//
+// - `value`: the `B` to hold; it replaces whatever was held and is copied into
+//   a fresh allocation
 export
 template <A type, B type>
 fn make_second(this &Variant2<A, B>, value B) void {
@@ -61,6 +67,8 @@ fn make_second(this &Variant2<A, B>, value B) void {
 }
 
 // Copies another variant's value.
+//
+// - `other`: the variant to copy; an empty one leaves this one empty too
 export
 template <A type, B type>
 fn __init__(this &Variant2<A, B>, other &const Variant2<A, B>) void {
@@ -75,6 +83,9 @@ fn __init__(this &Variant2<A, B>, other &const Variant2<A, B>) void {
 }
 
 // Takes another variant's value.
+//
+// - `other`: the variant to take from; its pointers move and it is left empty,
+//   so its destructor frees nothing
 export
 template <A type, B type>
 fn __init__(this &Variant2<A, B>, other &&Variant2<A, B>) void {
@@ -87,6 +98,9 @@ fn __init__(this &Variant2<A, B>, other &&Variant2<A, B>) void {
 }
 
 // Copies another variant into this one.
+//
+// - `other`: the variant to copy; this one releases what it held first, so it
+//   must not be `other` itself
 export
 template <A type, B type>
 fn __assign__(this &Variant2<A, B>, other &const Variant2<A, B>) void {
@@ -99,6 +113,9 @@ fn __assign__(this &Variant2<A, B>, other &const Variant2<A, B>) void {
 }
 
 // Moves another variant's value into this one.
+//
+// - `other`: the variant to take from, left empty; a variant assigned to
+//   itself is released and ends empty
 export
 template <A type, B type>
 fn __assign__(this &Variant2<A, B>, other &&Variant2<A, B>) void {
@@ -169,6 +186,9 @@ fn second(this &const Variant2<A, B>) B except {
 }
 
 // Stores an `A`.
+//
+// - `value`: the `A` to hold; it is copied into a fresh allocation after the
+//   old value is released
 export
 template <A type, B type>
 fn set_first(this &Variant2<A, B>, value A) void {
@@ -180,6 +200,9 @@ fn set_first(this &Variant2<A, B>, value A) void {
 }
 
 // Stores a `B`.
+//
+// - `value`: the `B` to hold; it is copied into a fresh allocation after the
+//   old value is released
 export
 template <A type, B type>
 fn set_second(this &Variant2<A, B>, value B) void {

@@ -14,6 +14,10 @@
 import std.iterator;
 
 // Moves `first` forward `count` steps, or to `last` if the range ends first.
+
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `count`: how many steps to take
 @enable_if(InputIterator(It))
 export
 template <It type>
@@ -28,6 +32,10 @@ fn advance(first It, last It, count usize) It {
 }
 
 // The position after skipping `count` elements from `first`.
+
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `count`: how many elements to pass over
 @enable_if(InputIterator(It))
 export
 template <It type>
@@ -36,6 +44,10 @@ fn skip(first It, last It, count usize) It {
 }
 
 // The position after taking `count` elements from `first`.
+
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `count`: how many elements to keep
 @enable_if(InputIterator(It))
 export
 template <It type>
@@ -44,6 +56,10 @@ fn take(first It, last It, count usize) It {
 }
 
 // The position of the first element a predicate accepts, or `last`.
+
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `predicate`: called with an element; the first one it accepts is the answer
 @enable_if(InputIterator(It))
 export
 template <It type, Pred type>
@@ -60,6 +76,10 @@ fn find_if(first It, last It, predicate Pred) It {
 }
 
 // How many elements a predicate accepts.
+
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `predicate`: called with an element; every one it accepts is counted
 @enable_if(InputIterator(It))
 export
 template <It type, Pred type>
@@ -77,6 +97,10 @@ fn count_if(first It, last It, predicate Pred) usize {
 }
 
 // Whether every element satisfies a predicate.
+
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `predicate`: called with an element; the walk stops at the first it rejects
 @enable_if(InputIterator(It))
 export
 template <It type, Pred type>
@@ -93,6 +117,10 @@ fn all_of(first It, last It, predicate Pred) bool {
 }
 
 // Whether any element satisfies a predicate.
+//
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `predicate`: called with an element until one accepts
 @enable_if(InputIterator(It))
 export
 template <It type, Pred type>
@@ -102,6 +130,10 @@ fn any_of(first It, last It, predicate Pred) bool {
 }
 
 // Whether no element satisfies a predicate.
+//
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `predicate`: called with an element until one accepts
 @enable_if(InputIterator(It))
 export
 template <It type, Pred type>
@@ -110,6 +142,10 @@ fn none_of(first It, last It, predicate Pred) bool {
 }
 
 // The position of the `index`th element, or `last` when the range is shorter.
+//
+// - `first`: where the range starts
+// - `last`: one past the range's end
+// - `index`: which element, counting from zero
 @enable_if(InputIterator(It))
 export
 template <It type>

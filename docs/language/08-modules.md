@@ -13,12 +13,41 @@ linking.
 ### Forms
 
 ```ft
+// geom.ftm
+export fn area(w int, h int) int {
+    return w * h;
+}
+
+export type Point {
+    x int;
+    y int;
+}
+```
+
+```ft
+// main.ft
+import C;
 import geom;
 import geom as g;
-from geom import area, Point;
-from geom import *;
+from geom import area;
+from geom import Point;
+
+fn main() int {
+    p Point = .{1, 2};
+    C.printf("%d %d %d\n", area(2, 3), g.area(3, 4), p.x);
+    return 0;
+}
+```
+
+These two files compile together and the program prints `6 12 1`: `geom.area` is reached
+through the module name and through the alias `g`, and `from geom import area` makes the
+plain name usable.
+
+A module may forward what it imports, which is how an umbrella module is assembled:
+
+```ft
+// umbrella.ftm
 export from geom import *;
-export from geom import area;
 ```
 
 2.1.1 Importing is static: a module is loaded at compile time, and there is no run-time
@@ -170,16 +199,32 @@ as a program on its own.
 link m dynamic from default;
 link z static from "/usr/lib";
 link "gcc_s" dynamic from default;
+
+fn main() int {
+    return 0;
+}
 ```
+
+Each of these three files compiles and links: a bare name finds the library the way the
+linker does, a quoted name is passed through as written, and `from "…"` names the
+directory to search.
 
 9.2 All three parts of `link` **must** be present: the name, the link kind (`dynamic` or
 `static`), and the lookup location (`default` or a directory string).
+
+9.2.1 `dynamic` and `static` are **not** reserved words
+(see [01 Lexical §5.2](01-lexical.md#keywords)). They mean the link kind only in the
+position after a library name in a `link` declaration; anywhere else they are ordinary
+identifiers, so a program may declare `static int = 2;` and use it. The `static` of a
+declaration's storage duration is the attribute `@static`
+(see [03 Declarations §4](03-declarations.md#declaration-modifiers)), which is a
+different word in a different place.
 
 9.3 When a library name contains `/` or ends in `.a`/`.so`, it is passed to the linker as
 a file path; otherwise the platform convention's prefix and suffix are added.
 
 9.4 The declarations of external functions and external variables are given in
-[04 Functions](04-functions.md) and [03 Declarations](03-declarations.md#external-variables)
+[04 Functions](04-functions.md) and [03 Declarations](03-declarations.md#external-variables-and-functions)
 respectively.
 
 9.5 The standard library's C bindings are an ordinary module; they are imported in the

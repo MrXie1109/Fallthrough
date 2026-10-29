@@ -384,6 +384,7 @@ export fn __drop__(this &File) void {
 // One variadic template, not one function per argument count: the arguments are
 // rendered into a small array by a pack expansion, and the format rule decides
 // how they are written.
+// - `values`: what to write; a first argument holding `{}` is the format
 export
 template <Ts ...type>
 fn print(this &File, values ...Ts) void except {
@@ -396,6 +397,7 @@ fn print(this &File, values ...Ts) void except {
 //
 // The line is the unit a terminal and a log file are read in, so it has a name
 // of its own rather than being `print(..)` and a `'\n'` at every call.
+// - `values`: what to write, as `print` takes them
 export
 template <Ts ...type>
 fn println(this &File, values ...Ts) void except {
@@ -409,6 +411,7 @@ fn println(this &File, values ...Ts) void except {
 // The arguments are a pack of references: an element is the caller's own
 // variable, so what is read is written there. Anything that does not parse
 // raises, because there is no value to store and a zero would be a lie.
+// - `values`: the caller's variables, one per word to read
 export
 template <Ts ...type>
 fn input(this &File, values ...&Ts) void except {
@@ -416,6 +419,7 @@ fn input(this &File, values ...&Ts) void except {
 }
 
 // Reads one value, skipping the whitespace before it.
+// - `value`: the variable the word is stored in
 template <T type>
 fn read_value(this &File, value &T) void except {
     token String = String();
@@ -431,6 +435,7 @@ fn read_value(this &File, value &T) void except {
 // A word is what a formatted read has to work with: numbers, characters and
 // strings are all written as runs of non-space characters, so one reader serves
 // them all and the type's own `__input__` decides what the word means.
+// - `into`: the string the word is written to; cleared first
 fn read_token(this &File, into &String) bool except {
     into.clear();
     more bool = false;
@@ -475,6 +480,8 @@ fn _next_code(this &File) int except {
 }
 
 // Reads `count` bytes, after giving back the character `peek` read ahead.
+// - `buffer`: where the bytes are written
+// - `count`: how many bytes are wanted at most
 fn _read_bytes(this &File, buffer *byte, count usize) usize except {
     if (!this.valid() || buffer == nullptr || count == 0) {
         return 0;
@@ -495,6 +502,8 @@ fn _read_bytes(this &File, buffer *byte, count usize) usize except {
 }
 
 // Writes `count` bytes, and reports a stream that stopped early.
+// - `buffer`: the bytes to write
+// - `count`: how many of them
 fn _write_bytes(this &File, buffer *const byte, count usize) usize except {
     if (!this.valid() || buffer == nullptr || count == 0) {
         return 0;
@@ -511,6 +520,7 @@ fn _write_bytes(this &File, buffer *const byte, count usize) usize except {
 // When the system has an error number for what went wrong, the number and its
 // text are part of the message: "the stream could not be closed" is a guess,
 // "the stream could not be closed (9: Bad file descriptor)" is the answer.
+// - `message`: what the operation was doing
 fn describe(message &const String) String {
     code int = error.last_error();
     if (code == 0) {
@@ -571,7 +581,7 @@ export in File;
 // The C streams are not compile-time constants and a module-level variable's
 // initial value has to be, so this is what `__setup__` is for: it runs before
 // anything else, dependencies first.
-__setup__ {
+fn __setup__() void {
     out = File(C.stdout, OpenMode.WRITE);
     err = File(C.stderr, OpenMode.WRITE);
     in = File(C.stdin, OpenMode.READ);
@@ -588,6 +598,7 @@ export from std.fmt import Formattable;
 //
 // It is the member call under a shorter name: a program that writes to the
 // terminal does not have to name the file it writes to.
+// - `values`: what to write, as `print` takes them
 export
 template <Ts ...type>
 fn print(values ...Ts) void except {
@@ -595,6 +606,7 @@ fn print(values ...Ts) void except {
 }
 
 // Writes its arguments to the standard output, then a newline.
+// - `values`: what to write, as `print` takes them
 export
 template <Ts ...type>
 fn println(values ...Ts) void except {

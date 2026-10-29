@@ -14,12 +14,20 @@ at a call site, see [06 Exceptions](06-exceptions.md).
 ### Forms
 
 ```ft
+import C;
+
 fn add(a int, b int) int { return a + b; }
-fn declared(a int) int;
-export fn visible(a int) int { ... }
-@extern_C fn printf(fmt *const c8, ...) int;
+export fn visible(a int) int { return a * 2; }
 @constexpr fn square(n int) int { return n * n; }
+
+fn main() int {
+    C.printf("%d %d %d\n", add(1, 2), visible(3), square(4));
+    return 0;
+}
 ```
+
+This program prints `3 6 16`: a definition, an exported definition and a `constexpr`
+definition are written the same way and called the same way.
 
 2.1.1 A function with a body may omit its return type: omitting it is equivalent to
 `auto`, and the type is deduced from the `return` statements. When no value is returned,
@@ -102,9 +110,25 @@ type, the conversion happens implicitly only if the target type declares a match
 4.1.1 `&` produces a pointer; a reference is a way of writing a type.
 
 ```ft
-fn takes_ref(s &const String) int;    // reference: pass the name directly
-fn takes_ptr(p *int) int;             // pointer: pass &x
+import C;
+
+type Point {
+    x int;
+    y int;
+}
+
+fn takes_ref(s &const Point) int { return s.x; }
+fn takes_ptr(p *Point) int { return p.x; }
+
+fn main() int {
+    p Point = .{11, 2};
+    C.printf("%d %d\n", takes_ref(&p), takes_ptr(&p));
+    return 0;
+}
 ```
+
+This program prints `11 11`: a reference parameter and a pointer parameter both take an
+address, and both read the same field through it.
 
 4.1.2 In parameter position, a value of type `T` may satisfy a parameter of type `&T` or
 `&const T`: the implementation passes the address of the argument. This adjustment holds
@@ -146,9 +170,27 @@ then share a resource, and the program is responsible for that.
 A pointer receiver does not conform to this standard (`S0190`):
 
 ```ft
+import C;
+
+type Point {
+    x int;
+    y int;
+}
+
 fn length(this &const Point) int { return this.x + this.y; }
 fn shift(this &Point, d int) void { this.x += d; }
+
+fn main() int {
+    p Point = .{1, 2};
+    C.printf("%d\n", length(&p));
+    shift(&p, 10);
+    C.printf("%d\n", p.x);
+    return 0;
+}
 ```
+
+This program prints `3`, then `11`: `length` reads the receiver and may not write it,
+while `shift` takes `this &Point` and writes the field.
 
 5.3 When a member function is called, the receiver is passed as the first argument. When
 the receiver is a value, the implementation takes its address; when the receiver is
@@ -197,6 +239,36 @@ select a unique match.
 
 7.2 When no unique match can be selected, the implementation **must** report a
 diagnostic.
+
+7.2.1 An overload is selected by the **parameter list alone**. The return type is not part
+of the signature and never takes part in the choice, so two definitions that differ only
+in what they return can be told apart only by their parameters -- and when they cannot, the
+call is ambiguous and is reported:
+
+```ft
+fn f(a int) int { return 1; }
+fn f(a int) bool { return true; }
+
+fn main() int {
+    x int = f(1);
+    return 0;
+}
+```
+
+This program does not conform to this standard, and the report is:
+
+```text
+error[S0037]: the call to `f` is ambiguous: 2 overloads match
+```
+
+The expected type of the result does not break the tie,
+because a reader must be able to tell which function runs without looking at what happens
+to its value.
+
+7.2.2 A definition marked `@overridable` is a **default**: any other definition of the name
+replaces it, and the call then has one candidate rather than two. This is how a library
+states a fallback a program may take over without writing anything at the call site. The
+attribute is described in [Appendix C §C.3](appendix-c-attributes.md#c3-functions).
 
 7.3 When a function name is used where a function pointer is required, the target
 function type selects the overload.
@@ -260,6 +332,46 @@ reference.
 
 11.3 `std.forward<T>(value)` yields an lvalue when `T` is a reference, and an rvalue
 reference otherwise. Its behavior is specified by the standard library.
+
+## Deducing a template's arguments from a call
+
+11.4 A template's parameters are deduced from the types of the arguments, and from
+nothing else. A parameter written `T` takes the argument's type; a parameter written
+`&T`, `&const T` or `*T` takes what the argument refers to or points at.
+
+11.5 The parameters that do not appear in a parameter's type are not deduced from it.
+`template <T type, K usize>` written `fn f(a [3]T)` fixes `K` only when the caller
+writes it: the length in the parameter is a constant of the declaration, not a
+question about the argument.
+
+11.6 A length written `[N]` **is** deduced, and the number comes from the argument's
+own array length:
+
+```ft
+import C;
+
+template <T type, N usize>
+fn count(a [N]const T) usize {
+    return N + (a[0] != '\0') as usize * 0usize;
+}
+
+fn main() int except {
+    C.printf("%zu\n", count("abc"));
+    return 0;
+}
+```
+
+`N` is 4, because `"abc"` has four characters once its terminator is counted -- the
+type of the literal is `[4]c8`. The written length names the parameter; the argument
+supplies its value. Nothing about the written expression is evaluated. The program
+prints `4`.
+
+11.7 This is what lets one declaration serve every array: the same `begin` is used for
+a `[4]c8`, a `[3]int` and a `[1024]f64`, and each call takes its own length.
+
+11.8 A template declared in one module is instantiated as if it were declared in the
+module that calls it. The argument types decide the same way, and the length of an
+array argument is read from the argument in both cases.
 
 ## Evaluation order
 

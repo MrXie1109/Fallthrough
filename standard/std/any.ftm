@@ -5,7 +5,7 @@
 // question raises instead of reinterpreting bits.
 //
 //     held Any = Any(42);
-//     std.print("{} {}\n", held.type_name(), held.to_int()??)??;
+//     std.print("{} {}\n", held.type_name(), held as int??)??;
 //
 // # Why text
 //
@@ -161,23 +161,23 @@ export fn reset(this &Any) void {
 }
 
 // The held value as an `int`, or a raise when the type or the text is not one.
-export fn to_int(this &const Any) int except {
+export fn __as__(this &const Any, target *int) int except {
     if (!this._present || !(this._type == String("int"))) {
         raise "TypeError": "the holder does not contain an int";
     }
     return this._text as int??;
 }
 
-// The held value as a real.
-export fn to_real(this &const Any) f64 except {
+// The held value as a real, or a raise when the type or the text is not one.
+export fn __as__(this &const Any, target *f64) f64 except {
     if (!this._present || !(this._type == String("f64"))) {
         raise "TypeError": "the holder does not contain a real";
     }
     return this._text as f64??;
 }
 
-// The held value as a `bool`.
-export fn to_bool(this &const Any) bool except {
+// The held value as a `bool`, or a raise when the type or the text is not one.
+export fn __as__(this &const Any, target *bool) bool except {
     if (!this._present || !(this._type == String("bool"))) {
         raise "TypeError": "the holder does not contain a bool";
     }
@@ -190,8 +190,8 @@ export fn to_bool(this &const Any) bool except {
     raise "TypeError": "the holder does not contain a bool";
 }
 
-// The held value as text.
-export fn to_text(this &const Any) String except {
+// The held value as text, or a raise when the type or the text is not one.
+export fn __as__(this &const Any, target *String) String except {
     if (!this._present || !(this._type == String("String"))) {
         raise "TypeError": "the holder does not contain text";
     }

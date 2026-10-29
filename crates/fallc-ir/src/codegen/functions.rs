@@ -65,6 +65,9 @@ impl<'ctx> Lowerer<'ctx> {
         for &item in &ast.items {
             let item_ref = ast.item(item);
             match &item_ref.kind {
+                // A top-level `if @constexpr` is flattened before checking;
+                // its selected declarations appear in the item list directly.
+                ItemKind::Conditional(_) => {}
                 ItemKind::Function(function) => {
                     // A template's body is emitted once per instantiation, not
                     // here; its own declaration names types that do not exist.
