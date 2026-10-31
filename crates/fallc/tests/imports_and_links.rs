@@ -23,8 +23,7 @@ struct Scratch {
 impl Scratch {
     /// Creates an empty directory for modules.
     fn new(label: &str) -> Scratch {
-        let directory =
-            std::env::temp_dir().join(format!("fallc-{label}-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("fallc-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a temporary directory can be created");
         Scratch { directory }
@@ -74,7 +73,6 @@ impl Scratch {
         let built = run(&options) == std::process::ExitCode::SUCCESS;
         (built, String::new())
     }
-
 }
 
 impl Drop for Scratch {
@@ -90,7 +88,8 @@ fn compile(source: &str) -> (Outcome, String) {
 
 #[test]
 fn a_plain_import_binds_the_module_name() {
-    let (outcome, output) = compile("import C;\nfn main() int {\n    C.printf(\"hi\");\n    return 0;\n}\n");
+    let (outcome, output) =
+        compile("import C;\nfn main() int {\n    C.printf(\"hi\");\n    return 0;\n}\n");
     assert_eq!(outcome, Outcome::Success, "{output}");
 }
 
@@ -275,9 +274,8 @@ fn an_unexported_type_is_invisible_to_an_importer() {
     assert!(checked, "an exported type must be usable");
 
     // The unexported one is not a type the importer can name at all.
-    let (checked, _) = scratch.check(
-        "import Shapes;\nfn main() int {\n    s Secret = .{1};\n    return s.hidden;\n}\n",
-    );
+    let (checked, _) = scratch
+        .check("import Shapes;\nfn main() int {\n    s Secret = .{1};\n    return s.hidden;\n}\n");
     assert!(!checked, "an unexported type must not be usable");
 }
 
@@ -326,7 +324,10 @@ fn an_exported_named_import_re_exports_only_that_name() {
     assert!(checked, "the named export must be forwarded");
 
     let (checked, _) = scratch.check("import Re;\nfn main() int { return Re.second(); }\n");
-    assert!(!checked, "a name left out of the list must not be forwarded");
+    assert!(
+        !checked,
+        "a name left out of the list must not be forwarded"
+    );
 }
 
 #[test]
@@ -340,16 +341,14 @@ fn a_function_defined_in_an_imported_module_is_compiled() {
         "Inner",
         "export fn answer() int { return 42; }\nexport fn addup(a int, b int) int { return a + b; }\n",
     );
-    let (built, _) = scratch.build_and_run(
-        "import Inner;\nfn main() int { return Inner.answer(); }\n",
-    );
+    let (built, _) =
+        scratch.build_and_run("import Inner;\nfn main() int { return Inner.answer(); }\n");
     assert!(built, "a function defined in a module must be compiled");
 
     // And its parameters work, so the body really was emitted rather than
     // stubbed.
-    let (built, _) = scratch.build_and_run(
-        "import Inner;\nfn main() int { return Inner.addup(20, 22); }\n",
-    );
+    let (built, _) =
+        scratch.build_and_run("import Inner;\nfn main() int { return Inner.addup(20, 22); }\n");
     assert!(built, "a module function's parameters must work");
 }
 
@@ -389,9 +388,8 @@ fn the_c_bindings_still_link_now_that_modules_are_compiled() {
     // catches an empty basic block.
     let scratch = Scratch::new("c-still-links");
     scratch.module("Nothing", "export fn unused() int { return 0; }\n");
-    let (built, _) = scratch.build_and_run(
-        "import C;\nfn main() int {\n    C.puts(\"ok\");\n    return 0;\n}\n",
-    );
+    let (built, _) = scratch
+        .build_and_run("import C;\nfn main() int {\n    C.puts(\"ok\");\n    return 0;\n}\n");
     assert!(built, "the C bindings must keep linking");
 }
 
@@ -491,7 +489,10 @@ fn a_module_body_may_use_a_family_method_of_an_imported_type() {
     let (built, output) = scratch.build_and_run(
         "import C;\nimport std;\nfrom filler import fill;\nfn main() int {\n    xs Array<String>;\n    fill(xs);\n    C.printf(\"%d %s %s\\n\", xs.length(), xs[0].data(), xs[1].data());\n    return 0;\n}\n",
     );
-    assert!(built, "a module may call a family method of an imported type");
+    assert!(
+        built,
+        "a module may call a family method of an imported type"
+    );
     assert_eq!(output.trim(), "2 x y");
 }
 
@@ -528,7 +529,10 @@ fn a_module_body_may_omit_a_default_its_own_declaration_gives() {
     let (built, output) = scratch.build_and_run(
         "import C;\nimport boxed;\nfn main() int {\n    b boxed.Boxed = .{1};\n    C.printf(\"%d %d\\n\", b.value(2), boxed.report());\n    return 0;\n}\n",
     );
-    assert!(built, "a module's body may omit its own declaration's default");
+    assert!(
+        built,
+        "a module's body may omit its own declaration's default"
+    );
     assert_eq!(output.trim(), "3 7");
 }
 

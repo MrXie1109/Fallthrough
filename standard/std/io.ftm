@@ -46,12 +46,15 @@
 
 import C;
 import std.array;
+from std.array import *;
 import std.fmt;
+from std.fmt import *;
 import std.error;
+from std.error import *;
 import std.string;
+from std.string import *;
 // The constructor is named in the bodies below, and an imported type is a name
 // a body can only call when the import binds it.
-from std.string import String;
 
 // What a file was opened for, in C's terms.
 export enum OpenMode int {
@@ -590,8 +593,9 @@ fn __setup__() void {
 // ------------------------------------------------------------- the short forms
 
 // The format rule itself lives in `std.fmt`: `print` writes what that module
-// renders, so the two spellings of the rule cannot drift apart.
-export from std.fmt import Formattable;
+// renders, so the two spellings of the rule cannot drift apart. A program that
+// writes the rule for its own type imports that module; this one does not
+// re-export it, because a name has one module it comes from.
 
 // Writes its arguments to the standard output, with the format rule of
 // `std.out.print(..)`.

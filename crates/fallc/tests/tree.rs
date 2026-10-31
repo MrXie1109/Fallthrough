@@ -231,8 +231,5 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("index");
-    assert_eq!(
-        scratch.run("index", source),
-        "apple 1 pear 2\nafter 7\n"
-    );
+    assert_eq!(scratch.run("index", source), "apple 1 pear 2\nafter 7\n");
 }

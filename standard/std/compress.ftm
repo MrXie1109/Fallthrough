@@ -23,7 +23,7 @@
 // compressed block, truncated data, or a checksum that does not match.
 
 import std.bytes;
-from std.bytes import Bytes;
+from std.bytes import *;
 
 // The largest length a stored block may declare.
 MAX_STORED const usize = 65535usize;

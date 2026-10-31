@@ -12,8 +12,9 @@
 // `GetProcAddress` on Windows -- live in `dynlib_sys`.
 
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.internal.dynlib_sys;
+from std.internal.dynlib_sys import *;
 
 // A loaded library.
 export type Library {

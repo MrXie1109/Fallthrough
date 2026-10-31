@@ -42,7 +42,7 @@ continue with characters of class XID_Continue, digits or `_`.
 identifiers with different code-point sequences are different names.
 
 4.4 `_` is a legal identifier, but has special rules for repeated declaration, see
-[09 Scopes](09-scopes.md#_).
+[09 Scopes](10-scopes.md#_).
 
 ## Keywords
 
@@ -145,7 +145,7 @@ delimited form of a raw string is `r#TAG"…"TAG#`: `TAG` must not contain white
 6.5.5 An interpolated string is written `f"…"`: the `f` is a prefix, and what follows is
 read to the closing `"` like an ordinary string, escapes included. It is **not** a literal
 of an array type: it denotes a call, and
-[07 Expressions](07-expressions.md#interpolated-strings) says what the call is. An
+[07 Expressions](08-expressions.md#interpolated-strings) says what the call is. An
 interpolated string may span lines the way `"…"` does, since a newline inside it is an
 ordinary character. There is no `f"""…"""` form.
 
@@ -171,7 +171,7 @@ range binds looser than every binary operator.
 6.6.6 A range literal is the standard library's `Range`: `1 .. 10` is
 `std.range.Range(1, 10, 1)` and `1 ..= 10` is `std.range.Range(1, 11, 1)`. It therefore
 **requires** `import std;` or `import std.range;`, and it may be stored in a `Range`, used
-as the subject of a range loop (see [05 Statements](05-statements.md#range-loops)), or
+as the subject of a range loop (see [05 Statements](06-statements.md#range-loops)), or
 passed wherever a `Range` is expected.
 
 6.6.7 A range **must not** be chained: `1 .. 2 .. 3` does not conform to this standard.

@@ -15,6 +15,7 @@
 // call: a range that never reaches its end is a loop that never ends.
 
 import std.util;
+from std.util import *;
 
 // A run of integers from `_start` toward `_stop`, exclusive, by `_step`.
 export type Range {

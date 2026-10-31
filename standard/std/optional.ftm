@@ -22,6 +22,9 @@
 // The comparison is structural: two optionals are equal when both are absent,
 // or when both are present and their values are equal.
 
+import std.util;
+from std.util import *;
+
 // A value that may be absent.
 export
 template <T type>
@@ -42,7 +45,7 @@ fn __init__(this &Optional<T>) void {
 // Creates a present optional holding `value`.
 //
 // - `value`: the value to store; it starts out copied rather than taken, so a
-//   caller that is done with it writes `Optional<T>(util.move(value))`
+//   caller that is done with it writes `Optional<T>(move(value))`
 export
 template <T type>
 fn __init__(this &Optional<T>, value T) void {
@@ -71,7 +74,12 @@ template <T type>
 fn __init__(this &Optional<T>, other &&Optional<T>) void {
     this._present = other._present;
     if (other._present) {
-        (&this._value)->__init__(other._value);
+        // The value is moved, not copied: `other._value` is a place, and
+        // passing it as one selected the copy constructor -- which left
+        // `other` marked absent while the copy it had made was the only owner
+        // of a second buffer. `move` makes the argument an rvalue so the
+        // move constructor runs and `other` ends up holding nothing.
+        (&this._value)->__init__(move(other._value));
         other._present = false;
     }
 }

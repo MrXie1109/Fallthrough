@@ -161,11 +161,8 @@ fn main() int {
 "#;
     let scratch = Scratch::new("raise");
     let printed = scratch.run("raise", source);
-    let address = usize::from_str_radix(
-        printed.trim().trim_start_matches("0x"),
-        16,
-    )
-    .expect("`%p` prints a hexadecimal address");
+    let address = usize::from_str_radix(printed.trim().trim_start_matches("0x"), 16)
+        .expect("`%p` prints a hexadecimal address");
     assert_eq!(address % 64, 0, "printed `{printed}`");
 }
 
@@ -186,11 +183,8 @@ fn main() int {
 "#;
     let scratch = Scratch::new("type");
     let printed = scratch.run("type", source);
-    let address = usize::from_str_radix(
-        printed.trim().trim_start_matches("0x"),
-        16,
-    )
-    .expect("`%p` prints a hexadecimal address");
+    let address = usize::from_str_radix(printed.trim().trim_start_matches("0x"), 16)
+        .expect("`%p` prints a hexadecimal address");
     // `Wide` is two `int`s, so it is four-byte aligned: `@align(Wide)` is
     // `@align(alignof(Wide))`.
     assert_eq!(address % 4, 0, "printed `{printed}`");
@@ -209,8 +203,5 @@ fn mutable_belongs_to_a_field_and_not_to_a_binding() {
     let source = "fn main() int {\n    a int mutable;\n    return 0;\n}\n";
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("property of a field"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("property of a field"), "{diagnostics}");
 }

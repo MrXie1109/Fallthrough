@@ -1,6 +1,6 @@
-# 08 Modules
+# 09 Modules
 
-> [中文](08-modules.zh.md)
+> [中文](09-modules.zh.md)
 
 ## Scope
 
@@ -61,26 +61,37 @@ current module's export table.
 2.1.4 `export from M import …` both brings names in and adds them to the current
 module's export table.
 
-2.1.5 A dot in a module name belongs to the module name, not to a member:
-`C.math.sin(…)` names nothing; a name re-exported by `C` is written `C.sin(…)`. Type
-names are the exception: `std.string.String` is a legal spelling, because the whole path
-is the type's name.
+2.1.5 A dot in a module name belongs to the module name, not to a member: `C.math.sin(…)`
+names nothing; a name re-exported by `C` is written `C.sin(…)`.
 
-### Short names: type names and value names are not the same
+### How a name of another module is written
 
-2.2.1 After `import M;`, the **type names** exported by `M` (`type`, `union`, `enum`,
-`interface`, `traits`) may be written with their short names directly.
+2.2.1 An import decides how that module's names are written in the importing file, and
+nothing else does. Only two spellings exist:
 
-2.2.2 **Functions, constants and module-level variables have no short-name exception**:
-they must be written with a qualified name, or introduced through
-`from M import name`.
+| Declaration | How this file writes the module's names |
+| ----------- | --------------------------------------- |
+| `import M;` | `M.name` — `M.String`, `M.print`, `M.IsInteger(T)` |
+| `from M import name;` | `name` |
+| `from M import *;` | `name` |
 
-2.2.3 A short name belongs only to a file that imports that module **directly**; a
-transitive dependency exposes only the full name.
+`M.name` is the qualified spelling of 2.1.5: the part before the dot is the module's
+name, so it is a *module* name, not a short name of a member.
 
-2.2.4 The last segment of a dotted module name is its short name, but it is valid only
-for a direct importer.
+2.2.2 `import M;` binds `M` and nothing else. A member of `M` written without `M` is not
+a name this language has, and **no kind of declaration is exempt**: a type, a function, a
+constant, a variable, an enum, an interface and a trait are all reached the same way.
+`String` after `import std;` names nothing; `std.String` does.
 
+2.2.3 `from M import …` is the only way to write a member without the module's name.
+The names it introduces belong to the importing file, not to the module: a declaration
+of that spelling in this file shadows them, and the same spelling introduced twice from
+two modules is a diagnostic.
+
+2.2.4 A dotted module name is written whole, in both columns: with `import std.string;`
+the type is `std.string.String`, never `string.String`.
+
+## The export table
 ## The export table
 
 ### Contents

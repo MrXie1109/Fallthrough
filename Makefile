@@ -46,7 +46,7 @@ TEST    ?=
 TARGET  ?=
 
 .PHONY: help build release check clippy fmt fmt-check test test-all std-check \
-        cache docs docs-check smoke clean distclean install uninstall
+        cache docs docs-check std-check smoke clean distclean install uninstall
 
 help:
 	@echo "make build        build the workspace (debug)"
@@ -63,6 +63,7 @@ help:
 	@echo "                  the cache (run 'make release install' first)"
 	@echo "make docs         write docs/std/ from the library's comments"
 	@echo "make docs-check   fail if those pages are out of date"
+	@echo "make std-check    fail if the umbrella misses a module"
 	@echo "make smoke        compile and run tests/smoke.ft if it exists"
 	@echo "make clean        remove build artifacts"
 	@echo "make install      install fallc, the library and their env file"
@@ -168,6 +169,12 @@ docs:
 
 docs-check:
 	$(PYTHON) $(DOCS_TOOL) --check
+
+# `import std;` is the whole library, so every module has to be exported from
+# the umbrella. The check knows which three are deliberately not, and fails on
+# any other gap.
+std-check:
+	$(PYTHON) tools/std-umbrella.py
 
 smoke: build
 	@if [ -f tests/smoke.ft ]; then \

@@ -25,11 +25,8 @@ impl<'ctx> Lowerer<'ctx> {
         // What is being constructed is the call's own type.
         // The callee names a *type*, which has no type of its own, so what is
         // being built was recorded by the checker.
-        let constructed = self
-            .constructor_types
-            .get(&span)
-            .cloned()
-            .ok_or_else(|| {
+        let constructed =
+            self.constructor_types.get(&span).cloned().ok_or_else(|| {
                 CodegenError::waiting_for_spec("the type this call constructs", span)
             })?;
         let llvm_ty = TypeMapper::new(self.backend.context())
@@ -175,19 +172,18 @@ impl<'ctx> Lowerer<'ctx> {
         // address of its referent -- `str(r)` for `r: &T` renders the referent.
         // Asking for the reference's own lvalue gave the address of the slot
         // holding the pointer, so `__str__` read a pointer as a string.
-        let address: BasicValueEnum<'static> = if argument_ty.is_pointer()
-            || argument_ty.is_reference()
-        {
-            self.lower_expr(ast, types, builder, argument)?
-                .ok_or_else(|| CodegenError::waiting_for_spec("this value", span))?
-        } else {
-            let binding = self
-                .lower_lvalue(ast, types, builder, argument)
-                .ok_or_else(|| {
-                    CodegenError::waiting_for_spec("a value whose text was asked for", span)
-                })?;
-            binding.storage.as_basic_value_enum()
-        };
+        let address: BasicValueEnum<'static> =
+            if argument_ty.is_pointer() || argument_ty.is_reference() {
+                self.lower_expr(ast, types, builder, argument)?
+                    .ok_or_else(|| CodegenError::waiting_for_spec("this value", span))?
+            } else {
+                let binding = self
+                    .lower_lvalue(ast, types, builder, argument)
+                    .ok_or_else(|| {
+                        CodegenError::waiting_for_spec("a value whose text was asked for", span)
+                    })?;
+                binding.storage.as_basic_value_enum()
+            };
 
         let args: Vec<inkwell::values::BasicMetadataValueEnum<'static>> = vec![address.into()];
         let call_site = builder
@@ -313,9 +309,7 @@ impl<'ctx> Lowerer<'ctx> {
         // An array of characters is text too, once it has an address: a literal
         // is already a pointer by the time it is lowered, and a value -- an
         // array parameter -- is stored here so that its bytes can be read.
-        let array_text = if c_string
-            && matches!(value, BasicValueEnum::ArrayValue(_))
-        {
+        let array_text = if c_string && matches!(value, BasicValueEnum::ArrayValue(_)) {
             Some(self.store_temporary(builder, value, "text.array")?)
         } else {
             None
@@ -324,8 +318,7 @@ impl<'ctx> Lowerer<'ctx> {
             && let Some(text) = array_text.or(match value {
                 BasicValueEnum::PointerValue(pointer) => Some(pointer),
                 _ => None,
-            })
-        {
+            }) {
             if is_repr {
                 let renderer = self.declare_renderer("__builtin_render_repr", span)?;
                 builder
@@ -509,7 +502,10 @@ impl<'ctx> Lowerer<'ctx> {
     /// Found by its bare name, because the same type is `std.String` in one
     /// file and `String` in another -- and inside `std.string` itself, which
     /// declares it.
-    pub(super) fn standard_string_type(&self, span: fallc_span::Span) -> Result<Type, CodegenError> {
+    pub(super) fn standard_string_type(
+        &self,
+        span: fallc_span::Span,
+    ) -> Result<Type, CodegenError> {
         // The unqualified one comes first: a file that imports `std` may have
         // the qualified name in hand, while the module that *declares* the type
         // -- and therefore the one whose symbols the definitions were emitted
@@ -525,7 +521,10 @@ impl<'ctx> Lowerer<'ctx> {
             .first()
             .map(|def| Type::Nominal((*def).clone()))
             .ok_or_else(|| {
-                CodegenError::waiting_for_spec("the standard string type, which `str` returns", span)
+                CodegenError::waiting_for_spec(
+                    "the standard string type, which `str` returns",
+                    span,
+                )
             })
     }
 
@@ -536,7 +535,10 @@ impl<'ctx> Lowerer<'ctx> {
     /// definition emitted. Nothing here is a special case: it is `__init__`
     /// with two parameters, and the checker would have produced the same string
     /// for a call to it written in source.
-    pub(super) fn string_from_c_symbol(&self, span: fallc_span::Span) -> Result<String, CodegenError> {
+    pub(super) fn string_from_c_symbol(
+        &self,
+        span: fallc_span::Span,
+    ) -> Result<String, CodegenError> {
         let string_ty = self.standard_string_type(span)?;
         let parameter = Type::Pointer {
             pointee: Box::new(Type::Character(fallc_sema::CharType::C8)),
@@ -601,9 +603,7 @@ impl<'ctx> Lowerer<'ctx> {
         // pointer is rendered as an address, so it takes one too.
         let value_ty = if name.ends_with("float") {
             context.f64_type().into()
-        } else if name.ends_with("pointer")
-            || name == "__builtin_render_repr"
-        {
+        } else if name.ends_with("pointer") || name == "__builtin_render_repr" {
             bytes.into()
         } else if name.ends_with("long") {
             // `long long` and `unsigned long long`, which is what the 64-bit
@@ -665,6 +665,19 @@ impl<'ctx> Lowerer<'ctx> {
         })?;
         let callee = match self.backend.module().get_function(&symbol) {
             Some(function) => function,
+            // A coroutine's member is declared in the standard library and
+            // implemented by the compiler, which emits it after the entries
+            // exist -- later than a caller that was lowered first. Declaring it
+            // here, from the signature the checker resolved, gives the call
+            // something to refer to.
+            // A coroutine's `resume` or `result` is declared by nobody: the
+            // checker recorded what it resolved, and the call site declares
+            // that. The body comes from `emit_coroutine_members`, once the
+            // entry that built the machine exists -- later than a caller that
+            // was lowered first.
+            None if self.coroutine_calls.contains_key(&span) => {
+                self.declare_coroutine_call(span)?
+            }
             None => {
                 // The method belongs to a type defined in another module, so
                 // its definition was compiled there. This is the declaration
@@ -750,11 +763,7 @@ impl<'ctx> Lowerer<'ctx> {
                 lowered.ok_or_else(|| CodegenError::waiting_for_spec("this receiver", span))?
             }
         } else if !matches!(
-            callee
-                .get_type()
-                .get_param_types()
-                .first()
-                .copied(),
+            callee.get_type().get_param_types().first().copied(),
             Some(inkwell::types::BasicMetadataTypeEnum::PointerType(_))
         ) {
             // A receiver taken by value: the method wants the object itself,
@@ -773,10 +782,7 @@ impl<'ctx> Lowerer<'ctx> {
                 _ => None,
             };
             if let Some(binding) = held_address
-                && matches!(
-                    binding.ty,
-                    inkwell::types::BasicTypeEnum::PointerType(_)
-                )
+                && matches!(binding.ty, inkwell::types::BasicTypeEnum::PointerType(_))
             {
                 let loaded = builder
                     .build_load(binding.ty, binding.storage, "receiver")
@@ -880,8 +886,7 @@ impl<'ctx> Lowerer<'ctx> {
         receiver: BasicValueEnum<'static>,
     ) -> Result<Option<BasicValueEnum<'static>>, CodegenError> {
         let _ = field;
-        let mut slots =
-            self.argument_slots(ast, types, builder, call, &symbol, span, 1, true)?;
+        let mut slots = self.argument_slots(ast, types, builder, call, &symbol, span, 1, true)?;
         slots[0] = Some(receiver.into());
         self.fill_argument_defaults(ast, types, builder, &symbol, &mut slots, span)?;
         let args: Vec<inkwell::values::BasicMetadataValueEnum<'static>> =
@@ -890,5 +895,4 @@ impl<'ctx> Lowerer<'ctx> {
         let value = self.build_value_call(builder, callee, &symbol, args, span)?;
         self.unwrap_throwing_value(ast, types, builder, span, value)
     }
-
 }

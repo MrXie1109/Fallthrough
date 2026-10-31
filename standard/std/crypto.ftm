@@ -19,13 +19,12 @@
 // a module that says which hash it offers does not invite the older ones.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.bytes;
-import std.array;
-from std.array import Array;
-from std.bytes import Bytes;
+from std.bytes import *;
+from std.array import *;
 
 // The working state.
 type Sha256 {

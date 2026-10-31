@@ -1,6 +1,6 @@
-# 09 Scopes
+# 10 Scopes
 
-> [中文](09-scopes.zh.md)
+> [中文](10-scopes.zh.md)
 
 ## Scope
 
@@ -92,7 +92,7 @@ scope ends.
 destroyed in reverse order of declaration.
 
 5.3 Destruction is performed through the type's `__drop__` or through the destruction of
-its members; the rules are given in [07 Expressions](07-expressions.md#special-methods).
+its members; the rules are given in [07 Expressions](08-expressions.md#special-methods).
 
 5.4 The order of destruction is the same on the exception path and the normal path; an
 exception raised in a `try` block completes the destruction of that block before the
@@ -105,6 +105,6 @@ moved-from object is still destroyed when its scope ends (in the empty state).
 order is not specified, unless this standard specifies otherwise.
 
 5.7 When a scope is left, the `defer` blocks of that scope
-(see [05 Statements §8](05-statements.md#defer)) run **before** the destruction of the
+(see [05 Statements §8](06-statements.md#defer)) run **before** the destruction of the
 scope's bindings. Both run in reverse declaration order, and an inner scope's `defer` runs
 before anything the enclosing scope does.

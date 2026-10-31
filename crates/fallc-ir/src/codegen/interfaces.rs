@@ -188,10 +188,9 @@ impl<'ctx> Lowerer<'ctx> {
                 builder,
                 pointer.into(),
                 table,
-                context.i32_type().const_int(
-                    u64::try_from(*source_index).unwrap_or(0),
-                    false,
-                ),
+                context
+                    .i32_type()
+                    .const_int(u64::try_from(*source_index).unwrap_or(0), false),
             )?;
             let entry = builder
                 .build_load(pointer, source_slot, "entry")
@@ -200,10 +199,9 @@ impl<'ctx> Lowerer<'ctx> {
                 builder,
                 pointer.into(),
                 new_table,
-                context.i32_type().const_int(
-                    u64::try_from(target_index).unwrap_or(0),
-                    false,
-                ),
+                context
+                    .i32_type()
+                    .const_int(u64::try_from(target_index).unwrap_or(0), false),
             )?;
             builder
                 .build_store(target_slot, entry)
@@ -330,8 +328,7 @@ impl<'ctx> Lowerer<'ctx> {
         // the layout is the referent's, and the fields are read from the
         // address the reference holds.
         let behind = behind_references(&receiver_ty);
-        let Some(inkwell::types::BasicTypeEnum::StructType(struct_ty)) = mapper.map(behind)
-        else {
+        let Some(inkwell::types::BasicTypeEnum::StructType(struct_ty)) = mapper.map(behind) else {
             return Err(CodegenError::waiting_for_spec(
                 "an interface value with no layout",
                 span,
@@ -351,8 +348,10 @@ impl<'ctx> Lowerer<'ctx> {
                         .map_err(|error| CodegenError::Emit(error.to_string()))?
                 }
             };
-            let data_field = build_field_gep(builder, struct_ty.into(), address.into_pointer_value(), 0)?;
-            let table_field = build_field_gep(builder, struct_ty.into(), address.into_pointer_value(), 1)?;
+            let data_field =
+                build_field_gep(builder, struct_ty.into(), address.into_pointer_value(), 0)?;
+            let table_field =
+                build_field_gep(builder, struct_ty.into(), address.into_pointer_value(), 1)?;
             (
                 builder
                     .build_load(pointer, data_field, "data")
@@ -361,13 +360,9 @@ impl<'ctx> Lowerer<'ctx> {
                     .build_load(pointer, table_field, "table")
                     .map_err(|error| CodegenError::Emit(error.to_string()))?,
             )
-        } else if let Some(binding) =
-            self.lower_lvalue(ast, types, builder, field.object)
-        {
-            let data_field =
-                build_field_gep(builder, struct_ty.into(), binding.storage, 0)?;
-            let table_field =
-                build_field_gep(builder, struct_ty.into(), binding.storage, 1)?;
+        } else if let Some(binding) = self.lower_lvalue(ast, types, builder, field.object) {
+            let data_field = build_field_gep(builder, struct_ty.into(), binding.storage, 0)?;
+            let table_field = build_field_gep(builder, struct_ty.into(), binding.storage, 1)?;
             (
                 builder
                     .build_load(pointer, data_field, "data")
@@ -500,7 +495,12 @@ impl<'ctx> Lowerer<'ctx> {
             arguments.push(self.lower_argument(ast, types, builder, argument, span)?);
         }
         let site = builder
-            .build_indirect_call(function_type, callee.into_pointer_value(), &arguments, "virtual")
+            .build_indirect_call(
+                function_type,
+                callee.into_pointer_value(),
+                &arguments,
+                "virtual",
+            )
             .map_err(|error| CodegenError::Emit(error.to_string()))?;
         if let Some(slot) = sret_slot {
             return Ok(Some(slot.as_basic_value_enum()));
@@ -521,7 +521,9 @@ impl<'ctx> Lowerer<'ctx> {
         let context = self.backend.context();
         let pointer = context.ptr_type(inkwell::AddressSpace::default());
         let signature = pointer.fn_type(&[context.i64_type().into()], false);
-        self.backend.module().add_function("malloc", signature, None)
+        self.backend
+            .module()
+            .add_function("malloc", signature, None)
     }
 }
 

@@ -21,9 +21,11 @@
 
 import C;
 import std.os;
+from std.os import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.internal.time_sys;
+from std.internal.time_sys import *;
 
 // An amount of time.
 //

@@ -1,6 +1,6 @@
 # Fallthrough
 
-> [English](README.md)
+> [中文](README.zh.md)
 
 **本项目由 AI 生成。** 编译器、标准库、测试与本文档均由模型 **DeepSeek V4.1 Flash
 1017** 在 **DeepSeek Harness** 环境中编写。人负责把握设计方向，模型负责写代码。
@@ -14,12 +14,25 @@ Fallthrough 才刚刚开始。项目于 **2026-10-12** 开工，语言目前十�
 - **标准库不稳定。** 模块、类型、函数及其签名会随构建变化；今天存在的东西明天可能改名或删除。
 - **API 与 ABI 不稳定。** 聚合体布局、调用约定以及产物的形态都还在确定中。
 - **CLI 不稳定。** 选项拼写与 `--emit=` 的取值集合可能在不通知的情况下改变。
-- **效率与编译速度不是最好的。** 编译器优先保证正确性而非速度：冷编译一个 import 标准库的程序
-  以秒计而不是毫秒计，内存占用也没有专门优化。
+- **生成的代码不是最好的。** 编译器默认不跑任何优化遍，因此程序的快慢取决于前端发出的代码；
+  内存占用也没有专门调优。
 - **没有兼容性承诺。** 在本节消失之前，任何一次构建都可能让程序无法编译。不要在上面构建你
   无法承担重写代价的东西。
 
 目前，这是一个玩具编译器，但在将来，我希望将它发扬光大。
+
+## 构建速度
+
+一个模块只编译一次，产物会被缓存：接口、编译好的函数，以及随之而来的模板清单。同一个程序的
+第二次构建会直接读这些产物，而不是再读一遍源码。
+
+| 程序 | 首次构建 | 缓存预热后 |
+| ---- | -------- | ---------- |
+| `hello world`（`import C`） | 0.13 s | 0.05 s |
+| 导入了标准库的程序 | 8.3 s | 0.56 s |
+
+导入标准库的程序首次构建是最慢的情形，原因和所有编译器一样：标准库有 67 个模块，而这些模块的
+函数体实例化出来的函数必须被编译一次。缓存的作用，就是让程序自己的改动不必再付这一笔代价。
 
 ## 设计哲学
 
@@ -175,7 +188,7 @@ fn main() int except {
 `import C;` 是用本语言写成的 C 标准库绑定；`import std;` 是语言自己的标准库。两者都是普通
 模块，和程序自己的模块一样通过 `import` 使用。
 
-默认可执行文件。其他产物用 `--emit=` 指定：
+默认可执行文件。其他产物用 `--emit=` 请求：
 
 ```sh
 fallc hello.ft --emit=obj    -o hello.o     # 一个目标文件
@@ -188,23 +201,24 @@ fallc hello.ft --emit=llvm   -o hello.ll    # LLVM IR
 
 ## 文档
 
-语言的规范文本在 [docs/language](docs/language/README.md)：英文是主文档，每个分册都带中文
+语言的规范文本在 [docs/language](docs/language/README.zh.md)：英文是主文档，每个分册都带中文
 翻译（`*.zh.md`）。
 
 | 文档 | 内容 |
 | ---- | ---- |
 | [00 总则](docs/language/00-start.zh.md) | 源文件、程序入口、编译选项、退出码、最初的诊断 |
-| [语言规范](docs/language/README.zh.md) | 规范文本：第 00–10 分册与两个附录 |
+| [语言规范](docs/language/README.zh.md) | 规范文本：第 00–11 分册与三个附录 |
 | [01 词法](docs/language/01-lexical.zh.md) | 源文本、记号、注释、关键字、字面量、运算符 |
 | [02 类型](docs/language/02-types.zh.md) | 类型系统、布局与对齐、隐式调整 |
 | [03 声明](docs/language/03-declarations.zh.md) | 声明、属性、宏、traits、interface、模板 |
 | [04 函数](docs/language/04-functions.zh.md) | 函数、成员函数、lambda、实参传递、重载、移动 |
-| [05 语句](docs/language/05-statements.zh.md) | 块、循环、`switch`、跳转、`defer` |
-| [06 异常](docs/language/06-exceptions.zh.md) | `raise`、`try`、`except`、`!!`，以及调用点何时必须表态 |
-| [07 表达式](docs/language/07-expressions.zh.md) | 运算符、转换、特殊方法、求值顺序 |
-| [08 模块](docs/language/08-modules.zh.md) | 导入与导出、模块查找、多文件程序 |
-| [09 作用域](docs/language/09-scopes.zh.md) | 作用域、遮蔽、生命周期、销毁顺序 |
-| [10 诊断](docs/language/10-diagnostics.zh.md) | 诊断编号、警告分组、抑制 |
+| [05 协程](docs/language/05-coroutines.zh.md) | `@coroutine`、`yield`、`resume`、`result`、状态机 |
+| [06 语句](docs/language/06-statements.zh.md) | 块、循环、`switch`、跳转、`defer` |
+| [07 异常](docs/language/07-exceptions.zh.md) | `raise`、`try`、`except`、`!!`，以及调用点何时必须表态 |
+| [08 表达式](docs/language/08-expressions.zh.md) | 运算符、转换、特殊方法、求值顺序 |
+| [09 模块](docs/language/09-modules.zh.md) | 导入与导出、模块查找、多文件程序 |
+| [10 作用域](docs/language/10-scopes.zh.md) | 作用域、遮蔽、生命周期、销毁顺序 |
+| [11 诊断](docs/language/11-diagnostics.zh.md) | 诊断编号、警告分组、抑制 |
 | [附录 A：诊断](docs/language/appendix-a-errors.zh.md) | 每个稳定诊断编号、级别与消息模板 |
 | [附录 B：特殊方法](docs/language/appendix-b-special-methods.zh.md) | `__init__`、`__drop__`、运算符、转换及其余 |
 | [标准库](docs/library.zh.md) | `standard/std/` 下的模块、类型与函数 |
@@ -214,7 +228,7 @@ fallc hello.ft --emit=llvm   -o hello.ll    # LLVM IR
 | [SPEC-STATUS](docs/SPEC-STATUS.md) | 规范背后的决定，以及仍然开放的部分 |
 | [示例](examples/) | 测试套件实际编译并运行的小程序 |
 
-本文件的中文版是 [README.zh.md](README.zh.md)；英文主文档是 [README.md](README.md)。
+本文件的中文版是 [README.zh.md](README.zh.md)。
 
 ## 仓库结构
 
@@ -232,10 +246,10 @@ docs/              规范、库参考与设计记录
 ## 开发
 
 仓库就是一个普通的 Cargo workspace，`make` 是常用任务的短命令：`make help` 列出全部，
-`make release` 构建，`make install` 安装。`make check` 做编译期检查，`make clippy` 保持
-无警告。
+`make release` 构建，`make install` 安装。`make check` 让 workspace 保持编译期检查通过，
+`make clippy` 让它保持无警告。
 
-添加语言特性时按能让树始终可编译的顺序：
+添加语言特性时，每一步都要让整棵树保持可编译：
 
 1. `crates/fallc-lexer/src/token.rs` 中的记号种类以及关键字/标点表；
 2. `crates/fallc-ast/src/node/` 中的 AST 变体**和** `crates/fallc-ast/src/visit.rs` 中对应
@@ -245,5 +259,13 @@ docs/              规范、库参考与设计记录
 5. `crates/fallc-ir/src/codegen/` 中的降级，以及 `crates/fallc-ir/src/types.rs` 中的类型
    映射——没有操作码枚举要扩展：直接发出 LLVM 指令，交给验证器检查结果。
 
-一条可观察的规则，在测试钉住它、并且 `docs/language` 里两份语言（英文与中文）的规范段落都写好
-之前，都还不算完成。
+一条可观察的规则，在测试钉住它、并且 `docs/language` 里存在规范段落之前，都还不算完成——
+而且必须是两种语言都写好，因为这一对才是规范。
+
+## 许可协议
+
+Fallthrough 以 [Apache License, Version 2.0](LICENSE) 发布。分发它是希望它有用，但**不提供
+任何担保**；甚至不提供适销性或特定用途适用性的默示担保。
+
+用 Fallthrough 编写的程序完全不受本许可约束。受许可的是编译器；它编译出的代码属于你，条款
+由你决定，无论是编写这门语言还是链接它的标准库，都不会改变这一点。

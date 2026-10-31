@@ -54,7 +54,8 @@ fn an_array_is_indexed_directly_rather_than_by_getitem() {
 
 #[test]
 fn a_pointer_is_indexed_directly() {
-    let source = "fn f() int {\n    a [3]int;\n    a[1] = 7;\n    p *int = &a[0];\n    return p[1];\n}\n";
+    let source =
+        "fn f() int {\n    a [3]int;\n    a[1] = 7;\n    p *int = &a[0];\n    return p[1];\n}\n";
     let ir = ir_of(source);
     assert!(ir.contains("getelementptr"), "{ir}");
 }
@@ -83,8 +84,12 @@ fn a_type_without_bool_cannot_be_a_condition() {
     assert!(!output.contains("__bool__"), "{output}");
     let mut warnings = fallc_diag::WarningPolicy::new();
     warnings.set_verbose(true);
-    let (_, verbose) =
-        fallc::pipeline::compile_text_with_warnings("test.fft", source, &[EmitKind::Llvm], &warnings);
+    let (_, verbose) = fallc::pipeline::compile_text_with_warnings(
+        "test.fft",
+        source,
+        &[EmitKind::Llvm],
+        &warnings,
+    );
     assert!(verbose.contains("__bool__"), "{verbose}");
 }
 
@@ -147,13 +152,17 @@ fn a_posit_and_bitwise_not_use_their_methods() {
             "type V {{ n int; }}\nfn {method}(this &const V) V {{\n    return .{{this.n}};\n}}\nfn f() int {{\n    v V = .{{3}};\n    w V = {expression};\n    return w.n;\n}}\n"
         );
         let output = ir_of(&source);
-        assert!(output.contains(method), "`{expression}` did not call {method}: {output}");
+        assert!(
+            output.contains(method),
+            "`{expression}` did not call {method}: {output}"
+        );
     }
 }
 
 #[test]
 fn a_type_without_the_operator_says_what_to_define() {
-    let source = "type V { n int; }\nfn f() int {\n    v V = .{3};\n    w V = -v;\n    return w.n;\n}\n";
+    let source =
+        "type V { n int; }\nfn f() int {\n    v V = .{3};\n    w V = -v;\n    return w.n;\n}\n";
     let (outcome, output) = compile_text("test.fft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{output}");
     // Which method would make it work is an explanation, and explanations are
@@ -161,8 +170,12 @@ fn a_type_without_the_operator_says_what_to_define() {
     assert!(!output.contains("__neg__"), "{output}");
     let mut warnings = fallc_diag::WarningPolicy::new();
     warnings.set_verbose(true);
-    let (_, verbose) =
-        fallc::pipeline::compile_text_with_warnings("test.fft", source, &[EmitKind::Llvm], &warnings);
+    let (_, verbose) = fallc::pipeline::compile_text_with_warnings(
+        "test.fft",
+        source,
+        &[EmitKind::Llvm],
+        &warnings,
+    );
     assert!(verbose.contains("__neg__"), "{verbose}");
 }
 
@@ -198,7 +211,10 @@ fn a_destructor_runs_before_a_return() {
     let output = ir_of(source);
     let drop = output.find("__drop__").expect("the destructor is called");
     let ret = output.find("ret void").expect("the function returns");
-    assert!(drop < ret, "the destructor must run before the return:\n{output}");
+    assert!(
+        drop < ret,
+        "the destructor must run before the return:\n{output}"
+    );
 }
 
 #[test]

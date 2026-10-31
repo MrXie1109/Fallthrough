@@ -22,8 +22,9 @@
 // differ in both.
 
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.util;
+from std.util import *;
 
 // A value of any type, as text and a type name.
 export type Any {
@@ -88,8 +89,8 @@ export fn __init__(this &Any, other &const Any) void {
 export fn __init__(this &Any, other &&Any) void {
     (&this._text)->__init__();
     (&this._type)->__init__();
-    this._text = util.move(other._text);
-    this._type = util.move(other._type);
+    this._text = move(other._text);
+    this._type = move(other._type);
     this._present = other._present;
     other._present = false;
 }
@@ -103,8 +104,8 @@ export fn __assign__(this &Any, other &const Any) void {
 
 // Moves another holder's text into this one.
 export fn __assign__(this &Any, other &&Any) void {
-    this._text = util.move(other._text);
-    this._type = util.move(other._type);
+    this._text = move(other._text);
+    this._type = move(other._type);
     this._present = other._present;
     other._present = false;
 }

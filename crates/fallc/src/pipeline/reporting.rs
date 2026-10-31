@@ -302,13 +302,11 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
     register_imported_interfaces(&mut checker, &imported_interfaces);
     // The third field says whether the object is one per thread; an
     // `@extern_C` variable is a plain global.
-    let mut external_globals: std::collections::HashMap<
-        String,
-        (fallc_sema::Type, String, bool),
-    > = register_imported_variables(&mut checker, &imported_variables)
-        .into_iter()
-        .map(|(name, (ty, symbol))| (name, (ty, symbol, false)))
-        .collect();
+    let mut external_globals: std::collections::HashMap<String, (fallc_sema::Type, String, bool)> =
+        register_imported_variables(&mut checker, &imported_variables)
+            .into_iter()
+            .map(|(name, (ty, symbol))| (name, (ty, symbol, false)))
+            .collect();
     // An exported module-level variable is storage in another module, read
     // through its symbol exactly as an `extern` one is.
     external_globals.extend(register_imported_globals(&mut checker, &imported_globals));
@@ -369,12 +367,12 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
                 },
             );
         }
-      // The checker now owns the template bodies' tables; the module objects'
-    // copies were only needed to register them.
-    for body in &mut module_bodies {
-        body.release_check_tables();
+        // The checker now owns the template bodies' tables; the module objects'
+        // copies were only needed to register them.
+        for body in &mut module_bodies {
+            body.release_check_tables();
+        }
     }
-  }
     let checked = checker.check(&ast, &resolved.resolutions);
     session.report_all(checked.diagnostics.clone());
     if emit_kinds.contains(&EmitKind::Types) {
@@ -429,6 +427,7 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
         &checked.in_place_by_address,
         &checked.init_calls,
         &checked.method_calls,
+        &checked.coroutine_calls,
         &checked.indirect_receivers,
         &checked.assign_methods,
         &checked.deref_reads,
@@ -454,12 +453,8 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
             external_global_refs: &body.external_global_refs,
         })
         .collect();
-    let lowered = lowerer.lower_with_modules(
-        &ast,
-        &checked.types,
-        &checked.binding_types,
-        &borrowed,
-    );
+    let lowered =
+        lowerer.lower_with_modules(&ast, &checked.types, &checked.binding_types, &borrowed);
     session.report_all(lowered.diagnostics.clone());
     if !lowered.is_ok() {
         return (Outcome::Failure, join(session.render_diagnostics(), output));
@@ -489,4 +484,3 @@ pub(super) fn join(diagnostics: String, output: String) -> String {
         format!("{diagnostics}{output}")
     }
 }
-

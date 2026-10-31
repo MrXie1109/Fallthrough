@@ -260,8 +260,11 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("narrow");
-    assert_eq!(scratch.run("narrow", source), "1 2 counter
-");
+    assert_eq!(
+        scratch.run("narrow", source),
+        "1 2 counter
+"
+    );
 }
 
 #[test]
@@ -332,8 +335,11 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("template");
-    assert_eq!(scratch.run("template", source), "11
-");
+    assert_eq!(
+        scratch.run("template", source),
+        "11
+"
+    );
 }
 
 #[test]
@@ -369,8 +375,11 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("sret");
-    assert_eq!(scratch.run("sret", source), "42 42
-");
+    assert_eq!(
+        scratch.run("sret", source),
+        "42 42
+"
+    );
 }
 
 #[test]
@@ -849,7 +858,8 @@ fn an_interface_body_states_methods_by_calling_them() {
     let (outcome, diagnostics) = compile_text("t.ft", signed, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
     assert!(
-        diagnostics.contains("states a method by calling it") && diagnostics.contains("it.next() -> int"),
+        diagnostics.contains("states a method by calling it")
+            && diagnostics.contains("it.next() -> int"),
         "{diagnostics}"
     );
 

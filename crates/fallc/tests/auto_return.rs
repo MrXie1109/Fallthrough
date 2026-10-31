@@ -121,8 +121,5 @@ fn a_declaration_must_write_its_return_type() {
     let source = "fn declared(n int);\n\nfn main() int {\n    return 0;\n}\n";
     let (outcome, printed) = compile(source);
     assert_eq!(outcome, Outcome::Failure, "{printed}");
-    assert!(
-        printed.contains("must write its return type"),
-        "{printed}"
-    );
+    assert!(printed.contains("must write its return type"), "{printed}");
 }

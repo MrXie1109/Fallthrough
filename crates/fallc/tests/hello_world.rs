@@ -688,7 +688,8 @@ fn a_call_emits_a_call() {
     // runs and the call has to be emitted. A call whose arguments are all
     // constants is evaluated by the checker instead -- see the
     // `compile_time_evaluation` tests.
-    let source = "fn g(n int) int {\n    return n + 1;\n}\nfn f(n int) int {\n    return g(n);\n}\n";
+    let source =
+        "fn g(n int) int {\n    return n + 1;\n}\nfn f(n int) int {\n    return g(n);\n}\n";
     let output = ir_of(source);
     assert!(output.contains("call i32 @g_I3_i32("), "{output}");
 }
@@ -705,8 +706,7 @@ fn a_call_checks_its_argument_count() {
 fn a_call_checks_its_argument_types() {
     // Widening is implicit, narrowing is not: passing an `int` where a `u8` is
     // wanted is the mismatch.
-    let source =
-        "fn g(a u8) int {\n    return a as int;\n}\nfn f() int {\n    b int = 1;\n    return g(b);\n}\n";
+    let source = "fn g(a u8) int {\n    return a as int;\n}\nfn f() int {\n    b int = 1;\n    return g(b);\n}\n";
     let (outcome, output) = compile(source);
     assert_eq!(outcome, Outcome::Failure, "{output}");
     assert!(output.contains("type mismatch in argument"), "{output}");
@@ -715,7 +715,8 @@ fn a_call_checks_its_argument_types() {
 #[test]
 fn an_expression_statement_evaluates_for_effect() {
     // Called with a parameter, so the call is real and its value is discarded.
-    let source = "fn g(n int) int {\n    return n + 1;\n}\nfn f(n int) int {\n    g(n);\n    return 0;\n}\n";
+    let source =
+        "fn g(n int) int {\n    return n + 1;\n}\nfn f(n int) int {\n    g(n);\n    return 0;\n}\n";
     let output = ir_of(source);
     assert!(output.contains("call i32 @g_I3_i32("), "{output}");
 }

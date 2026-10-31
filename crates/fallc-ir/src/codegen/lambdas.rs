@@ -46,10 +46,7 @@ impl<'ctx> Lowerer<'ctx> {
         for capture in &instance.captures {
             let name = &capture.name;
             let binding = self.lookup_binding(name).ok_or_else(|| {
-                CodegenError::waiting_for_spec(
-                    format!("the captured `{name}` at this call"),
-                    span,
-                )
+                CodegenError::waiting_for_spec(format!("the captured `{name}` at this call"), span)
             })?;
             arguments.push(binding.storage.into());
         }
@@ -154,8 +151,7 @@ impl<'ctx> Lowerer<'ctx> {
         let mapper = TypeMapper::new(context);
         let function = self.declare_lambda(&info.tree, &info.instance.lambda, &info.instance)?;
 
-        let Some(inkwell::types::BasicTypeEnum::StructType(struct_ty)) =
-            mapper.map(&info.ty)
+        let Some(inkwell::types::BasicTypeEnum::StructType(struct_ty)) = mapper.map(&info.ty)
         else {
             return Err(CodegenError::waiting_for_spec(
                 "a closure value with no layout",
@@ -301,7 +297,8 @@ impl<'ctx> Lowerer<'ctx> {
         } else {
             return_llvm
         };
-        let mut param_types = Vec::with_capacity(instance.captures.len() + instance.parameters.len());
+        let mut param_types =
+            Vec::with_capacity(instance.captures.len() + instance.parameters.len());
         if out_of_line {
             param_types.push(context.ptr_type(inkwell::AddressSpace::default()).into());
         }

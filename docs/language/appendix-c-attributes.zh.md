@@ -31,8 +31,13 @@ C.2.3 属性是**请求**，而不是调用方可依赖的承诺：`@inline` 与
 | `@constexpr` | — | 该函数可在常量位置被调用 |
 | `@extern_C` | — | 使用 C ABI：符号不做名称修饰 |
 | `@overridable` | — | 默认实现；同名定义会取代它 |
+| `@coroutine` | — | 该函数是协程：可以 `yield`，返回类型**必须**是 `std.Coroutine<Send, Yield, Return>` |
 
 C.3.1 把 `@noreturn` 用在返回类型不是 `void` 的函数上是错误。
+
+C.3.1a 把 `@coroutine` 用在返回类型不是 `std.Coroutine<Send, Yield, Return>` 的函数上是错误。
+函数体里的 `return` 给出的是 *Return* 类型，`yield` 交出一个 *Yield* 并产出下一次 `resume`
+送进的 *Send*；在这样一个函数体之外写 `yield` 是错误。
 
 C.3.1.1 `@overridable` 声明一个兜底实现。程序中另一处同名同参数表的定义会取代它，调用处
 什么也不用写：只要还有别的同名定义存在，这个默认实现就不再是候选。被取代的默认实现既
@@ -86,7 +91,7 @@ C.4.2 `@uninitialized` 与初始化器不能同时写。
 | `@must_use` | 类型声明 | 返回该类型的调用**必须**使用其结果 |
 
 C.5.1 `export` 不属于本附录意义上的属性，尽管它与属性写在同一位置：它是声明自身语法
-的一部分（[08 模块](08-modules.zh.md#导出表)）。
+的一部分（[08 模块](09-modules.zh.md#导出表)）。
 
 ## C.6 分支
 

@@ -83,7 +83,7 @@ does not are mutually incompatible, and **must not** be converted implicitly in 
 direction.
 
 4.1.3 A call through a function pointer has the same call-site obligations as a direct
-call (see [06 Exceptions](06-exceptions.md)).
+call (see [06 Exceptions](07-exceptions.md)).
 
 ### Conversion from a function name to a pointer
 
@@ -266,7 +266,7 @@ gives `b` the same type.
 undefined behavior.
 
 7.2.2 A nominal type may declare `__getitem__` to specify its own subscript type and
-out-of-bounds behavior, see [07 Expressions](07-expressions.md#special-methods).
+out-of-bounds behavior, see [07 Expressions](08-expressions.md#special-methods).
 
 7.2.3 The language has no slice type and no tuple type. `[]T` is only a parameter
 spelling; multiple values are carried by a nominal type.
@@ -426,8 +426,8 @@ standard permits; no other implicit type change may occur:
 | a value is boxed into an `interface` it satisfies | initialization and assignment |
 | a literal takes the type required by context | literal position |
 | integer promotion (see 12.5) | a position requiring the target integer type |
-| an `__im_init__` of the target type | a position requiring the target type (see [07 Expressions](07-expressions.md#implicit-initialisation-and-implicit-conversions)) |
-| an `__im_as__` of the source type | a position requiring the target type (see [07 Expressions](07-expressions.md#implicit-initialisation-and-implicit-conversions)) |
+| an `__im_init__` of the target type | a position requiring the target type (see [07 Expressions](08-expressions.md#implicit-initialisation-and-implicit-conversions)) |
+| an `__im_as__` of the source type | a position requiring the target type (see [07 Expressions](08-expressions.md#implicit-initialisation-and-implicit-conversions)) |
 | the optional-value syntax `?T` expands to a library type | type position |
 
 12.3 Removing `const` **must** be written `as`.
@@ -475,7 +475,7 @@ binding initialization, assignment, argument binding, return values, field initi
 and construction arguments. Promotion does not change operator selection: the operands
 of arithmetic and bitwise operations **must not** become different types by virtue of
 integer promotion, and must still have the same type or use an explicit `as`. The rules
-for comparison operations are given in [07 Expressions](07-expressions.md) and are
+for comparison operations are given in [07 Expressions](08-expressions.md) and are
 not affected by this clause.
 
 12.5.6 An unsuffixed integer literal takes the type required by context; this is the

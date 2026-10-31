@@ -217,7 +217,10 @@ pub fn decode_escapes(body: &str) -> Vec<u8> {
 pub fn decode_int_value(digits: &str) -> Option<i64> {
     // Separators carry no value, and the scanner has already checked that they
     // sit between digits.
-    let cleaned: String = digits.chars().filter(|character| *character != '_').collect();
+    let cleaned: String = digits
+        .chars()
+        .filter(|character| *character != '_')
+        .collect();
     let (radix, body) = if let Some(rest) = cleaned
         .strip_prefix("0x")
         .or_else(|| cleaned.strip_prefix("0X"))

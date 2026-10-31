@@ -45,7 +45,10 @@ impl Scratch {
         let run_output = std::process::Command::new(&executable)
             .output()
             .expect("the program can be run");
-        (true, String::from_utf8_lossy(&run_output.stdout).into_owned())
+        (
+            true,
+            String::from_utf8_lossy(&run_output.stdout).into_owned(),
+        )
     }
 }
 
@@ -100,7 +103,10 @@ fn two_modules_may_each_keep_a_private_helper() {
 #[test]
 fn a_symbol_defined_in_two_files_is_rejected() {
     let scratch = Scratch::new("odr-clash");
-    let first = scratch.write("a.ft", "fn main() int { return 0; }\nfn shared() int { return 1; }\n");
+    let first = scratch.write(
+        "a.ft",
+        "fn main() int { return 0; }\nfn shared() int { return 1; }\n",
+    );
     let second = scratch.write("b.ft", "fn shared() int { return 2; }\n");
     let (built, _) = scratch.build(&[first, second], "prog");
     assert!(
@@ -132,7 +138,10 @@ fn one_file_still_works_on_its_own() {
     // The single-file path is the common case and must not be disturbed by the
     // multi-file one.
     let scratch = Scratch::new("single");
-    let main = scratch.write("main.ft", "import C;\nfn main() int {\n    C.puts(\"alone\");\n    return 0;\n}\n");
+    let main = scratch.write(
+        "main.ft",
+        "import C;\nfn main() int {\n    C.puts(\"alone\");\n    return 0;\n}\n",
+    );
     let (built, output) = scratch.build(&[main], "prog");
     assert!(built);
     assert_eq!(output.trim(), "alone");
@@ -325,7 +334,10 @@ fn a_throwing_interface_method_crosses_a_module_boundary() {
     );
     let _ = &library;
     let (built, output) = scratch.build(&[main], "prog");
-    assert!(built, "a throwing interface method must cross a module boundary");
+    assert!(
+        built,
+        "a throwing interface method must cross a module boundary"
+    );
     assert_eq!(output.trim(), "caught\n5");
 }
 
@@ -375,7 +387,10 @@ fn a_named_import_brings_every_kind_of_member() {
     );
     let _ = &library;
     let (built, output) = scratch.build(&[main], "prog");
-    assert!(built, "every kind of exported member must be importable by name");
+    assert!(
+        built,
+        "every kind of exported member must be importable by name"
+    );
     assert_eq!(output.trim(), "200 1 1 42");
 }
 
@@ -431,7 +446,10 @@ fn a_mutable_field_is_writable_across_a_module() {
     );
     let _ = &library;
     let (built, output) = scratch.build(&[main], "prog");
-    assert!(built, "a `mutable` field must stay writable across a module");
+    assert!(
+        built,
+        "a `mutable` field must stay writable across a module"
+    );
     assert_eq!(output.trim(), "1 2");
 }
 
@@ -471,7 +489,10 @@ fn a_template_body_uses_its_own_modules_private_type() {
     );
     let _ = &library;
     let (built, output) = scratch.build(&[main], "prog");
-    assert!(built, "a template body must see its own module's declarations");
+    assert!(
+        built,
+        "a template body must see its own module's declarations"
+    );
     assert_eq!(output.trim(), "");
 }
 
@@ -510,7 +531,10 @@ fn an_interface_inside_a_template_body_is_the_modules_own() {
     );
     let _ = &library;
     let (built, output) = scratch.build(&[main], "prog");
-    assert!(built, "an interface inside a template body must resolve there");
+    assert!(
+        built,
+        "an interface inside a template body must resolve there"
+    );
     assert_eq!(output.trim(), "1");
 }
 
@@ -665,7 +689,10 @@ fn an_exported_global_is_one_object_for_the_program() {
     );
     let _ = &library;
     let (built, output) = scratch.build(&[main], "prog");
-    assert!(built, "an exported global must be one object for the program");
+    assert!(
+        built,
+        "an exported global must be one object for the program"
+    );
     assert_eq!(output.trim(), "7 11\n21 21 21\n30");
 }
 
@@ -871,6 +898,9 @@ fn a_declaration_after_the_definition_does_not_hide_it() {
         "import std;\nfrom node import Node;\n\nfn main() int {\n    n Node = .{7};\n    C.printf(\"%d\\n\", n.value);\n    return 0;\n}\n",
     );
     let (built, output) = scratch.build(&[main], "after");
-    assert!(built, "a repeated declaration must not make the type incomplete");
+    assert!(
+        built,
+        "a repeated declaration must not make the type incomplete"
+    );
     assert_eq!(output.trim(), "7");
 }

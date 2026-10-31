@@ -113,8 +113,5 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("copies");
-    assert_eq!(
-        scratch.run("copies", source),
-        "eq 1 0\n0 text\n"
-    );
+    assert_eq!(scratch.run("copies", source), "eq 1 0\n0 text\n");
 }

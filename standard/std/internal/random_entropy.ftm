@@ -9,7 +9,7 @@
 // the loader prefers it to this one, and the two agree on `fill`.
 
 import std.io;
-from std.io import File, OpenMode;
+from std.io import *;
 
 // Fills `buffer` with `count` bytes from the system's entropy source.
 //

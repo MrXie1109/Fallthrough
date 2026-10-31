@@ -99,10 +99,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("used");
-    assert_eq!(
-        scratch.accepted("used", source),
-        "11 11 11 11 11\n"
-    );
+    assert_eq!(scratch.accepted("used", source), "11 11 11 11 11\n");
 }
 
 #[test]
@@ -181,8 +178,5 @@ fn main() int except {
     return 0;
 }
 "#;
-    assert_eq!(
-        scratch.accepted("im-init", source),
-        "implicit explicit\n"
-    );
+    assert_eq!(scratch.accepted("im-init", source), "implicit explicit\n");
 }

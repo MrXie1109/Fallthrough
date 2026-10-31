@@ -17,9 +17,9 @@
 // one that knows why.
 
 import std.random;
-from std.random import Random;
+from std.random import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 
 // A universally unique identifier.
 export type Uuid {

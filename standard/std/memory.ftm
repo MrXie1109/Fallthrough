@@ -15,8 +15,9 @@
 // instantiated from its declaration, and the declaration is what an import of
 // the module brings.
 import std.sync;
-from std.sync import Atomic;
+from std.sync import *;
 import std.util;
+from std.util import *;
 
 // --------------------------------------------------------------- allocators
 
@@ -34,21 +35,21 @@ export traits Allocator(it A) {
 
 // The allocator every container uses unless it says otherwise.
 //
-// It is the C heap, which is what `util.allocate` and `util.free` are.
+// It is the C heap, which is what `allocate` and `free` are.
 export type DefaultAllocator {
 }
 
 // Takes `size` bytes from the C heap.
 //
 // The bytes are uninitialised: constructing a value in them is the caller's job,
-// exactly as `util.allocate` says.
+// exactly as `allocate` says.
 export fn alloc(this &DefaultAllocator, size usize) *byte {
-    return util.allocate(size);
+    return allocate(size);
 }
 
 // Gives a block back to the C heap.
 export fn free(this &DefaultAllocator, block *byte) void {
-    util.free(block);
+    free(block);
 }
 
 // ---------------------------------------------------------------------- Box
@@ -84,7 +85,7 @@ fn __init__(this &Box<T>) void {
 export
 template <T type>
 fn __im_init__(this &Box<T>, value T) void {
-    this._value = util.allocate(sizeof(T)) as *T;
+    this._value = allocate(sizeof(T)) as *T;
     this._value->__init__(value);
 }
 
@@ -99,7 +100,7 @@ template <T type>
 fn __init__(this &Box<T>, other &const Box<T>) void {
     this._value = nullptr;
     if (other._value != nullptr) {
-        this._value = util.allocate(sizeof(T)) as *T;
+        this._value = allocate(sizeof(T)) as *T;
         this._value->__init__(*(other._value));
     }
 }
@@ -122,7 +123,7 @@ template <T type>
 fn __drop__(this &Box<T>) void {
     if (this._value != nullptr) {
         this._value->__drop__();
-        util.free(this._value as *byte);
+        free(this._value as *byte);
         this._value = nullptr;
     }
 }
@@ -146,7 +147,7 @@ export
 template <T type>
 fn get(this &Box<T>) &T {
     if (this._value == nullptr) {
-        util.panic("Box is empty");
+        panic("Box is empty");
     }
     return this._value[0];
 }
@@ -156,7 +157,7 @@ export
 template <T type>
 fn get(this &const Box<T>) &const T {
     if (this._value == nullptr) {
-        util.panic("Box is empty");
+        panic("Box is empty");
     }
     return this._value[0];
 }
@@ -234,7 +235,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __im_init__(this &Rc<T, A>, value T) void {
     mem A = .{};
-    this.__init__(util.move(value), mem);
+    this.__init__(move(value), mem);
 }
 
 // Creates an owner of `value`, taking the block from `memory`.
@@ -255,7 +256,7 @@ fn __im_init__(this &Rc<T, A>, value T, memory A) void {
     // rather than the block.
     control->weak = 1;
     control->mem = memory;
-    (&control->value)->__init__(util.move(value));
+    (&control->value)->__init__(move(value));
     this._control = control;
 }
 
@@ -328,7 +329,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Rc<T, A>, other &const Rc<T, A>) void {
     replacement Rc<T, A> = Rc<T, A>(other);
-    this.__assign__(util.move(replacement));
+    this.__assign__(move(replacement));
 }
 
 // Takes another owner's share, releasing what this owner held.
@@ -380,7 +381,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn get(this &const Rc<T, A>) &const T {
     if (this._control == nullptr) {
-        util.panic("Rc is empty");
+        panic("Rc is empty");
     }
     return &this._control->value;
 }
@@ -394,7 +395,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn get(this &Rc<T, A>) &T {
     if (this._control == nullptr) {
-        util.panic("Rc is empty");
+        panic("Rc is empty");
     }
     return &this._control->value;
 }
@@ -404,7 +405,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __deref__(this &const Rc<T, A>) &const T {
     if (this._control == nullptr) {
-        util.panic("Rc is empty");
+        panic("Rc is empty");
     }
     return &this._control->value;
 }
@@ -414,7 +415,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __deref__(this &Rc<T, A>) &T {
     if (this._control == nullptr) {
-        util.panic("Rc is empty");
+        panic("Rc is empty");
     }
     return &this._control->value;
 }
@@ -499,7 +500,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &RcWeak<T, A>, other &const RcWeak<T, A>) void {
     replacement RcWeak<T, A> = RcWeak<T, A>(other);
-    this.__assign__(util.move(replacement));
+    this.__assign__(move(replacement));
 }
 
 // Takes another observer's share, releasing what this one observed.
@@ -625,7 +626,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __im_init__(this &Arc<T, A>, value T) void {
     mem A = .{};
-    this.__init__(util.move(value), mem);
+    this.__init__(move(value), mem);
 }
 
 // Creates an owner of `value`, taking the block from `memory`.
@@ -640,7 +641,7 @@ fn __im_init__(this &Arc<T, A>, value T, memory A) void {
     control->strong.__init__(1);
     control->weak.__init__(1);
     control->mem = memory;
-    (&control->value)->__init__(util.move(value));
+    (&control->value)->__init__(move(value));
     this._control = control;
 }
 
@@ -677,7 +678,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __assign__(this &Arc<T, A>, other &const Arc<T, A>) void {
     replacement Arc<T, A> = Arc<T, A>(other);
-    this.__assign__(util.move(replacement));
+    this.__assign__(move(replacement));
 }
 
 // Takes another owner's share, releasing what this owner held.
@@ -726,7 +727,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn get(this &const Arc<T, A>) &const T {
     if (this._control == nullptr) {
-        util.panic("Arc is empty");
+        panic("Arc is empty");
     }
     return &this._control->value;
 }
@@ -736,7 +737,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn get(this &Arc<T, A>) &T {
     if (this._control == nullptr) {
-        util.panic("Arc is empty");
+        panic("Arc is empty");
     }
     return &this._control->value;
 }
@@ -746,7 +747,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __deref__(this &const Arc<T, A>) &const T {
     if (this._control == nullptr) {
-        util.panic("Arc is empty");
+        panic("Arc is empty");
     }
     return &this._control->value;
 }
@@ -755,7 +756,7 @@ export
 template <T type, A type = DefaultAllocator>
 fn __deref__(this &Arc<T, A>) &T {
     if (this._control == nullptr) {
-        util.panic("Arc is empty");
+        panic("Arc is empty");
     }
     return &this._control->value;
 }

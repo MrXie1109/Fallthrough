@@ -55,6 +55,12 @@ pub(super) fn linker_driver() -> String {
 /// Returns a path for an intermediate object file, in the same directory as
 /// the input so that linking needs no cross-filesystem move.
 pub(super) fn temporary_object_path(input: &Path) -> PathBuf {
+    // Standard input has no directory to put an object in, and a file whose
+    // name begins with `-` would be read as an option by the linker.
+    if input.as_os_str() == "-" {
+        return std::env::temp_dir()
+            .join(format!("fallc-stdin-{}.fallc-tmp.o", std::process::id()));
+    }
     let stem = input
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -68,7 +74,11 @@ pub(super) fn temporary_object_path(input: &Path) -> PathBuf {
 /// both are defined by code generation itself (see
 /// `fallc_ir::codegen::runtime`), so the link line is the objects and whatever
 /// the program asked for.
-pub(super) fn link_executable(objects: &[PathBuf], output: &Path, links: &[LinkRequest]) -> Result<(), String> {
+pub(super) fn link_executable(
+    objects: &[PathBuf],
+    output: &Path,
+    links: &[LinkRequest],
+) -> Result<(), String> {
     link_objects(objects, output, links, false)
 }
 
@@ -235,4 +245,3 @@ pub(super) fn module_name_for(path: &Path) -> String {
         .unwrap_or("main")
         .to_owned()
 }
-

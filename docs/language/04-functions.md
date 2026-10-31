@@ -7,7 +7,7 @@
 This volume specifies the declaration of functions and member functions, `lambda` and
 closures, argument passing at a call, overload selection, default arguments, return type
 deduction, move semantics, and evaluation order. Exceptions are part of the obligations
-at a call site, see [06 Exceptions](06-exceptions.md).
+at a call site, see [06 Exceptions](07-exceptions.md).
 
 ## Function declarations
 
@@ -49,7 +49,7 @@ which they are written.
 such a call are not type-checked.
 
 2.1.7 A function may be declared as possibly raising with `except` (and a condition),
-see [06 Exceptions](06-exceptions.md).
+see [06 Exceptions](07-exceptions.md).
 
 ### Default arguments
 
@@ -81,7 +81,7 @@ default value cannot be omitted.
 
 2.3.5 In a cross-module call, the default-value record of the declaring module is
 retained with the exported signature (see
-[08 Modules](08-modules.md#defaults-cross-a-module-boundary)).
+[08 Modules](09-modules.md#defaults-cross-a-module-boundary)).
 
 ## Construction calls
 
@@ -101,7 +101,7 @@ suggest the initializer spelling.
 value of an initialiser, assignment, argument, return or field is not of the target
 type, the conversion happens implicitly only if the target type declares a matching
 `__im_init__` or the source type declares a matching `__im_as__`; the full rules are in
-[07 Expressions](07-expressions.md#implicit-initialisation-and-implicit-conversions).
+[07 Expressions](08-expressions.md#implicit-initialisation-and-implicit-conversions).
 
 ## Arguments and parameters
 
@@ -225,7 +225,7 @@ each call.
 `(lambda(x int) -> x)(1)`.
 
 6.7 A lambda body may `raise`; its call site then follows
-[06 Exceptions](06-exceptions.md). An exception fully caught in the body does not make
+[06 Exceptions](07-exceptions.md). An exception fully caught in the body does not make
 the lambda possibly raising.
 
 6.8 A closure stores addresses and does not extend the lifetime of the captured object.

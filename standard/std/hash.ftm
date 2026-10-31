@@ -17,10 +17,10 @@
 // than buckets, and the chains are relinked into the larger array.
 
 import std.memory;
-from std.memory import DefaultAllocator, alloc, free;
+from std.memory import *;
 from std.string import String;
-from std.util import Unit;
-import std.util as util;
+import std.util;
+from std.util import *;
 
 // What a type has to provide to be used as a hash key.
 //
@@ -306,12 +306,12 @@ template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HashTable<K, V, H, A>, key K, value V) void {
     existing *HashEntry<K, V> = this.entry_of(key);
     if (existing != nullptr) {
-        existing->value = util.move(value);
+        existing->value = move(value);
         (&existing->key)->__drop__();
-        existing->key = util.move(key);
+        existing->key = move(key);
         return;
     }
-    this.insert_new(util.move(key), util.move(value));
+    this.insert_new(move(key), move(value));
 }
 
 // Adds an entry that is known to be new.
@@ -327,8 +327,8 @@ fn insert_new(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
     slots **HashEntry<K, V> = this.heads();
     bucket usize = this.bucket_of(hash);
     entry *HashEntry<K, V> = this.mem.alloc(sizeof(HashEntry<K, V>)) as *HashEntry<K, V>;
-    (&entry->key)->__init__(util.move(key));
-    (&entry->value)->__init__(util.move(value));
+    (&entry->key)->__init__(move(key));
+    (&entry->value)->__init__(move(value));
     entry->hash = hash;
     entry->next = slots[bucket];
     slots[bucket] = entry;
@@ -341,7 +341,7 @@ fn insert_new(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
 // - `key`: the key to place
 // - `value`: the value to store with it
 fn insert_multi(this &HashTable<K, V, H, A>, key K, value V) *HashEntry<K, V> {
-    return this.insert_new(util.move(key), util.move(value));
+    return this.insert_new(move(key), move(value));
 }
 
 // Returns the value stored for `key`, or null.
@@ -527,8 +527,8 @@ fn __init__(this &HashTable<K, V, H, A>, other &&HashTable<K, V, H, A>) void {
     this._buckets = other._buckets;
     this._capacity = other._capacity;
     this._count = other._count;
-    this.mem = util.move(other.mem);
-    this.hasher = util.move(other.hasher);
+    this.mem = move(other.mem);
+    this.hasher = move(other.hasher);
     other._buckets = nullptr;
     other._capacity = 0;
     other._count = 0;
@@ -563,8 +563,8 @@ fn __assign__(this &HashTable<K, V, H, A>, other &&HashTable<K, V, H, A>) void {
     this._buckets = other._buckets;
     this._capacity = other._capacity;
     this._count = other._count;
-    this.mem = util.move(other.mem);
-    this.hasher = util.move(other.hasher);
+    this.mem = move(other.mem);
+    this.hasher = move(other.hasher);
     other._buckets = nullptr;
     other._capacity = 0;
     other._count = 0;
@@ -989,7 +989,7 @@ fn __init__(this &HMap<K, V, H, A>, other &const HMap<K, V, H, A>) void {
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMap<K, V, H, A>, other &&HMap<K, V, H, A>) void {
-    (&this.table)->__init__(util.move(other.table));
+    (&this.table)->__init__(move(other.table));
 }
 
 // Copies another hmap over this one.
@@ -1024,7 +1024,7 @@ fn __drop__(this &HMap<K, V, H, A>) void {
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HMap<K, V, H, A>, key K, value V) void {
-    this.table.insert(util.move(key), util.move(value));
+    this.table.insert(move(key), move(value));
 }
 
 // Looks the key up in the table.
@@ -1056,7 +1056,7 @@ template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn at(this &HMap<K, V, H, A>, key &const K) &V {
     value *V = this.find(key);
     if (value == nullptr) {
-        util.panic("HMap has no such key");
+        panic("HMap has no such key");
     }
     return value[0];
 }
@@ -1069,7 +1069,7 @@ template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn at(this &const HMap<K, V, H, A>, key &const K) &const V {
     value *const V = this.find(key);
     if (value == nullptr) {
-        util.panic("HMap has no such key");
+        panic("HMap has no such key");
     }
     return value[0];
 }
@@ -1190,7 +1190,7 @@ fn __init__(this &HSet<K, H, A>, other &const HSet<K, H, A>) void {
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HSet<K, H, A>, other &&HSet<K, H, A>) void {
-    (&this.table)->__init__(util.move(other.table));
+    (&this.table)->__init__(move(other.table));
 }
 
 // Copies another hset over this one.
@@ -1225,7 +1225,7 @@ export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HSet<K, H, A>, key K) void {
     placeholder Unit = .{};
-    this.table.insert(util.move(key), util.move(placeholder));
+    this.table.insert(move(key), move(placeholder));
 }
 
 // Looks the key up in the table.
@@ -1335,7 +1335,7 @@ fn __init__(this &HMMap<K, V, H, A>, other &const HMMap<K, V, H, A>) void {
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMMap<K, V, H, A>, other &&HMMap<K, V, H, A>) void {
-    (&this.table)->__init__(util.move(other.table));
+    (&this.table)->__init__(move(other.table));
 }
 
 // Copies another hmmap over this one.
@@ -1370,7 +1370,7 @@ fn __drop__(this &HMMap<K, V, H, A>) void {
 export
 template <K type, V type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HMMap<K, V, H, A>, key K, value V) void {
-    this.table.insert_multi(util.move(key), util.move(value));
+    this.table.insert_multi(move(key), move(value));
 }
 
 // Looks the key up in the table.
@@ -1498,7 +1498,7 @@ fn __init__(this &HMSet<K, H, A>, other &const HMSet<K, H, A>) void {
 export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn __init__(this &HMSet<K, H, A>, other &&HMSet<K, H, A>) void {
-    (&this.table)->__init__(util.move(other.table));
+    (&this.table)->__init__(move(other.table));
 }
 
 // Copies another hmset over this one.
@@ -1533,7 +1533,7 @@ export
 template <K type, H type = Hash<K>, A type = DefaultAllocator>
 fn insert(this &HMSet<K, H, A>, key K) void {
     placeholder Unit = .{};
-    this.table.insert_multi(util.move(key), util.move(placeholder));
+    this.table.insert_multi(move(key), move(placeholder));
 }
 
 // Looks the key up in the table.

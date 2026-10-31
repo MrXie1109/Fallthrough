@@ -458,7 +458,7 @@ describe the **build target** rather than asking the running system.
 
 One interface, one implementation per platform: a file named
 `name.<platform>.ftm` is what the loader prefers for the target platform (see
-[08 Modules](language/08-modules.md#where-a-module-is-found)). Threads, mutexes
+[09 Modules](language/09-modules.md#where-a-module-is-found)). Threads, mutexes
 and condition variables switch between `std/internal/sync_sys.ftm` (POSIX) and
 `std/internal/sync_sys.windows.ftm` (Windows: SRW locks, condition variables, `CreateThread`);
 the entropy source between `std/internal/random_entropy.ftm` and
@@ -1004,7 +1004,7 @@ Macros expand before parsing, so they stand anywhere a token may. They wrap the
 compiler's builtin macros (`$__builtin_FILE` and friends), which are not part of the
 language proper. A platform-specific library implementation lives in a
 `name.platform.ftm` file, which the loader prefers for the target platform -- see
-[08 Modules](language/08-modules.md#where-a-module-is-found).
+[09 Modules](language/09-modules.md#where-a-module-is-found).
 
 ## Limitations
 

@@ -16,11 +16,12 @@
 // `Array` can do to a run of bytes, `Bytes` does by forwarding.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import C;
 import std.util;
+from std.util import *;
 
 // A sequence of bytes.
 export type Bytes {
@@ -76,7 +77,7 @@ export fn __init__(this &Bytes, other &const Bytes) void {
 // `Array` released whatever pointer its bytes happened to hold.
 export fn __init__(this &Bytes, other &&Bytes) void {
     (&this._data)->__init__();
-    this._data = util.move(other._data);
+    this._data = move(other._data);
 }
 
 // Copies another byte sequence into this one.
@@ -86,7 +87,7 @@ export fn __assign__(this &Bytes, other &const Bytes) void {
 
 // Moves another byte sequence's storage into this one.
 export fn __assign__(this &Bytes, other &&Bytes) void {
-    this._data = util.move(other._data);
+    this._data = move(other._data);
 }
 
 // Releases the storage.

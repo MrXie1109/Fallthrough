@@ -29,10 +29,13 @@
 
 import C;
 import std.array;
+from std.array import *;
 import std.type_traits;
-from std.array import Array;
+from std.type_traits import *;
 import std.internal.random_entropy;
+from std.internal.random_entropy import *;
 import std.util;
+from std.util import *;
 
 // The words of MT19937's state, and the index of the next one to use.
 STATE_WORDS const usize = 624;
@@ -163,7 +166,7 @@ export fn seed_from_entropy(this &Random) bool except {
 //
 // The argument type chooses the distribution: an integer type takes the integer
 // form (rejection sampling, no modulo bias), a floating type draws in
-// `[low, high)`. The compiler's `IsFloating` trait decides at compile time, so
+// `[low, high)`. The compiler's `std.type_traits.IsFloating` trait decides at compile time, so
 // there is one call to remember and no `_real` suffix.
 //
 // - `low`: the smallest value the draw may give
@@ -171,7 +174,7 @@ export fn seed_from_entropy(this &Random) bool except {
 export
 template <T type>
 fn uniform(this &Random, low T, high T) T {
-    if (IsFloating(T)) @constexpr {
+    if (std.type_traits.IsFloating(T)) @constexpr {
         return this.uniform_real(low as f64, high as f64) as T;
     } else {
         return this.uniform_int(low as int, high as int) as T;
@@ -200,7 +203,11 @@ fn uniform_int(this &Random, low int, high int) int {
 //
 // A generator word is divided by 2^32, so the result is in `[0, 1)` with the
 // resolution of one word.
-export fn uniform_real(this &Random, low f64, high f64) f64 {
+//
+// Not exported: `uniform` covers a real interval as well as an integer one, and
+// the compiler's `std.type_traits.IsFloating` chooses between them, so a program writes one
+// call and never this one. The distributions below draw through it.
+fn uniform_real(this &Random, low f64, high f64) f64 {
     fraction f64 = (this.next_u32() as f64) / 4294967296.0;
     return low + fraction * (high - low);
 }
@@ -232,7 +239,7 @@ export fn bernoulli(this &Random, chance f64) bool {
 // drawn away from zero so the logarithm is finite.
 export fn exponential(this &Random, rate f64) f64 {
     if (rate <= 0.0) {
-        util.panic("exponential needs a positive rate");
+        panic("exponential needs a positive rate");
     }
     u f64 = this.uniform_real(0.0, 1.0);
     if (u <= 0.0) {
@@ -254,7 +261,7 @@ export fn lognormal(this &Random, mean f64, deviation f64) f64 {
 // of both are `mean`.
 export fn poisson(this &Random, mean f64) uint {
     if (mean < 0.0) {
-        util.panic("poisson needs a non-negative mean");
+        panic("poisson needs a non-negative mean");
     }
     if (mean > 30.0) {
         draw f64 = this.normal(mean, C.sqrt(mean));
@@ -295,7 +302,7 @@ export fn binomial(this &Random, trials usize, chance f64) usize {
 // in `(0, 1]`.
 export fn geometric(this &Random, chance f64) uint {
     if (chance <= 0.0 || chance > 1.0) {
-        util.panic("geometric needs a chance in (0, 1]");
+        panic("geometric needs a chance in (0, 1]");
     }
     if (chance >= 1.0) {
         return 1u32;
@@ -314,7 +321,7 @@ export
 template <T type>
 fn choice(this &Random, values &const Array<T>) &const T {
     if (values.empty()) {
-        util.panic("choice needs at least one element");
+        panic("choice needs at least one element");
     }
     index int = this.uniform(0, (values.length() as int) - 1);
     return values[index as usize];
@@ -336,19 +343,19 @@ fn weighted_choice(
     weights &const Array<f64>
 ) &const T {
     if (values.empty() || values.length() != weights.length()) {
-        util.panic("weighted_choice needs one weight per element");
+        panic("weighted_choice needs one weight per element");
     }
     total f64 = 0.0;
     index usize = 0;
     while (index < weights.length()) {
         if (weights[index] < 0.0) {
-            util.panic("weighted_choice needs non-negative weights");
+            panic("weighted_choice needs non-negative weights");
         }
         total = total + weights[index];
         index += 1;
     }
     if (total <= 0.0) {
-        util.panic("weighted_choice needs a positive weight");
+        panic("weighted_choice needs a positive weight");
     }
     target f64 = this.uniform_real(0.0, total);
     running f64 = 0.0;
@@ -390,7 +397,7 @@ fn shuffle(this &Random, values *Array<T>) void {
             // sharing it.
             held T = (*values)[index];
             (*values)[index] = (*values)[other];
-            (*values)[other] = util.move(held);
+            (*values)[other] = move(held);
         }
         index -= 1;
     }

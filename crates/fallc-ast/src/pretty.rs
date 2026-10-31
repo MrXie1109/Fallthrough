@@ -87,7 +87,10 @@ impl Visitor for Dumper {
                 self.close();
             }
             ItemKind::ExternVariable(node) => {
-                self.open(&format!("ExternVariable {} from \"{}\"", node.name, node.abi));
+                self.open(&format!(
+                    "ExternVariable {} from \"{}\"",
+                    node.name, node.abi
+                ));
                 self.line(&format!("type: {:?}", node.ty.span()));
                 self.close();
             }
@@ -383,7 +386,10 @@ impl Visitor for Dumper {
                 ));
             }
             crate::node::ExprKind::PackExpand(inner) => {
-                self.line(&format!("Expr {id} pack expansion of expr#{}", inner.as_raw()));
+                self.line(&format!(
+                    "Expr {id} pack expansion of expr#{}",
+                    inner.as_raw()
+                ));
             }
             crate::node::ExprKind::CommaFold { pattern } => {
                 self.line(&format!(
@@ -438,6 +444,10 @@ impl Visitor for Dumper {
             crate::node::ExprKind::SizeofPack(node) => {
                 self.line(&format!("Expr {id} sizeof... `{}`", node.pack));
             }
+            crate::node::ExprKind::Yield(node) => match node.value {
+                Some(value) => self.line(&format!("Expr {id} yield expr#{}", value.as_raw())),
+                None => self.line(&format!("Expr {id} yield")),
+            },
             crate::node::ExprKind::IntLiteral(literal) => {
                 let suffix = literal.suffix.as_deref().unwrap_or("(int)");
                 self.line(&format!("Expr {id} int {} {suffix}", literal.digits));

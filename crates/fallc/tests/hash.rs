@@ -154,7 +154,10 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("set");
-    assert_eq!(scratch.run("set", source), "length 3 has 5 1 has 9 0\nsum 18\n");
+    assert_eq!(
+        scratch.run("set", source),
+        "length 3 has 5 1 has 9 0\nsum 18\n"
+    );
 }
 
 #[test]
@@ -173,10 +176,7 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("strings");
-    assert_eq!(
-        scratch.run("strings", source),
-        "apple 1 pear 2\nfig 0\n"
-    );
+    assert_eq!(scratch.run("strings", source), "apple 1 pear 2\nfig 0\n");
 }
 
 #[test]
@@ -245,10 +245,7 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("user");
-    assert_eq!(
-        scratch.run("user", source),
-        "length 2\nhit 12\nmiss 1\n"
-    );
+    assert_eq!(scratch.run("user", source), "length 2\nhit 12\nmiss 1\n");
 }
 
 #[test]
@@ -291,8 +288,5 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("replace");
-    assert_eq!(
-        scratch.run("replace", source),
-        "2 3 2\nindex 3\n"
-    );
+    assert_eq!(scratch.run("replace", source), "2 3 2\nindex 3\n");
 }

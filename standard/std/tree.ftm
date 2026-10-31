@@ -12,10 +12,10 @@
 // The allocator's methods are named by the bodies below -- `this.mem.alloc(..)` --
 // and a name has to be in scope where it is written. An imported *type* does not
 // bring its methods: the family that names them imports them too.
-from std.memory import DefaultAllocator, alloc, free;
 import std.memory;
-from std.util import Unit;
-import std.util as util;
+from std.memory import *;
+import std.util;
+from std.util import *;
 
 // ------------------------------------------------------------------- order
 
@@ -123,7 +123,7 @@ fn __init__(this &RBTree<K, V, Cmp, A>) void {
     this.root = nullptr;
     this._count = 0;
     order Cmp = .{};
-    this.cmp = util.move(order);
+    this.cmp = move(order);
     this.mem = .{};
 }
 
@@ -198,7 +198,7 @@ fn __init__(this &RBTree<K, V, Cmp, A>, other &const RBTree<K, V, Cmp, A>) void 
     this.root = nullptr;
     this._count = 0;
     order Cmp = .{};
-    this.cmp = util.move(order);
+    this.cmp = move(order);
     this.mem = .{};
     this.cmp = other.cmp;
     this.mem = other.mem;
@@ -213,8 +213,8 @@ template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &RBTree<K, V, Cmp, A>, other &&RBTree<K, V, Cmp, A>) void {
     this.root = other.root;
     this._count = other._count;
-    this.cmp = util.move(other.cmp);
-    this.mem = util.move(other.mem);
+    this.cmp = move(other.cmp);
+    this.mem = move(other.mem);
     other.root = nullptr;
     other._count = 0;
 }
@@ -246,8 +246,8 @@ fn __assign__(this &RBTree<K, V, Cmp, A>, other &&RBTree<K, V, Cmp, A>) void {
     this.clear();
     this.root = other.root;
     this._count = other._count;
-    this.cmp = util.move(other.cmp);
-    this.mem = util.move(other.mem);
+    this.cmp = move(other.cmp);
+    this.mem = move(other.mem);
     other.root = nullptr;
     other._count = 0;
 }
@@ -384,10 +384,10 @@ template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
     existing *TreeNode<K, V> = this.find(key);
     if (existing != nullptr) {
-        existing->value = util.move(value);
+        existing->value = move(value);
         return existing;
     }
-    return this.insert_new(util.move(key), util.move(value));
+    return this.insert_new(move(key), move(value));
 }
 
 // Adds one entry whether or not the key is already there.
@@ -399,7 +399,7 @@ fn insert(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert_multi(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
-    return this.insert_new(util.move(key), util.move(value));
+    return this.insert_new(move(key), move(value));
 }
 
 // Adds an entry that is known to be new.
@@ -410,8 +410,8 @@ template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert_new(this &RBTree<K, V, Cmp, A>, key K, value V) *TreeNode<K, V> {
     order Cmp = this.cmp;
     node *TreeNode<K, V> = this.mem.alloc(sizeof(TreeNode<K, V>)) as *TreeNode<K, V>;
-    (&node->key)->__init__(util.move(key));
-    (&node->value)->__init__(util.move(value));
+    (&node->key)->__init__(move(key));
+    (&node->value)->__init__(move(value));
     node->red = true;
     node->left = nullptr;
     node->right = nullptr;
@@ -1093,7 +1093,7 @@ type TMap {
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TMap<K, V, Cmp, A>, key K, value V) void {
-    this.tree.insert(util.move(key), util.move(value));
+    this.tree.insert(move(key), move(value));
 }
 
 // Returns the value for a key, or null.
@@ -1130,7 +1130,7 @@ template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn at(this &TMap<K, V, Cmp, A>, key &const K) &V {
     value *V = this.find(key);
     if (value == nullptr) {
-        util.panic("TMap has no such key");
+        panic("TMap has no such key");
     }
     return value[0];
 }
@@ -1143,7 +1143,7 @@ template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn at(this &const TMap<K, V, Cmp, A>, key &const K) &const V {
     value *const V = this.find(key);
     if (value == nullptr) {
-        util.panic("TMap has no such key");
+        panic("TMap has no such key");
     }
     return value[0];
 }
@@ -1250,7 +1250,7 @@ export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TSet<K, Cmp, A>, key K) void {
     unit Unit = .{};
-    this.tree.insert(util.move(key), util.move(unit));
+    this.tree.insert(move(key), move(unit));
 }
 
 // Whether the key is there.
@@ -1349,7 +1349,7 @@ type TMMap {
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TMMap<K, V, Cmp, A>, key K, value V) void {
-    this.tree.insert_multi(util.move(key), util.move(value));
+    this.tree.insert_multi(move(key), move(value));
 }
 
 // Returns the first value for a key, or null.
@@ -1453,7 +1453,7 @@ export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn insert(this &TMSet<K, Cmp, A>, key K) void {
     unit Unit = .{};
-    this.tree.insert_multi(util.move(key), util.move(unit));
+    this.tree.insert_multi(move(key), move(unit));
 }
 
 // Whether the key is there.
@@ -1557,7 +1557,7 @@ fn __init__(this &TMap<K, V, Cmp, A>, other &const TMap<K, V, Cmp, A>) void {
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMap<K, V, Cmp, A>, other &&TMap<K, V, Cmp, A>) void {
-    (&this.tree)->__init__(util.move(other.tree));
+    (&this.tree)->__init__(move(other.tree));
 }
 
 // - Copies another map over this one through its tree.
@@ -1581,7 +1581,7 @@ fn __assign__(this &TMap<K, V, Cmp, A>, other &const TMap<K, V, Cmp, A>) void {
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMap<K, V, Cmp, A>, other &&TMap<K, V, Cmp, A>) void {
-    this.tree = util.move(other.tree);
+    this.tree = move(other.tree);
 }
 
 // - Creates an empty map with an order and an allocator of its caller's.
@@ -1625,7 +1625,7 @@ fn __init__(this &TSet<K, Cmp, A>, other &const TSet<K, Cmp, A>) void {
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TSet<K, Cmp, A>, other &&TSet<K, Cmp, A>) void {
-    (&this.tree)->__init__(util.move(other.tree));
+    (&this.tree)->__init__(move(other.tree));
 }
 
 // - Copies another set over this one through its tree.
@@ -1649,7 +1649,7 @@ fn __assign__(this &TSet<K, Cmp, A>, other &const TSet<K, Cmp, A>) void {
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TSet<K, Cmp, A>, other &&TSet<K, Cmp, A>) void {
-    this.tree = util.move(other.tree);
+    this.tree = move(other.tree);
 }
 
 // - Creates an empty set with an order and an allocator of its caller's.
@@ -1694,7 +1694,7 @@ fn __init__(this &TMMap<K, V, Cmp, A>, other &const TMMap<K, V, Cmp, A>) void {
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMMap<K, V, Cmp, A>, other &&TMMap<K, V, Cmp, A>) void {
-    (&this.tree)->__init__(util.move(other.tree));
+    (&this.tree)->__init__(move(other.tree));
 }
 
 // - Copies another multi-map over this one through its tree.
@@ -1718,7 +1718,7 @@ fn __assign__(this &TMMap<K, V, Cmp, A>, other &const TMMap<K, V, Cmp, A>) void 
 export
 template <K type, V type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMMap<K, V, Cmp, A>, other &&TMMap<K, V, Cmp, A>) void {
-    this.tree = util.move(other.tree);
+    this.tree = move(other.tree);
 }
 
 // - Creates an empty multi-map with an order and an allocator of its caller's.
@@ -1763,7 +1763,7 @@ fn __init__(this &TMSet<K, Cmp, A>, other &const TMSet<K, Cmp, A>) void {
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __init__(this &TMSet<K, Cmp, A>, other &&TMSet<K, Cmp, A>) void {
-    (&this.tree)->__init__(util.move(other.tree));
+    (&this.tree)->__init__(move(other.tree));
 }
 
 // - Copies another multi-set over this one through its tree.
@@ -1787,7 +1787,7 @@ fn __assign__(this &TMSet<K, Cmp, A>, other &const TMSet<K, Cmp, A>) void {
 export
 template <K type, Cmp type = Less<K>, A type = DefaultAllocator>
 fn __assign__(this &TMSet<K, Cmp, A>, other &&TMSet<K, Cmp, A>) void {
-    this.tree = util.move(other.tree);
+    this.tree = move(other.tree);
 }
 
 // - Creates an empty multi-set with an order and an allocator of its caller's.

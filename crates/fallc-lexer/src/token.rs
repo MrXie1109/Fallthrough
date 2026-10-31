@@ -315,6 +315,9 @@ pub enum Keyword {
     Else,
     /// `while`
     While,
+    /// `yield` — hand a value to the resumer of a coroutine and continue with
+    /// what it sends next.
+    Yield,
     /// `for` — both the C-style and the range form.
     For,
     /// `switch`
@@ -445,6 +448,7 @@ impl Keyword {
             Keyword::If => "if",
             Keyword::Else => "else",
             Keyword::While => "while",
+            Keyword::Yield => "yield",
             Keyword::For => "for",
             Keyword::Switch => "switch",
             Keyword::This => "this",
@@ -556,6 +560,7 @@ pub static KEYWORDS: &[(&str, Keyword)] = &[
     ("union", Keyword::Union),
     ("volatile", Keyword::Volatile),
     ("while", Keyword::While),
+    ("yield", Keyword::Yield),
 ];
 
 /// Looks up `text` in [`KEYWORDS`].
@@ -977,6 +982,7 @@ mod tests {
             Keyword::Type,
             Keyword::Try,
             Keyword::While,
+            Keyword::Yield,
             Keyword::Template,
             Keyword::Volatile,
             Keyword::Mutable,

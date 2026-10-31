@@ -159,10 +159,11 @@ impl<'ctx> Lowerer<'ctx> {
         };
         let function = match self.backend.module().get_function(name) {
             Some(function) => function,
-            None => self
-                .backend
-                .module()
-                .add_function(name, pointer.fn_type(&[value_ty.into()], false), None),
+            None => self.backend.module().add_function(
+                name,
+                pointer.fn_type(&[value_ty.into()], false),
+                None,
+            ),
         };
         // `linkonce_odr`: the unit's module and a cached module library may
         // both define a renderer, and the linker keeps one of the identical
@@ -331,10 +332,7 @@ impl<'ctx> Lowerer<'ctx> {
         let stderr_global = match self.backend.module().get_global("stderr") {
             Some(global) => global,
             None => {
-                let global = self
-                    .backend
-                    .module()
-                    .add_global(pointer, None, "stderr");
+                let global = self.backend.module().add_global(pointer, None, "stderr");
                 global.set_linkage(inkwell::module::Linkage::External);
                 global
             }
@@ -523,7 +521,9 @@ impl<'ctx> Lowerer<'ctx> {
                 "del",
             )
             .map_err(failed)?;
-        let control = builder.build_or(below_space, del, "control").map_err(failed)?;
+        let control = builder
+            .build_or(below_space, del, "control")
+            .map_err(failed)?;
         let quoted = builder
             .build_or(any_named, control, "quoted")
             .map_err(failed)?;
@@ -536,18 +536,29 @@ impl<'ctx> Lowerer<'ctx> {
         let format = builder
             .build_select(control, control_format, plain_format, "format")
             .map_err(failed)?;
-        let escaped2 = builder.build_select(
-            any_named,
-            BasicValueEnum::IntValue(escaped),
-            BasicValueEnum::IntValue(code),
-            "argument",
-        )
-        .map_err(failed)?;
+        let escaped2 = builder
+            .build_select(
+                any_named,
+                BasicValueEnum::IntValue(escaped),
+                BasicValueEnum::IntValue(code),
+                "argument",
+            )
+            .map_err(failed)?;
         let format = builder
-            .build_select(any_named, named_format, format.into_pointer_value(), "format.named")
+            .build_select(
+                any_named,
+                named_format,
+                format.into_pointer_value(),
+                "format.named",
+            )
             .map_err(failed)?;
         let argument = builder
-            .build_select(quoted, escaped2, BasicValueEnum::IntValue(code), "char.argument")
+            .build_select(
+                quoted,
+                escaped2,
+                BasicValueEnum::IntValue(code),
+                "char.argument",
+            )
             .map_err(failed)?;
         let snprintf = self.declare_libc(
             "snprintf",

@@ -93,10 +93,14 @@ fn a_branch_attribute_belongs_to_its_branch() {
     // `export` is a keyword now, not an attribute; this checks that an
     // attribute is required in a branch position and that a non-attribute
     // there is reported as such.
-    let source = "fn main() int {\n    if (true) @export {\n        return 1;\n    }\n    return 0;\n}\n";
+    let source =
+        "fn main() int {\n    if (true) @export {\n        return 1;\n    }\n    return 0;\n}\n";
     let (outcome, output) = compile(source);
     assert_eq!(outcome, Outcome::Failure, "{output}");
-    assert!(output.contains("not an attribute of this branch"), "{output}");
+    assert!(
+        output.contains("not an attribute of this branch"),
+        "{output}"
+    );
 }
 
 #[test]

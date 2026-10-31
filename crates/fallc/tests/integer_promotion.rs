@@ -99,10 +99,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("allowed");
-    assert_eq!(
-        scratch.accepted("allowed", source),
-        "7 7 7 200 200 1000\n"
-    );
+    assert_eq!(scratch.accepted("allowed", source), "7 7 7 200 200 1000\n");
 }
 
 #[test]

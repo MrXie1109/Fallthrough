@@ -40,6 +40,17 @@ impl<'ctx> Lowerer<'ctx> {
             let ItemKind::Function(function) = &ast.item(item).kind else {
                 continue;
             };
+            // `@coroutine` is recorded here, where every declaration passes
+            // through before any body is lowered, so that a call site always
+            // sees a coroutine already registered.
+            if ast
+                .item(item)
+                .attrs
+                .iter()
+                .any(|attr| attr.name == "coroutine")
+            {
+                self.function_coroutines.insert(function.name_span);
+            }
             // A template is not a function, so there is nothing to declare: its
             // parameters name types that do not exist. Each *instantiation* is
             // declared and defined instead, under the symbol the checker gave
@@ -306,10 +317,7 @@ impl<'ctx> Lowerer<'ctx> {
             }
         }
         for argument in &init.named {
-            if let Some(index) = fields
-                .iter()
-                .position(|(name, _)| name == &argument.name)
-            {
+            if let Some(index) = fields.iter().position(|(name, _)| name == &argument.name) {
                 slots[index] = Some(argument.value);
             }
         }
@@ -422,9 +430,10 @@ impl<'ctx> Lowerer<'ctx> {
                 }
             }
             ExprKind::BoolLiteral(value) => match llvm {
-                inkwell::types::BasicTypeEnum::IntType(int) => {
-                    Some(int.const_int(u64::from(*value), false).as_basic_value_enum())
-                }
+                inkwell::types::BasicTypeEnum::IntType(int) => Some(
+                    int.const_int(u64::from(*value), false)
+                        .as_basic_value_enum(),
+                ),
                 _ => None,
             },
             ExprKind::CharLiteral(literal) => {
@@ -457,9 +466,9 @@ impl<'ctx> Lowerer<'ctx> {
             ExprKind::ByteStringLiteral(_)
             | ExprKind::StringLiteral(_)
             | ExprKind::RawStringLiteral(_) => match llvm {
-                inkwell::types::BasicTypeEnum::ArrayType(_) => {
-                    self.literal_bytes(&node.kind).map(|bytes| bytes.as_basic_value_enum())
-                }
+                inkwell::types::BasicTypeEnum::ArrayType(_) => self
+                    .literal_bytes(&node.kind)
+                    .map(|bytes| bytes.as_basic_value_enum()),
                 inkwell::types::BasicTypeEnum::PointerType(_) => self
                     .intern_literal(&node.kind, ".str")
                     .map(|pointer| pointer.as_basic_value_enum()),
@@ -543,10 +552,7 @@ impl<'ctx> Lowerer<'ctx> {
                         fallc_ast::Initializer::Expr(expr) => ast.expr(*expr).span,
                         fallc_ast::Initializer::Designated(designated) => designated.span,
                     };
-                    self.report_waiting_for_spec(
-                        span,
-                        "a module-level initialiser of this form",
-                    );
+                    self.report_waiting_for_spec(span, "a module-level initialiser of this form");
                     llvm.const_zero()
                 }
             },
@@ -598,10 +604,7 @@ impl<'ctx> Lowerer<'ctx> {
             None => match self.backend.module().get_global(&variable.name) {
                 Some(global) => global,
                 None => {
-                    let global = self
-                        .backend
-                        .module()
-                        .add_global(llvm, None, &variable.name);
+                    let global = self.backend.module().add_global(llvm, None, &variable.name);
                     global.set_linkage(inkwell::module::Linkage::External);
                     global
                 }
@@ -686,7 +689,11 @@ impl<'ctx> Lowerer<'ctx> {
     fn record_call_site_metadata(&mut self, function: &FunctionItem, name: &str) {
         self.function_defaults.insert(
             name.to_owned(),
-            function.params.iter().map(|parameter| parameter.default).collect(),
+            function
+                .params
+                .iter()
+                .map(|parameter| parameter.default)
+                .collect(),
         );
         let pre_resolved = self.pre_resolved_params.clone();
         let parameters: Vec<(String, Type)> = function
@@ -773,9 +780,14 @@ impl<'ctx> Lowerer<'ctx> {
         let out_of_line = !returns_nothing
             && function.throws.is_none()
             && self.aggregate_is_by_address(&return_type);
+        // A `@coroutine` function's entry does not run the body, so it cannot
+        // raise: its result is the coroutine object itself, whatever the body
+        // declared. The body's failures reach the caller through `result`, and
+        // that is where the tagged result belongs.
+        let coroutine_entry = self.function_coroutines.contains(&function.name_span);
         // A `??` function returns its value *or* an exception, so the shape of
         // its result is decided by the annotation and by nothing else.
-        let return_llvm = if function.throws.is_some() {
+        let return_llvm = if function.throws.is_some() && !coroutine_entry {
             match self.throwing_result_type(value_llvm) {
                 Some(llvm) => Some(llvm),
                 None => return,
@@ -1059,6 +1071,20 @@ impl<'ctx> Lowerer<'ctx> {
             return;
         };
 
+        // A `@coroutine` is lowered as a state machine by its own path, which
+        // builds the frame, copies the parameters into it, and emits both
+        // halves: the entry and the machine.
+        if self.function_coroutines.contains(&function.name_span) {
+            // Creating a coroutine cannot raise, whatever the body may do: the
+            // entry allocates the frame, stores the arguments and returns the
+            // object, and the body does not run. A declaration marked `except`
+            // is still lowered with the plain signature, so the object comes
+            // back as itself rather than inside a tagged result -- and a caller
+            // is not made to handle a failure that cannot happen there.
+            self.lower_coroutine(ast, types, bindings, function, llvm_function, body);
+            return;
+        }
+
         self.current_function = Some(llvm_function);
         self.current_return_type = Some(return_type.clone());
 
@@ -1093,8 +1119,7 @@ impl<'ctx> Lowerer<'ctx> {
         if function.throws.is_some()
             && let Some(result_type) = return_llvm
         {
-            let slot =
-                self.create_entry_alloca(&builder, entry, "result", result_type);
+            let slot = self.create_entry_alloca(&builder, entry, "result", result_type);
             self.exc_result = Some(slot);
             self.exc_result_type = Some(result_type);
         }
@@ -1122,8 +1147,7 @@ impl<'ctx> Lowerer<'ctx> {
             };
             let value = llvm_function
                 .get_nth_param(
-                    u32::try_from(index + parameter_offset)
-                        .expect("parameter count fits in u32"),
+                    u32::try_from(index + parameter_offset).expect("parameter count fits in u32"),
                 )
                 .expect("LLVM created one parameter per declared type");
             // A capture of a lambda arrives as the address of the variable it
@@ -1138,9 +1162,7 @@ impl<'ctx> Lowerer<'ctx> {
                     continue;
                 };
                 let Some(captured) = ty.pointee().cloned() else {
-                    self.report_error(
-                        "internal error: a capture parameter is not a pointer",
-                    );
+                    self.report_error("internal error: a capture parameter is not a pointer");
                     continue;
                 };
                 let Some(captured_llvm) = mapper.map(&captured) else {
@@ -1162,9 +1184,7 @@ impl<'ctx> Lowerer<'ctx> {
                 // value: copy it so the body owns it and a write to the
                 // parameter cannot reach the argument.
                 let BasicValueEnum::PointerValue(source) = value else {
-                    self.report_error(
-                        "internal error: an aggregate parameter is not an address",
-                    );
+                    self.report_error("internal error: an aggregate parameter is not an address");
                     continue;
                 };
                 // The copy is the type's own, when it declares one: §4.3.2 of
@@ -1232,7 +1252,8 @@ impl<'ctx> Lowerer<'ctx> {
             // the fields own, and destroying both is a double free. Until the
             // move-out paths can hand ownership over, such a parameter is not
             // destroyed -- the alternative is a crash.
-            if !copied_by_constructor && self.type_needs_drop(&parameter_ty)
+            if !copied_by_constructor
+                && self.type_needs_drop(&parameter_ty)
                 && let Some(scope) = self.drop_scopes.last_mut()
                 && scope.last().is_some_and(|entry| entry.storage == alloca)
             {
@@ -1313,7 +1334,7 @@ impl<'ctx> Lowerer<'ctx> {
     /// A constructor that can raise is skipped: calling it at a function's
     /// entry would have to propagate, and a parameter copy has no call site to
     /// carry the `??` marker.
-    fn parameter_copy_constructor(
+    pub(super) fn parameter_copy_constructor(
         &mut self,
         ty: &fallc_sema::Type,
     ) -> Option<inkwell::values::FunctionValue<'static>> {
@@ -1526,5 +1547,4 @@ impl<'ctx> Lowerer<'ctx> {
                 .unwrap_or_else(|| Type::unspecified("type(..)", node.span)),
         }
     }
-
 }

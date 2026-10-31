@@ -33,25 +33,85 @@ struct Example {
 
 /// The examples, with what each one does when it works.
 const EXAMPLES: &[Example] = &[
-    Example { name: "hello", exit_code: 0, expect_output: None },
-    Example { name: "hello_c", exit_code: 0, expect_output: Some("Hello, world!") },
-    Example { name: "loops", exit_code: 15, expect_output: None },
-    Example { name: "ops", exit_code: 49, expect_output: None },
-    Example { name: "vars", exit_code: 7, expect_output: None },
-    Example { name: "types", exit_code: 0, expect_output: None },
-    Example { name: "casts", exit_code: 1, expect_output: None },
-    Example { name: "const", exit_code: 82, expect_output: None },
-    Example { name: "ptr", exit_code: 42, expect_output: None },
-    Example { name: "switch", exit_code: 30, expect_output: None },
-    Example { name: "point", exit_code: 0, expect_output: Some("(42, 37)") },
-    Example { name: "math", exit_code: 0, expect_output: Some("sqrt") },
-    Example { name: "literals", exit_code: 0, expect_output: Some("zhong = 20013") },
+    Example {
+        name: "hello",
+        exit_code: 0,
+        expect_output: None,
+    },
+    Example {
+        name: "hello_c",
+        exit_code: 0,
+        expect_output: Some("Hello, world!"),
+    },
+    Example {
+        name: "loops",
+        exit_code: 15,
+        expect_output: None,
+    },
+    Example {
+        name: "ops",
+        exit_code: 49,
+        expect_output: None,
+    },
+    Example {
+        name: "vars",
+        exit_code: 7,
+        expect_output: None,
+    },
+    Example {
+        name: "types",
+        exit_code: 0,
+        expect_output: None,
+    },
+    Example {
+        name: "casts",
+        exit_code: 1,
+        expect_output: None,
+    },
+    Example {
+        name: "const",
+        exit_code: 82,
+        expect_output: None,
+    },
+    Example {
+        name: "ptr",
+        exit_code: 42,
+        expect_output: None,
+    },
+    Example {
+        name: "switch",
+        exit_code: 30,
+        expect_output: None,
+    },
+    Example {
+        name: "point",
+        exit_code: 0,
+        expect_output: Some("(42, 37)"),
+    },
+    Example {
+        name: "math",
+        exit_code: 0,
+        expect_output: Some("sqrt"),
+    },
+    Example {
+        name: "literals",
+        exit_code: 0,
+        expect_output: Some("zhong = 20013"),
+    },
     // The one with the most to get wrong: a fall-through, a shared label, the
     // loop `else`, and `break` suppressing it.
-    Example { name: "controlflow", exit_code: 0, expect_output: Some("while else ran:      103") },
+    Example {
+        name: "controlflow",
+        exit_code: 0,
+        expect_output: Some("while else ran:      103"),
+    },
     // The standard library's two containers, which is where a mistake in the
     // ownership rules shows up as a wrong answer rather than as a crash.
-    Example { name: "strings", exit_code: 0, expect_output: Some("reversed: cba") },
+    Example {
+        name: "strings",
+        exit_code: 0,
+        expect_output: Some("reversed: cba"),
+    },
     // The copy line is the one that catches a shallow copy: with the aliasing
     // bug this printed `copy[0]: -1, numbers[0]: -1`, and a substring check on
     // `total: 60` would still have passed. The `back() = -7` line catches a

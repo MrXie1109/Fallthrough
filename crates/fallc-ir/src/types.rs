@@ -43,11 +43,7 @@ fn extra_alignment(nominal: &fallc_sema::NominalType, name: &str) -> Option<u32>
 /// `n` bytes of alignment, so `[0 x <n x i8>]` is a value that occupies
 /// nothing and aligns what follows it to `n`.
 fn alignment_marker(context: &Context, alignment: u32) -> BasicTypeEnum<'_> {
-    context
-        .i8_type()
-        .vec_type(alignment)
-        .array_type(0)
-        .into()
+    context.i8_type().vec_type(alignment).array_type(0).into()
 }
 
 /// Returns the LLVM member index of a declaration's field.
@@ -133,7 +129,10 @@ impl<'ctx> TypeMapper<'ctx> {
             Type::Character(character) => {
                 let bits = std::num::NonZeroU32::new(character.bits())
                     .expect("no character type has zero width");
-                self.context.custom_width_int_type(bits).ok().map(Into::into)
+                self.context
+                    .custom_width_int_type(bits)
+                    .ok()
+                    .map(Into::into)
             }
             Type::Float(float) => Some(match float {
                 fallc_sema::FloatType::Single => self.context.f32_type().into(),

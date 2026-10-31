@@ -15,9 +15,9 @@
 // text to and from UTF-8 is `std.unicode`'s job.
 
 import std.bytes;
-from std.bytes import Bytes;
+from std.bytes import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 
 // Encodes bytes as lowercase hex.
 export fn hex_encode(bytes &const Bytes) String {

@@ -20,7 +20,8 @@ struct Scratch {
 
 impl Scratch {
     fn new(label: &str) -> Scratch {
-        let directory = std::env::temp_dir().join(format!("fallc-setup-{label}-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("fallc-setup-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a temporary directory can be created");
         Scratch { directory }
@@ -44,7 +45,10 @@ impl Scratch {
         let run_output = std::process::Command::new(&executable)
             .output()
             .expect("the program can be run");
-        (true, String::from_utf8_lossy(&run_output.stdout).into_owned())
+        (
+            true,
+            String::from_utf8_lossy(&run_output.stdout).into_owned(),
+        )
     }
 }
 
@@ -283,8 +287,5 @@ fn main() int {
 "#;
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("must be a constant"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("must be a constant"), "{diagnostics}");
 }

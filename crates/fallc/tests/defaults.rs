@@ -259,7 +259,6 @@ fn main() int {
     assert_eq!(scratch.run("template-function", source), "3 11\n");
 }
 
-
 #[test]
 fn a_default_crosses_a_module_as_a_value_or_as_an_expression() {
     // A default is an expression of the module that wrote it, so there is no

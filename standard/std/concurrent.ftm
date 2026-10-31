@@ -21,13 +21,17 @@
 // context does. A pool owns its threads and stops them when it is destroyed.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.memory;
+from std.memory import *;
 import std.optional;
+from std.optional import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.sync;
+from std.sync import *;
 import std.util;
+from std.util import *;
 
 // ------------------------------------------------------------- promise/future
 
@@ -54,7 +58,7 @@ type PromiseControl {
 // Creates the shared state.
 template <T type>
 fn new_control() *PromiseControl<T> {
-    control *PromiseControl<T> = util.allocate(sizeof(PromiseControl<T>)) as *PromiseControl<T>;
+    control *PromiseControl<T> = allocate(sizeof(PromiseControl<T>)) as *PromiseControl<T>;
     (&control._refs)->__init__(1);
     (&control._mutex)->__init__();
     (&control._arrived)->__init__();
@@ -75,10 +79,10 @@ fn release_control(control *PromiseControl<T>) void {
     }
     if (control._value != nullptr) {
         control._value->__drop__();
-        util.free(control._value as *byte);
+        free(control._value as *byte);
         control._value = nullptr;
     }
-    util.free(control as *byte);
+    free(control as *byte);
 }
 
 // The writing end: one value, set once.
@@ -118,7 +122,7 @@ template <T type>
 fn set(this &Promise<T>, value T) void except {
     this._control._mutex.lock();
     if (!this._control._ready) {
-        storage *T = util.allocate(sizeof(T)) as *T;
+        storage *T = allocate(sizeof(T)) as *T;
         storage->__init__(value);
         this._control._value = storage;
         this._control._ready = true;

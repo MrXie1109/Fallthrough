@@ -24,7 +24,7 @@ and issue a diagnostic.
 2.3 A module name is determined by the path of its `.ftm` file: with the extension
 removed, directory separators are written `.`. `std.string` corresponds to
 `std/string.ftm`. The rules for resolving a module name are given in
-[08 Modules](08-modules.md).
+[08 Modules](09-modules.md).
 
 2.4 A translation unit consists of: all top-level declarations of the `.ft` file, and
 all declarations exported by the modules it statically imports.
@@ -49,7 +49,7 @@ body is where a reader first meets the question.
 
 3.3 `main` may be declared as possibly raising (`except`). An uncaught exception is
 reported by the implementation; the format of the report and the exit code are given in
-[06 Exceptions](06-exceptions.md).
+[06 Exceptions](07-exceptions.md).
 
 3.4 A `main` whose parameter list or return type does not conform to 3.1 violates a
 constraint of this standard, and an implementation **must** report a diagnostic
@@ -105,7 +105,7 @@ own documentation.
 
 6.2 The `std` umbrella module of the standard library **must** provide the exported
 names of its submodules by re-export. The semantics of re-export are given in
-[08 Modules](08-modules.md).
+[08 Modules](09-modules.md).
 
 ## When something goes wrong
 
@@ -127,10 +127,10 @@ error[S0002]: cannot find `printf` in this scope
 
 7.3 A number consists of a phase letter and four digits: `D` (driver), `L` (lexing and
 macros), `P` (parsing), `S` (semantics), `I` (internal error). The full meaning of the
-numbers and the warning groups are given in [10 Diagnostics](10-diagnostics.md).
+numbers and the warning groups are given in [10 Diagnostics](11-diagnostics.md).
 
 7.4 An implementation **must** deduplicate the same diagnostic at the same program
-location; the deduplication rules are given in [10 Diagnostics](10-diagnostics.md).
+location; the deduplication rules are given in [10 Diagnostics](11-diagnostics.md).
 
 7.5 A program **must not** rely on the specific wording of diagnostic text; a program
 may rely on numbers and locations.

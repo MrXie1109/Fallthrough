@@ -29,12 +29,15 @@
 // end tag, an attribute without a value, an unknown entity.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.optional;
+from std.optional import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.unicode;
+from std.unicode import *;
 import std.util;
+from std.util import *;
 
 // One attribute: a name and a value.
 export type XmlAttribute {
@@ -60,8 +63,8 @@ export fn __init__(this &XmlAttribute, other &const XmlAttribute) void {
 export fn __init__(this &XmlAttribute, other &&XmlAttribute) void {
     (&this._name)->__init__();
     (&this._value)->__init__();
-    this._name = util.move(other._name);
-    this._value = util.move(other._value);
+    this._name = move(other._name);
+    this._value = move(other._value);
 }
 
 // Releases an attribute's storage.
@@ -104,10 +107,10 @@ export fn __init__(this &XmlNode, other &&XmlNode) void {
     (&this._attributes)->__init__();
     (&this._children)->__init__();
     (&this._text)->__init__();
-    this._name = util.move(other._name);
-    this._attributes = util.move(other._attributes);
-    this._children = util.move(other._children);
-    this._text = util.move(other._text);
+    this._name = move(other._name);
+    this._attributes = move(other._attributes);
+    this._children = move(other._children);
+    this._text = move(other._text);
 }
 
 // Releases a node's storage.
@@ -135,7 +138,7 @@ export fn __init__(this &XmlDocument) void {
 // Moves a document's storage.
 export fn __init__(this &XmlDocument, other &&XmlDocument) void {
     (&this._nodes)->__init__();
-    this._nodes = util.move(other._nodes);
+    this._nodes = move(other._nodes);
     this._root = other._root;
 }
 
@@ -153,7 +156,7 @@ export fn root(this &XmlDocument) XmlValue {
 fn add_node(this &XmlDocument) uint {
     node XmlNode = XmlNode();
     index uint = this._nodes.length() as uint;
-    this._nodes.push(util.move(node));
+    this._nodes.push(move(node));
     return index;
 }
 
@@ -400,9 +403,9 @@ fn parse_attributes(this &Parser, node *XmlNode) void except {
         raw String = this._text.substring(start, this._index - start);
         this._index += 1;
         attribute XmlAttribute = XmlAttribute();
-        attribute._name = util.move(attribute_name);
+        attribute._name = move(attribute_name);
         attribute._value = decode_entities(&raw)??;
-        node._attributes.push(util.move(attribute));
+        node._attributes.push(move(attribute));
     }
 }
 

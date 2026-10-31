@@ -196,7 +196,8 @@ fn main() int {
 
 #[test]
 fn a_const_element_of_a_const_array_may_not_be_written() {
-    let source = "fn main() int {\n    a const [3]int = .{1, 2, 3};\n    a[1] = 4;\n    return 0;\n}\n";
+    let source =
+        "fn main() int {\n    a const [3]int = .{1, 2, 3};\n    a[1] = 4;\n    return 0;\n}\n";
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
     assert!(

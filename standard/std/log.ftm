@@ -20,9 +20,9 @@
 // mutex; a logger with a lock of its own would be the same lock one level up.
 
 import std.io;
-from std.io import File, err;
+from std.io import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 
 // How loud a message is.
 //

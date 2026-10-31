@@ -16,6 +16,12 @@ impl<'ctx> Lowerer<'ctx> {
         builder: &Builder<'static>,
         node: &ReturnStmt,
     ) -> Result<(), CodegenError> {
+        // Inside a `@coroutine` body, `return` does not leave the machine: it
+        // finishes the coroutine with the value, which the resumer reads
+        // afterwards.
+        if self.coroutine.is_some() {
+            return self.lower_coroutine_return(ast, types, bindings, builder, node);
+        }
         match node.value {
             Some(value) => {
                 // `return expr;` may construct the result: the checker records
@@ -52,9 +58,11 @@ impl<'ctx> Lowerer<'ctx> {
                                 .find(|(_, signature)| signature.symbol == symbol)
                                 .map(|(qualified, _)| qualified.clone());
                             match qualified {
-                                Some(qualified) => {
-                                    self.declare_external(&symbol, &qualified, ast.expr(value).span)?
-                                }
+                                Some(qualified) => self.declare_external(
+                                    &symbol,
+                                    &qualified,
+                                    ast.expr(value).span,
+                                )?,
                                 None => {
                                     return Err(CodegenError::Emit(format!(
                                         "internal error: `{symbol}` was resolved as a constructor \
@@ -75,7 +83,8 @@ impl<'ctx> Lowerer<'ctx> {
                     let call = builder
                         .build_call(callee, &[slot.into(), argument], "")
                         .map_err(|error| CodegenError::Emit(error.to_string()))?;
-                    let _ = self.unwrap_throwing(ast, types, builder, ast.expr(value).span, call)?;
+                    let _ =
+                        self.unwrap_throwing(ast, types, builder, ast.expr(value).span, call)?;
                     let returned = builder
                         .build_load(llvm_ty, slot, "returned")
                         .map_err(|error| CodegenError::Emit(error.to_string()))?;
@@ -244,8 +253,8 @@ impl<'ctx> Lowerer<'ctx> {
                     .find(|nominal| nominal.name.rsplit('.').next() == Some("Exception"))
                     .cloned()
             })?;
-        let ty = TypeMapper::new(self.backend.context())
-            .map(&fallc_sema::Type::Nominal(nominal))?;
+        let ty =
+            TypeMapper::new(self.backend.context()).map(&fallc_sema::Type::Nominal(nominal))?;
         self.exc_type = Some(ty);
         Some(ty)
     }
@@ -283,14 +292,30 @@ impl<'ctx> Lowerer<'ctx> {
                 "internal error: an escape from a function that cannot raise".to_owned(),
             ));
         };
+        // A coroutine's escape slot *is* the exception: the frame keeps the
+        // `Exception` itself, not a tagged result with a field for it. Writing
+        // through the tagged layout here stored the whole exception into its
+        // own first field, which ran past the slot and over the frame's other
+        // storage.
+        if self.coroutine.is_some() {
+            builder
+                .build_store(slot, ok)
+                .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            if let Some(error) = error {
+                builder
+                    .build_store(slot, error)
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            }
+            return Ok(());
+        }
         // The *actual* result type: a function that returns a value has three
         // fields, and one that does not has two. Using a type without the value
         // put the tag and the error at the offsets of the two-field shape, which
         // wrote the error over the value and read back whatever the slot
         // happened to hold.
-        let ty = self.exc_result_type.ok_or_else(|| {
-            CodegenError::Emit("internal error: no result type".to_owned())
-        })?;
+        let ty = self
+            .exc_result_type
+            .ok_or_else(|| CodegenError::Emit("internal error: no result type".to_owned()))?;
         let tag = build_field_gep(builder, ty, slot, 0)?;
         builder
             .build_store(tag, ok)
@@ -306,9 +331,7 @@ impl<'ctx> Lowerer<'ctx> {
                 && !matches!(field_ty, inkwell::types::BasicTypeEnum::PointerType(_))
             {
                 let size = field_ty.size_of().ok_or_else(|| {
-                    CodegenError::Emit(
-                        "internal error: a result value of unknown size".to_owned(),
-                    )
+                    CodegenError::Emit("internal error: a result value of unknown size".to_owned())
                 })?;
                 builder
                     .build_memcpy(field, 1, source, 1, size)
@@ -330,7 +353,10 @@ impl<'ctx> Lowerer<'ctx> {
     }
 
     /// Returns the loaded result, for the `ret` an escape ends with.
-    pub(super) fn load_result(&self, builder: &Builder<'static>) -> Result<BasicValueEnum<'static>, CodegenError> {
+    pub(super) fn load_result(
+        &self,
+        builder: &Builder<'static>,
+    ) -> Result<BasicValueEnum<'static>, CodegenError> {
         let Some(slot) = self.exc_result else {
             return Err(CodegenError::Emit(
                 "internal error: an escape from a function that cannot raise".to_owned(),
@@ -504,11 +530,7 @@ impl<'ctx> Lowerer<'ctx> {
             .map_err(|error| CodegenError::Emit(error.to_string()))?
             .into_pointer_value();
         let newline = private_text(module, "\n", ".abort.end");
-        let _ = builder.build_call(
-            fprintf,
-            &[stream.into(), newline.into()],
-            "panic.end",
-        );
+        let _ = builder.build_call(fprintf, &[stream.into(), newline.into()], "panic.end");
         let abort = self.declare_libc("abort", &[], None);
         builder
             .build_call(abort, &[], "")
@@ -533,7 +555,11 @@ impl<'ctx> Lowerer<'ctx> {
             None,
             "__ft_handled_exception",
         );
-        global.set_initializer(&context.ptr_type(inkwell::AddressSpace::default()).const_null());
+        global.set_initializer(
+            &context
+                .ptr_type(inkwell::AddressSpace::default())
+                .const_null(),
+        );
         global.set_linkage(inkwell::module::Linkage::WeakAny);
         let pointer = global.as_pointer_value();
         self.handled_global = Some(pointer);
@@ -702,11 +728,7 @@ impl<'ctx> Lowerer<'ctx> {
                     }
                     self.lower_block(ast, types, bindings, builder, block)?;
                 }
-                ExcFrame::Handler {
-                    block,
-                    slot,
-                    depth,
-                } => {
+                ExcFrame::Handler { block, slot, depth } => {
                     if skip_handlers {
                         // A `??` sends the exception past this function's own
                         // handlers: `foo()??` means "leave", not "handle here".
@@ -739,7 +761,34 @@ impl<'ctx> Lowerer<'ctx> {
             let false_value = self.backend.context().bool_type().const_int(0, false);
             self.store_result(builder, false_value.as_basic_value_enum(), None, error)?;
         }
-        self.emit_all_drops(ast, types, bindings, builder, None)?;
+        // A coroutine's own variables live in its frame, not in this
+        // activation: the frame outlives the `raise` and is released by the
+        // coroutine object. Destroying them here would leave the frame holding
+        // released storage that `result()` and the next `resume` still read.
+        if self.coroutine.is_none() {
+            self.emit_all_drops(ast, types, bindings, builder, None)?;
+        }
+        // A coroutine body returns to its resumer rather than to a caller, and
+        // it returns nothing: what it raises has already been written into the
+        // frame, where `result()` reads it. Returning the tagged result here
+        // would give a `void` function a value to return. The function's own
+        // return type is the test, because `result()` is lowered with a
+        // coroutine in hand too and it does return a value.
+        let returns_nothing = builder
+            .get_insert_block()
+            .and_then(|block| block.get_parent())
+            .is_some_and(|function| function.get_type().get_return_type().is_none());
+        if returns_nothing {
+            // The tag says how the body ended. `result()` reads it: `RETURNED`
+            // answers the payload, `RAISED` re-raises what the frame holds.
+            if self.coroutine.is_some() {
+                self.store_tag(builder, super::coroutines::PAYLOAD_RAISED)?;
+            }
+            builder
+                .build_return(None)
+                .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            return Ok(());
+        }
         let result = self.load_result(builder)?;
         builder
             .build_return(Some(&result))
@@ -765,9 +814,9 @@ impl<'ctx> Lowerer<'ctx> {
                     "internal error: `raise;` outside an `except`".to_owned(),
                 ));
             };
-            let ty = self
-                .exception_type()
-                .ok_or_else(|| CodegenError::Emit("internal error: no exception type".to_owned()))?;
+            let ty = self.exception_type().ok_or_else(|| {
+                CodegenError::Emit("internal error: no exception type".to_owned())
+            })?;
             let caught = builder
                 .build_load(ty, slot, "raised")
                 .map_err(|error| CodegenError::Emit(error.to_string()))?;
@@ -905,13 +954,8 @@ impl<'ctx> Lowerer<'ctx> {
                     dispatch_ends = true;
                     break;
                 }
-                let matches = self.exception_name_matches(
-                    ast,
-                    types,
-                    builder,
-                    slot,
-                    &clause.names,
-                )?;
+                let matches =
+                    self.exception_name_matches(ast, types, builder, slot, &clause.names)?;
                 let next = context.append_basic_block(function, "except.next");
                 builder
                     .build_conditional_branch(matches, matched[index], next)
@@ -1038,7 +1082,8 @@ impl<'ctx> Lowerer<'ctx> {
         let ty = self
             .expression_type(ast, types, expr)
             .ok_or_else(|| CodegenError::waiting_for_spec("the text of an exception", span))?;
-        if ty.is_nominal() && ty.nominal_name().and_then(|name| name.rsplit('.').next()) == Some("String")
+        if ty.is_nominal()
+            && ty.nominal_name().and_then(|name| name.rsplit('.').next()) == Some("String")
         {
             // `data()` is the borrowed C string. The receiver is taken by
             // address, so a temporary is given storage first.
@@ -1056,8 +1101,7 @@ impl<'ctx> Lowerer<'ctx> {
                 referent_is_const: true,
                 is_rvalue: false,
             };
-            let function =
-                self.std_function("data", std::slice::from_ref(&receiver), span)?;
+            let function = self.std_function("data", std::slice::from_ref(&receiver), span)?;
             let call = builder
                 .build_call(function, &[storage.into()], "text")
                 .map_err(|error| CodegenError::Emit(error.to_string()))?;
@@ -1067,7 +1111,6 @@ impl<'ctx> Lowerer<'ctx> {
         // to the address of the text.
         self.lower_expr(ast, types, builder, expr)
     }
-
 
     /// Returns from the current function, wrapping the value if it may raise.
     ///
@@ -1103,9 +1146,7 @@ impl<'ctx> Lowerer<'ctx> {
                     )
                 })?;
             let size = ty.size_of().ok_or_else(|| {
-                CodegenError::Emit(
-                    "internal error: an aggregate return has no size".to_owned(),
-                )
+                CodegenError::Emit("internal error: an aggregate return has no size".to_owned())
             })?;
             builder
                 .build_memcpy(slot, 1, source, 1, size)
@@ -1143,5 +1184,4 @@ impl<'ctx> Lowerer<'ctx> {
         }
         Ok(())
     }
-
 }

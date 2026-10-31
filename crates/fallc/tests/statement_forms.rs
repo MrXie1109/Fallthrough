@@ -93,10 +93,7 @@ fn main() int {
 "#;
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("`case` label"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("`case` label"), "{diagnostics}");
 }
 
 #[test]
@@ -121,10 +118,7 @@ fn two_arms_may_not_claim_the_same_label() {
 "#;
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("already a label"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("already a label"), "{diagnostics}");
 }
 
 #[test]

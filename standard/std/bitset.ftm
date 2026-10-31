@@ -17,8 +17,9 @@
 // no value, and returning zero for it would hide an off-by-one.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.util;
+from std.util import *;
 
 // A fixed-size set of bits.
 export type Bitset {
@@ -78,7 +79,7 @@ fn bit_of(index usize) u64 {
 // Sets the bit at `index` and returns its previous value.
 export fn set(this &Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     word usize = word_of(index);
     mask u64 = bit_of(index);
@@ -90,7 +91,7 @@ export fn set(this &Bitset, index usize) bool {
 // Clears the bit at `index` and returns its previous value.
 export fn clear_bit(this &Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     word usize = word_of(index);
     mask u64 = bit_of(index);
@@ -102,7 +103,7 @@ export fn clear_bit(this &Bitset, index usize) bool {
 // Flips the bit at `index` and returns its previous value.
 export fn toggle(this &Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     word usize = word_of(index);
     mask u64 = bit_of(index);
@@ -114,7 +115,7 @@ export fn toggle(this &Bitset, index usize) bool {
 // Whether the bit at `index` is set.
 export fn test(this &const Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     return (this._words[word_of(index)] & bit_of(index)) != 0u64;
 }

@@ -52,7 +52,10 @@ fn a_field_that_does_not_exist_is_reported_with_the_known_ones() {
     assert!(output.contains("has no field `nope`"), "{output}");
     // Which fields there are is an explanation, so it is behind `-Wverbose`.
     let (_, verbose) = compile_verbose(source);
-    assert!(verbose.contains("x"), "the note lists the fields: {verbose}");
+    assert!(
+        verbose.contains("x"),
+        "the note lists the fields: {verbose}"
+    );
 }
 
 #[test]
@@ -210,7 +213,10 @@ fn a_constructor_may_be_declared_after_its_use() {
     // constructor was not found and the fields were filled directly instead.
     let source = "type P {\n    x int;\n}\nfn f() int {\n    p P = P(21);\n    return p.x;\n}\nfn __init__(this &P, v int) void {\n    this.x = v * 2;\n}\n";
     let output = ir_of(source);
-    assert!(output.contains("call void @__init___R0N1_P_I3_i32"), "{output}");
+    assert!(
+        output.contains("call void @__init___R0N1_P_I3_i32"),
+        "{output}"
+    );
 }
 
 #[test]
@@ -252,7 +258,8 @@ fn the_byte_pointer_conversion_respects_const() {
 fn a_pointer_to_another_type_still_needs_a_cast() {
     // The exception is `byte` alone. Two pointers to different types are not
     // interchangeable, or every type error would become a memory error.
-    let source = "fn main() int {\n    x u16 = 1;\n    p *u16 = &x;\n    q *int = p;\n    return 0;\n}\n";
+    let source =
+        "fn main() int {\n    x u16 = 1;\n    p *u16 = &x;\n    q *int = p;\n    return 0;\n}\n";
     let (outcome, output) = compile(source);
     assert_eq!(outcome, Outcome::Failure, "{output}");
 }
@@ -486,7 +493,10 @@ fn an_unsized_array_parameter_is_a_pointer_that_keeps_its_const() {
     let source = "fn show(s []const c8) int {\n    return s[0] as int;\n}\nfn write(s []const c8) int {\n    s[0] = 'x';\n    return 0;\n}\nfn f() int {\n    return show(\"hi\");\n}\n";
     let (outcome, output) = compile_text("test.fft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{output}");
-    assert!(output.contains("const"), "the writes must be refused:\n{output}");
+    assert!(
+        output.contains("const"),
+        "the writes must be refused:\n{output}"
+    );
 }
 
 #[test]
@@ -517,7 +527,10 @@ fn type_of_a_parenthesised_name_is_a_reference() {
     let source =
         "fn f() int {\n    a int = 5;\n    r type((a)) = &a;\n    *r = 9;\n    return a;\n}\n";
     let output = ir_of(source);
-    assert!(output.contains("store ptr"), "a reference is stored: {output}");
+    assert!(
+        output.contains("store ptr"),
+        "a reference is stored: {output}"
+    );
     assert!(output.contains("store i32 9"), "{output}");
 }
 
@@ -588,8 +601,7 @@ fn a_dereference_initialises_a_pointer_binding_with_its_value() {
     // of the slot it sits in. Code generation suppressed the read because a
     // pointer looked like an "address wanted" context, so the binding held the
     // address and every use of it read the wrong memory.
-    let source =
-        "fn f() int {\n    x int = 5;\n    p *int = &x;\n    pp **int = &p;\n    q *int = *pp;\n    return *q;\n}\n";
+    let source = "fn f() int {\n    x int = 5;\n    p *int = &x;\n    pp **int = &p;\n    q *int = *pp;\n    return *q;\n}\n";
     let output = ir_of(source);
     // The read is there: the binding is stored from a loaded pointer.
     assert!(output.contains("load ptr, ptr"), "{output}");

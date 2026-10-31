@@ -23,11 +23,13 @@
 
 import C;
 import std.type_traits;
+from std.type_traits import *;
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.util;
+from std.util import *;
 
 // A string of `Char` values.
 export
@@ -71,7 +73,7 @@ export
 template <Char type>
 fn __init__(this &BasicString<Char>, other &&BasicString<Char>) void {
     (&this._data)->__init__();
-    this._data = util.move(other._data);
+    this._data = move(other._data);
 }
 
 // Copies a C string, up to its terminator.
@@ -129,7 +131,7 @@ fn __assign__(this &BasicString<Char>, other &const BasicString<Char>) void {
 export
 template <Char type>
 fn __assign__(this &BasicString<Char>, other &&BasicString<Char>) void {
-    this._data = util.move(other._data);
+    this._data = move(other._data);
 }
 
 // Releases the storage.
@@ -417,7 +419,7 @@ export
 template <Char type>
 fn __str__(this &const BasicString<Char>) String {
     text String = String();
-    if (IsSame(Char, char)) @constexpr {
+    if (std.type_traits.IsSame(Char, char)) @constexpr {
         index usize = 0;
         while (index < this.length()) {
             text.push(this._data[index] as char);

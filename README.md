@@ -233,19 +233,21 @@ the primary text, and every volume carries a Chinese translation (`*.zh.md`).
 | Document | What it covers |
 | -------- | -------------- |
 | [00 Getting started](docs/language/00-start.md) | source files, the program entry, compiler options, exit codes, first diagnostics |
-| [Language standard](docs/language/README.md) | the normative text: volumes 00--10 and the two appendices |
+| [Language standard](docs/language/README.md) | the normative text: volumes 00--11 and the three appendices |
 | [01 Lexical](docs/language/01-lexical.md) | source text, tokens, comments, keywords, literals, operators |
 | [02 Types](docs/language/02-types.md) | the type system, layout and alignment, implicit adjustments |
 | [03 Declarations](docs/language/03-declarations.md) | declarations, attributes, macros, traits, interfaces, templates |
 | [04 Functions](docs/language/04-functions.md) | functions, member functions, lambdas, argument passing, overloading, moves |
-| [05 Statements](docs/language/05-statements.md) | blocks, loops, `switch`, jumps, `defer` |
-| [06 Exceptions](docs/language/06-exceptions.md) | `raise`, `try`, `except`, `!!`, and when a call has to say something |
-| [07 Expressions](docs/language/07-expressions.md) | operators, conversions, special methods, evaluation order |
-| [08 Modules](docs/language/08-modules.md) | importing and exporting, module lookup, multi-file programs |
-| [09 Scopes](docs/language/09-scopes.md) | scopes, shadowing, lifetimes, destruction order |
-| [10 Diagnostics](docs/language/10-diagnostics.md) | diagnostic numbers, warning groups, suppression |
+| [05 Coroutines](docs/language/05-coroutines.md) | `@coroutine`, `yield`, `resume`, `result`, the state machine |
+| [06 Statements](docs/language/06-statements.md) | blocks, loops, `switch`, jumps, `defer` |
+| [07 Exceptions](docs/language/07-exceptions.md) | `raise`, `try`, `except`, `!!`, and when a call has to say something |
+| [08 Expressions](docs/language/08-expressions.md) | operators, conversions, special methods, evaluation order |
+| [09 Modules](docs/language/09-modules.md) | importing and exporting, module lookup, multi-file programs |
+| [10 Scopes](docs/language/10-scopes.md) | scopes, shadowing, lifetimes, destruction order |
+| [11 Diagnostics](docs/language/11-diagnostics.md) | diagnostic numbers, warning groups, suppression |
 | [Appendix A: diagnostics](docs/language/appendix-a-errors.md) | every stable diagnostic code, severity and message template |
 | [Appendix B: special methods](docs/language/appendix-b-special-methods.md) | `__init__`, `__drop__`, operators, conversions and the rest |
+| [Appendix C: attributes](docs/language/appendix-c-attributes.md) | every attribute, and where it may be written |
 | [Standard library](docs/library.md) | the modules under `standard/std/`, their types and functions |
 | [Collections](docs/collections.md) | `Array`, `String` and the other containers in depth |
 | [Templates](docs/templates.md) | parameter packs, folding, `sizeof...` and the rules that need examples |

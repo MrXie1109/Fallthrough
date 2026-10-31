@@ -8,8 +8,9 @@
 // textbook formulas, division included (multiply by the conjugate).
 
 import std.math;
+from std.math import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 
 // A complex number `real + imaginary * i`.
 export type Complex {

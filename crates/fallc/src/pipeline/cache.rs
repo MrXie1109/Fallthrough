@@ -25,7 +25,9 @@ fn build_identity() -> String {
     use std::hash::{Hash, Hasher};
 
     let binary = std::env::current_exe().ok();
-    let metadata = binary.as_ref().and_then(|path| std::fs::metadata(path).ok());
+    let metadata = binary
+        .as_ref()
+        .and_then(|path| std::fs::metadata(path).ok());
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     // The path distinguishes two compilers of the same size built at the same
     // second; the size and time distinguish two builds at the same path.

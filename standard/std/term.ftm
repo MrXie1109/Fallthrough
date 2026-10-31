@@ -9,10 +9,13 @@
 // unconditionally and still be readable when redirected to a file.
 
 import std.optional;
+from std.optional import *;
 import std.os;
+from std.os import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.internal.term_sys;
+from std.internal.term_sys import *;
 
 // The eight colours every terminal has.
 export enum Color int {

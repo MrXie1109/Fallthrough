@@ -47,7 +47,9 @@
 // moves, and are the operations to reach for when the order does not matter.
 
 import std.util;
+from std.util import *;
 import std.type_traits;
+from std.type_traits import *;
 
 // How much room an empty `Array` asks for, in elements.
 //
@@ -227,7 +229,7 @@ fn __assign__(this &Array<T>, other &&Array<T>) void {
         slot->__drop__();
         index += 1;
     }
-    util.free(this._data as *byte);
+    free(this._data as *byte);
     this._data = other._data;
     this._len = other._len;
     this._cap = other._cap;
@@ -246,7 +248,7 @@ fn __drop__(this &Array<T>) void {
         slot->__drop__();
         index += 1;
     }
-    util.free(this._data as *byte);
+    free(this._data as *byte);
     this._data = nullptr;
     this._len = 0;
     this._cap = 0;
@@ -302,7 +304,7 @@ export
 template <T type>
 fn __getitem__(this &Array<T>, index usize) &T {
     if (index >= this._len) {
-        util.panic("Array index out of range");
+        panic("Array index out of range");
     }
     return this._data[index];
 }
@@ -322,7 +324,7 @@ export
 template <T type>
 fn __getitem__(this &const Array<T>, index usize) &const T {
     if (index >= this._len) {
-        util.panic("Array index out of range");
+        panic("Array index out of range");
     }
     return this._data[index];
 }
@@ -353,7 +355,7 @@ fn reserve(this &Array<T>, wanted usize) void {
     while (grown < wanted) {
         grown *= 2;
     }
-    fresh *T = util.allocate(grown * sizeof(T)) as *T;
+    fresh *T = allocate(grown * sizeof(T)) as *T;
     index usize = 0;
     while (index < this._len) {
         target *T = &fresh[index];
@@ -363,13 +365,13 @@ fn reserve(this &Array<T>, wanted usize) void {
         if ($MOVES(T)) @constexpr {
             target->__init__(this._data[index]);
         } else {
-            target->__init__(util.move(this._data[index]));
+            target->__init__(move(this._data[index]));
         }
         source *T = &this._data[index];
         source->__drop__();
         index += 1;
     }
-    util.free(this._data as *byte);
+    free(this._data as *byte);
     this._data = fresh;
     this._cap = grown;
 }
@@ -385,25 +387,25 @@ fn shrink_to_fit(this &Array<T>) void {
         return;
     }
     if (this._len == 0) {
-        util.free(this._data as *byte);
+        free(this._data as *byte);
         this._data = nullptr;
         this._cap = 0;
         return;
     }
-    tight *T = util.allocate(this._len * sizeof(T)) as *T;
+    tight *T = allocate(this._len * sizeof(T)) as *T;
     index usize = 0;
     while (index < this._len) {
         target *T = &tight[index];
         if ($MOVES(T)) @constexpr {
             target->__init__(this._data[index]);
         } else {
-            target->__init__(util.move(this._data[index]));
+            target->__init__(move(this._data[index]));
         }
         source *T = &this._data[index];
         source->__drop__();
         index += 1;
     }
-    util.free(this._data as *byte);
+    free(this._data as *byte);
     this._data = tight;
     this._cap = this._len;
 }
@@ -535,7 +537,7 @@ fn insert(this &Array<T>, at *T, value T) void {
     // one.
     offset isize = at - this._data;
     if (offset < 0 || offset as usize > this._len) {
-        util.panic("Array insert past the end");
+        panic("Array insert past the end");
     }
     index usize = offset as usize;
     this.reserve(this._len + 1);
@@ -545,7 +547,7 @@ fn insert(this &Array<T>, at *T, value T) void {
         if ($MOVES(T)) @constexpr {
             target->__init__(this._data[moved - 1]);
         } else {
-            target->__init__(util.move(this._data[moved - 1]));
+            target->__init__(move(this._data[moved - 1]));
         }
         source *T = &this._data[moved - 1];
         source->__drop__();
@@ -578,7 +580,7 @@ template <T type>
 fn erase(this &Array<T>, at *T) T {
     offset isize = at - this._data;
     if (offset < 0 || offset as usize >= this._len) {
-        util.panic("Array erase past the end");
+        panic("Array erase past the end");
     }
     index usize = offset as usize;
     removed T = this._data[index];
@@ -605,7 +607,7 @@ export
 template <T type>
 fn pop(this &Array<T>) T {
     if (this._len == 0) {
-        util.panic("Array pop from an empty array");
+        panic("Array pop from an empty array");
     }
     this._len -= 1;
     removed T = this._data[this._len];
@@ -620,7 +622,7 @@ export
 template <T type>
 fn front(this &const Array<T>) &const T {
     if (this._len == 0) {
-        util.panic("Array front of an empty array");
+        panic("Array front of an empty array");
     }
     return this._data[0];
 }
@@ -630,7 +632,7 @@ export
 template <T type>
 fn front(this &Array<T>) &T {
     if (this._len == 0) {
-        util.panic("Array front of an empty array");
+        panic("Array front of an empty array");
     }
     return this._data[0];
 }
@@ -640,7 +642,7 @@ export
 template <T type>
 fn back(this &const Array<T>) &const T {
     if (this._len == 0) {
-        util.panic("Array last of an empty array");
+        panic("Array last of an empty array");
     }
     return this._data[this._len - 1];
 }
@@ -650,7 +652,7 @@ export
 template <T type>
 fn back(this &Array<T>) &T {
     if (this._len == 0) {
-        util.panic("Array last_mut of an empty array");
+        panic("Array last_mut of an empty array");
     }
     return this._data[this._len - 1];
 }

@@ -1,6 +1,6 @@
-# 10 Diagnostics
+# 11 Diagnostics
 
-> [中文](10-diagnostics.zh.md)
+> [中文](11-diagnostics.zh.md)
 
 ## Scope
 

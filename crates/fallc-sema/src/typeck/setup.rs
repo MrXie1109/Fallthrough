@@ -106,6 +106,9 @@ impl TypeChecker {
             resolving_probe: false,
             in_parameter_position: true,
             substitution: None,
+            coroutines: Vec::new(),
+            coroutine_calls: std::collections::HashMap::new(),
+            coroutine_functions: std::collections::HashSet::new(),
             type_templates: std::collections::HashMap::new(),
             type_template_arguments: std::collections::HashMap::new(),
             template_definitions: std::collections::HashMap::new(),
@@ -143,10 +146,7 @@ impl TypeChecker {
 
     /// Runs type checking over `ast`.
     /// Records constants an import brought in, so `C.EOF` has a value.
-    pub fn add_imported_constants(
-        &mut self,
-        constants: std::collections::HashMap<String, i64>,
-    ) {
+    pub fn add_imported_constants(&mut self, constants: std::collections::HashMap<String, i64>) {
         self.constants_by_name.extend(constants);
     }
 
@@ -205,7 +205,10 @@ impl TypeChecker {
                 // A template is not one function but a family, and which member
                 // a call means is decided during checking -- so it is not
                 // evaluable here. A method needs a receiver, which is storage.
-                if !function.template_params.is_empty() || function.body.is_none() || function.has_pack() {
+                if !function.template_params.is_empty()
+                    || function.body.is_none()
+                    || function.has_pack()
+                {
                     continue;
                 }
                 if function
@@ -294,6 +297,7 @@ impl TypeChecker {
             modules: self.modules.clone(),
         };
         TypeCheckResult {
+            coroutine_calls: self.coroutine_calls.clone(),
             environment,
             type_of_types: std::mem::take(&mut self.type_of_types),
             conversions: {
@@ -465,10 +469,7 @@ impl TypeChecker {
                     let mut scoped = moved.clone();
                     self.scan_block_for_moves(ast, clause.block, &mut scoped);
                 }
-                for block in [node.else_block, node.finally_block]
-                    .into_iter()
-                    .flatten()
-                {
+                for block in [node.else_block, node.finally_block].into_iter().flatten() {
                     let mut scoped = moved.clone();
                     self.scan_block_for_moves(ast, block, &mut scoped);
                 }
@@ -592,10 +593,7 @@ impl TypeChecker {
         for raw in 0..ast.stmt_count() {
             let id = fallc_ast::StmtId::from_raw(raw as u32);
             if let fallc_ast::StmtKind::Bind(bind) = &ast.stmt(id).kind
-                && bind
-                    .attrs
-                    .iter()
-                    .any(|attr| attr.name == "maybe_unused")
+                && bind.attrs.iter().any(|attr| attr.name == "maybe_unused")
             {
                 waived.insert(bind.name_span);
             }
@@ -667,7 +665,9 @@ impl TypeChecker {
         let Some(name) = ty.nominal_name().map(str::to_owned) else {
             return false;
         };
-        let bare = name.rsplit_once('.').map_or(name.as_str(), |(_, last)| last);
+        let bare = name
+            .rsplit_once('.')
+            .map_or(name.as_str(), |(_, last)| last);
         let qualified = format!("{}{bare}", fallc_ast::special::SpecialMethod::Drop.name());
         self.definitions_named(resolutions, &qualified)
             .iter()
@@ -730,18 +730,17 @@ impl TypeChecker {
             // A default of a template or of a family's method may name the
             // template's own parameters, which have no meaning here; only its
             // value can travel, and the folder finds it when it can.
-            let generic = !function.template_params.is_empty() || function.has_pack()
-                || function
-                    .params
-                    .first()
-                    .is_some_and(|parameter| self.mentions_template_parameter_syntax(&parameter.ty));
+            let generic = !function.template_params.is_empty()
+                || function.has_pack()
+                || function.params.first().is_some_and(|parameter| {
+                    self.mentions_template_parameter_syntax(&parameter.ty)
+                });
             for (index, parameter) in function.params.iter().enumerate() {
                 let Some(default) = parameter.default else {
                     continue;
                 };
                 if let Some(value) = self.const_eval_int(default) {
-                    self.default_values
-                        .insert(ast.expr(default).span, value);
+                    self.default_values.insert(ast.expr(default).span, value);
                 }
                 // A default that is not a constant is an expression of this
                 // module's tree, and a call from another module lowers it
@@ -955,10 +954,8 @@ impl TypeChecker {
                 );
                 return;
             }
-            self.constants_by_name.insert(
-                format!("{}.{}", declaration.name, member.name),
-                value,
-            );
+            self.constants_by_name
+                .insert(format!("{}.{}", declaration.name, member.name), value);
             // The next member continues from this one, whether the value was
             // written or implied.
             next = value.saturating_add(1);
@@ -1009,7 +1006,16 @@ impl TypeChecker {
             // A specialisation is not the family and not a type of its own: it
             // replaces the member its pattern matches. It is remembered here so
             // that the first `Box<*int>` finds it.
+            //
+            // It also says that its name is a *family*: a file that declares
+            // `template <> type Box<int>` beside `template <T> type Box<T>` has
+            // a family called `Box`, and the member is made the same way any
+            // other member is. Leaving it out of `local_families` made the name
+            // look like an ordinary type the family was shadowing, so
+            // `Box<int>` was never instantiated at all and every field of it
+            // was missing.
             if !declaration.pattern.is_empty() {
+                self.local_families.insert(declaration.name.clone());
                 self.type_specialisations
                     .entry(declaration.name.clone())
                     .or_default()
@@ -1129,9 +1135,7 @@ impl TypeChecker {
                         ))
                         .with_code(DiagnosticCode::sema(85))
                         .with_span(field.ty.span())
-                        .with_note(
-                            "hold it behind a pointer or a reference: `*Node`, not `Node`",
-                        ),
+                        .with_note("hold it behind a pointer or a reference: `*Node`, not `Node`"),
                     );
                 }
                 fields.push((field.name.clone(), ty));
@@ -1186,11 +1190,7 @@ impl TypeChecker {
         self.module_trees.push(ast);
     }
 
-    pub fn add_template_definition(
-        &mut self,
-        name: impl Into<String>,
-        body: TemplateBody,
-    ) {
+    pub fn add_template_definition(&mut self, name: impl Into<String>, body: TemplateBody) {
         // The tree and the module's own resolutions travel with the function.
         //
         // The tree, because a node id is an index into one tree: the same
@@ -1226,7 +1226,12 @@ impl TypeChecker {
         let mut candidates: Vec<&String> = self
             .trait_definitions
             .keys()
-            .filter(|existing| existing.rsplit_once('.').map_or(existing.as_str(), |(_, last)| last) == bare)
+            .filter(|existing| {
+                existing
+                    .rsplit_once('.')
+                    .map_or(existing.as_str(), |(_, last)| last)
+                    == bare
+            })
             .collect();
         candidates.sort();
         let name = (*candidates.first()?).clone();
@@ -1241,7 +1246,12 @@ impl TypeChecker {
     /// no diagnostic survives -- a requirement that fails is reported by the
     /// caller as one failure of the whole query, because that is what a reader
     /// can act on.
-    pub(super) fn trait_models(&mut self, name: &str, arguments: &[Type], span: Span) -> TraitOutcome {
+    pub(super) fn trait_models(
+        &mut self,
+        name: &str,
+        arguments: &[Type],
+        span: Span,
+    ) -> TraitOutcome {
         let _ = span;
         let Some(body) = self.trait_body_for(name) else {
             return TraitOutcome::Unknown;
@@ -1271,7 +1281,10 @@ impl TypeChecker {
         let mut bindings = Vec::with_capacity(variables.len());
         for (variable, argument) in variables.iter().zip(arguments) {
             let resolved = match (argument.is_unspecified(), &outer) {
-                (true, Some(outer)) => outer.type_of(variable).cloned().unwrap_or_else(|| argument.clone()),
+                (true, Some(outer)) => outer
+                    .type_of(variable)
+                    .cloned()
+                    .unwrap_or_else(|| argument.clone()),
                 _ => argument.clone(),
             };
             bindings.push((variable.clone(), resolved));
@@ -1336,7 +1349,6 @@ impl TypeChecker {
         let saved_params = self.bind_trait_params(body);
 
         let outcome = (|| {
-
             for requirement in &body.declaration.requirements {
                 let diagnostics_before = self.diagnostics.len();
                 let mut requirement_types = crate::types::TypeTable::new();
@@ -1438,12 +1450,20 @@ impl TypeChecker {
     ///
     /// Returns what was there before, for [`Self::unbind_trait_params`]: a
     /// trait is checked on demand, so a parameter has no type outside a query.
-    pub(super) fn bind_trait_params(&mut self, body: &TraitBody) -> Vec<(Span, Option<crate::types::Type>)> {
+    pub(super) fn bind_trait_params(
+        &mut self,
+        body: &TraitBody,
+    ) -> Vec<(Span, Option<crate::types::Type>)> {
         let saved: Vec<(Span, Option<crate::types::Type>)> = body
             .declaration
             .params
             .iter()
-            .map(|param| (param.name_span, self.binding_types.get(param.name_span).cloned()))
+            .map(|param| {
+                (
+                    param.name_span,
+                    self.binding_types.get(param.name_span).cloned(),
+                )
+            })
             .collect();
         // The type variable binding: a trait's parameter is written against a
         // variable (`it Iter`), and the substitution holds the type the trait
@@ -1465,12 +1485,18 @@ impl TypeChecker {
         let arguments = crate::template::Arguments(
             variables
                 .iter()
-                .map(|variable| match self.substitution.as_ref().and_then(|sub| sub.type_of(variable)) {
-                    Some(ty) => crate::template::TemplateArgument::Type(ty.clone()),
-                    None => crate::template::TemplateArgument::Type(Type::unspecified(
-                        variable.clone(),
-                        fallc_span::Span::SYNTHETIC,
-                    )),
+                .map(|variable| {
+                    match self
+                        .substitution
+                        .as_ref()
+                        .and_then(|sub| sub.type_of(variable))
+                    {
+                        Some(ty) => crate::template::TemplateArgument::Type(ty.clone()),
+                        None => crate::template::TemplateArgument::Type(Type::unspecified(
+                            variable.clone(),
+                            fallc_span::Span::SYNTHETIC,
+                        )),
+                    }
                 })
                 .collect(),
         );
@@ -1655,9 +1681,10 @@ impl TypeChecker {
                         .trait_body_for(&trait_name)
                         .map(|body| body.declaration.type_variables().contains(&path))
                         .unwrap_or(false)
-                        || self.substitution.as_ref().is_some_and(|substitution| {
-                            substitution.type_of(&path).is_some()
-                        });
+                        || self
+                            .substitution
+                            .as_ref()
+                            .is_some_and(|substitution| substitution.type_of(&path).is_some());
                     let substituted = declared
                         .then(|| {
                             self.substitution
@@ -1698,9 +1725,7 @@ impl TypeChecker {
         // the query was given. This is what `@enable_if(IsInteger(T))` needs --
         // a way to write two overloads that differ only in which kinds of type
         // they take, the way `std::enable_if` constrains a C++ template.
-        if let Some(answer) =
-            self.builtin_type_trait(&trait_name, &arguments, resolutions, span)
-        {
+        if let Some(answer) = self.builtin_type_trait(&trait_name, &arguments, resolutions, span) {
             self.constant_values.insert(span, i64::from(answer));
             return Some(Type::BOOL);
         }
@@ -1792,9 +1817,7 @@ impl TypeChecker {
         let mut keys: Vec<&String> = self
             .type_templates
             .keys()
-            .filter(|key| {
-                key.rsplit_once('.').map_or(key.as_str(), |(_, last)| last) == bare
-            })
+            .filter(|key| key.rsplit_once('.').map_or(key.as_str(), |(_, last)| last) == bare)
             .collect();
         keys.sort();
         for key in keys {
@@ -1887,13 +1910,9 @@ impl TypeChecker {
                 .map(crate::template::TemplateArgument::Type)
                 .collect(),
         );
-        match self.family_member_constant(
-            &specialisation_key,
-            &template,
-            &arguments,
-            "VALUE",
-            span,
-        ) {
+        let answer =
+            self.family_member_constant(&specialisation_key, &template, &arguments, "VALUE", span);
+        match answer {
             Some(value) => Some(value != 0),
             None => {
                 self.diagnostics.push(
@@ -1966,6 +1985,11 @@ impl TypeChecker {
         substitution: &Option<crate::template::Substitution>,
     ) -> bool {
         let symbol = crate::template_symbol_of(&signature.written_name, &signature.param_types);
+        // The declaration this candidate *is*, not merely the symbol it shares.
+        // Two declarations may be written with the same name and the same
+        // parameters and told apart only by their conditions; asking the symbol
+        // for a body answered with whichever was filed first, so both were
+        // judged by one condition.
         let Some(body) = self
             .template_body_for(&symbol)
             .or_else(|| self.template_body_for(&signature.bound_as))
@@ -1975,9 +1999,15 @@ impl TypeChecker {
         if !body.attrs.iter().any(|attr| attr.name == "enable_if") {
             return true;
         }
+        // The member's own substitution, when the caller has one. A caller that
+        // does not is still checking *something* -- the receiver of a special
+        // method is resolved while the enclosing substitution is in hand -- so
+        // what is already installed is what the condition folds against.
+        // Clearing it made `@enable_if(!IsVoid(T))` on a constructor fold `T`
+        // with nothing bound, so the condition was not a constant.
         let saved = match substitution {
             Some(substitution) => self.substitution.replace(substitution.clone()),
-            None => self.substitution.take(),
+            None => self.substitution.clone(),
         };
         let saved_index = self.adopt_const_index(&body.tree);
         let pushed = body.environment.clone();
@@ -1992,7 +2022,8 @@ impl TypeChecker {
             match substitution {
                 Some(substitution) => substitution.params(),
                 None => &[],
-            }.iter(),
+            }
+            .iter(),
         ) {
             if let fallc_ast::TemplateParamKind::Value(ty) = &parameter.kind {
                 let ty = match substitution {
@@ -2002,12 +2033,10 @@ impl TypeChecker {
                 self.template_value_types.insert(parameter.name.clone(), ty);
             }
         }
-        // The body's own constants, so that an enum member it names -- 
+        // The body's own constants, so that an enum member it names --
         // `OpenMode.READ` -- is a value here as it is there.
-        let saved_constants = std::mem::replace(
-            &mut self.instantiation_constants,
-            body.constants.clone(),
-        );
+        let saved_constants =
+            std::mem::replace(&mut self.instantiation_constants, body.constants.clone());
         // Asking is a question, not a report: a condition that cannot be folded
         // here is left to the instantiation that will check it, and whatever the
         // question itself says is dropped.
@@ -2168,8 +2197,7 @@ impl TypeChecker {
                     constants.iter().cloned().collect();
                 self.imported_family_constants
                     .insert(family.clone(), answers.clone());
-                self.imported_family_constants
-                    .insert(name.clone(), answers);
+                self.imported_family_constants.insert(name.clone(), answers);
             }
         }
         // The types declared inside this one are named through it --
@@ -2180,30 +2208,29 @@ impl TypeChecker {
             self.aliases
                 .insert(format!("{name}.{nested_name}"), resolved);
         }
-        self.nominal_types
-            .insert(
-                name.clone(),
-                crate::types::NominalType {
-                    template_arguments: None,
-                    name,
-                    fields,
-                    mutable_fields,
-                    is_union,
-                    // A forward declaration crosses as an incomplete type: it
-                    // may be named behind a pointer, and nothing may be read
-                    // through it until the definition is seen.
-                    is_incomplete: is_forward,
-                    // The storage member is the largest field, and which one
-                    // that is needs each field's size -- which is the
-                    // declaring module's to measure. The importer takes the
-                    // first, which is correct for every union whose largest
-                    // member is written first and a conservative reading
-                    // otherwise: overlapping members still address the same
-                    // bytes, only the space reserved differs.
-                    union_storage: is_union.then_some(0),
-                    field_alignments,
-                },
-            );
+        self.nominal_types.insert(
+            name.clone(),
+            crate::types::NominalType {
+                template_arguments: None,
+                name,
+                fields,
+                mutable_fields,
+                is_union,
+                // A forward declaration crosses as an incomplete type: it
+                // may be named behind a pointer, and nothing may be read
+                // through it until the definition is seen.
+                is_incomplete: is_forward,
+                // The storage member is the largest field, and which one
+                // that is needs each field's size -- which is the
+                // declaring module's to measure. The importer takes the
+                // first, which is correct for every union whose largest
+                // member is written first and a conservative reading
+                // otherwise: overlapping members still address the same
+                // bytes, only the space reserved differs.
+                union_storage: is_union.then_some(0),
+                field_alignments,
+            },
+        );
         // A family's specialisations arrived with it: a member's fields are
         // decided here, and a caller that did not know them would build the
         // generic member and read the wrong layout.
@@ -2317,16 +2344,19 @@ impl TypeChecker {
         // member is being built: the name itself is not adopted, because this
         // file may declare a type or a family of its own under it.
         let saved = self.type_templates.insert(name.to_owned(), declaration);
-        let saved_specialisations = environment
-            .type_specialisations
-            .get(name)
-            .cloned()
-            .map(|specialisations| {
-                std::mem::replace(
-                    self.type_specialisations.entry(name.to_owned()).or_default(),
-                    specialisations,
-                )
-            });
+        let saved_specialisations =
+            environment
+                .type_specialisations
+                .get(name)
+                .cloned()
+                .map(|specialisations| {
+                    std::mem::replace(
+                        self.type_specialisations
+                            .entry(name.to_owned())
+                            .or_default(),
+                        specialisations,
+                    )
+                });
         let member = self.instantiate_type_template(named);
         match saved {
             Some(existing) => {
@@ -2452,11 +2482,7 @@ impl TypeChecker {
     /// so the importer records the same equivalence. Registered as a nominal
     /// type it became an empty struct, and no value of the aliased type fitted
     /// it.
-    pub fn add_imported_alias(
-        &mut self,
-        name: impl Into<String>,
-        target: &fallc_ast::TypeSyntax,
-    ) {
+    pub fn add_imported_alias(&mut self, name: impl Into<String>, target: &fallc_ast::TypeSyntax) {
         let name: String = name.into();
         self.imported_type_names.insert(name.clone());
         let resolved = self.resolve_written_type(target);
@@ -2636,7 +2662,12 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn check_items(&mut self, ast: &Ast, resolutions: &Resolutions, types: &mut TypeTable) {
+    pub(super) fn check_items(
+        &mut self,
+        ast: &Ast,
+        resolutions: &Resolutions,
+        types: &mut TypeTable,
+    ) {
         // A method written against a type family's parameters is a *template*
         // too -- `fn __init__(this &Box<T>, v T)` -- and there is no member for
         // it to be checked against until one is used. Where its body is is
@@ -2729,8 +2760,7 @@ impl TypeChecker {
                             def.name == function.name
                                 && !def.is_overridable
                                 && def.signature.as_ref().is_some_and(|signature| {
-                                    signature.template_params.is_empty()
-                                        && signature.pack.is_none()
+                                    signature.template_params.is_empty() && signature.pack.is_none()
                                 })
                         })
                     {
@@ -2750,8 +2780,13 @@ impl TypeChecker {
                     if function.template_params.is_empty()
                         && !function.has_pack()
                         && !family_method
-                        && self.enable_if(ast, resolutions, types, &item_ref.attrs, function.name_span)
-                            == Some(false)
+                        && self.enable_if(
+                            ast,
+                            resolutions,
+                            types,
+                            &item_ref.attrs,
+                            function.name_span,
+                        ) == Some(false)
                     {
                         self.disabled_functions.insert(function.name_span);
                         continue;
@@ -2761,8 +2796,7 @@ impl TypeChecker {
                     // different spelling of it: its receiver is `&Array<T>`,
                     // and `T` is the *family's* parameter rather than one the
                     // method declared. It too is checked per member.
-                    if family_method
-                    {
+                    if family_method {
                         // Recorded so that code generation does not emit the
                         // declaration itself: it names the family's `T`, and
                         // the member is emitted from its instantiation.
@@ -2820,7 +2854,8 @@ impl TypeChecker {
                     // A `except(cond)` claim is checked where it is written,
                     // because its `except(..)` queries are answered there: they
                     // ask about types, and the types are known here.
-                    if let Some(condition) = function.throws.as_ref().and_then(|throws| throws.condition)
+                    if let Some(condition) =
+                        function.throws.as_ref().and_then(|throws| throws.condition)
                     {
                         let _ = self.infer_expr(ast, resolutions, types, condition);
                     }
@@ -2839,6 +2874,43 @@ impl TypeChecker {
                     let expected = match auto_span {
                         Some((span, _)) => Type::unspecified("auto", span),
                         None => self.resolve_written_type(&function.return_type),
+                    };
+                    // A `@coroutine` function's body returns its `Return` type,
+                    // not the coroutine object the declaration names: `return i;`
+                    // in `fn echo() Coroutine<int, int, int>` returns an `int`.
+                    // The three types are read off the declared return type, and
+                    // the body is checked under the third of them.
+                    let coroutine = if item_ref.attrs.iter().any(|attr| attr.name == "coroutine") {
+                        match CoroutineShape::from_return(&expected) {
+                            Some(mut shape) => {
+                                shape.name = function.name.clone();
+                                self.coroutines.push(shape);
+                                self.coroutine_functions.insert(function.name.clone());
+                                true
+                            }
+                            None => {
+                                self.diagnostics.push(
+                                    Diagnostic::error(format!(
+                                        "the return type of the `@coroutine` function `{}` is \
+                                         not `std.Coroutine<Send, Yield, Return>`",
+                                        function.name
+                                    ))
+                                    .with_code(DiagnosticCode::sema(197))
+                                    .with_span(function.name_span)
+                                    .with_note(
+                                        "a coroutine hands a `Yield` out, takes a `Send` in, and \
+                                         returns a `Return`: all three are written in the type",
+                                    ),
+                                );
+                                false
+                            }
+                        }
+                    } else {
+                        false
+                    };
+                    let expected = match self.coroutines.last() {
+                        Some(shape) if coroutine => shape.return_ty.clone(),
+                        _ => expected,
                     };
                     self.return_types
                         .push((function.name.clone(), expected.clone()));
@@ -2914,6 +2986,9 @@ impl TypeChecker {
                         self.type_of_types.insert(span, nothing);
                     }
                     self.return_types.pop();
+                    if coroutine {
+                        self.coroutines.pop();
+                    }
                 }
                 // An external variable is named here and lives in a library.
                 // Its type is what the program reads and writes through the
@@ -3047,11 +3122,11 @@ impl TypeChecker {
                 // constant is first used, so that a mistake in it is reported
                 // where it was written.
                 fallc_ast::ItemKind::Const(constant) => {
-                    self.constants
-                        .insert(constant.name.clone(), constant.value);
+                    self.constants.insert(constant.name.clone(), constant.value);
                     self.prepare_type_of(&constant.ty, ast, resolutions, types);
                     let declared = self.resolve_written_type(&constant.ty);
-                    self.binding_types.insert(constant.name_span, declared.clone());
+                    self.binding_types
+                        .insert(constant.name_span, declared.clone());
                     let previous = self.expected.replace(declared.clone());
                     let found = self.infer_expr(ast, resolutions, types, constant.value);
                     self.expected = previous;
@@ -3141,12 +3216,7 @@ impl TypeChecker {
             let found = self.infer_expr(ast, resolutions, types, constant.value);
             self.expected = previous;
             if let Some(found) = found {
-                self.types_must_match(
-                    &declared,
-                    &found,
-                    ast.expr(constant.value).span,
-                    "constant",
-                );
+                self.types_must_match(&declared, &found, ast.expr(constant.value).span, "constant");
             }
             match self.const_eval_int(constant.value) {
                 Some(value) => {
@@ -3170,7 +3240,6 @@ impl TypeChecker {
             }
         }
     }
-
 }
 
 /// Whether two declared types have the same shape.

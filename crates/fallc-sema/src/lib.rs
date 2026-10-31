@@ -24,26 +24,20 @@ pub mod types;
 
 pub use builtins::{BUILTINS, Builtin, BuiltinType};
 pub use resolve::{
-    definition_name,
     Def, DefId, DefKind, ExportEnum, ExportInterface, ExportInterfaceMethod, ExportType,
-    ExportedField, ExportedGlobal, ExportedSpecialisation, ExportedVariable,
-    ExternalModule,
-    FunctionSignature,
-    ImportBinding, Resolutions, ResolvedSignature, Resolver, ScopeId,
+    ExportedField, ExportedGlobal, ExportedSpecialisation, ExportedVariable, ExternalModule,
+    FunctionSignature, ImportBinding, Resolutions, ResolvedSignature, Resolver, ScopeId,
+    definition_name,
 };
 pub use template::{Arguments, Substitution, TemplateArgument};
 pub use typeck::{
-    template_symbol_of, unspecified_signature_type,
-    deprecated_message,
-    InPlaceOperation,
-    ClosureCall, ClosureInfo,
+    ClosureCall, ClosureInfo, ExpressionDefault, ExpressionDefaults, InPlaceOperation,
     Instantiation, InstantiationRecords, InterfaceCall, InterfaceConversion, InterfaceSource,
-    LambdaInstance,
-    OperatorCall, TemplateBody, TraitBody,
-    ExpressionDefault, ExpressionDefaults, TraitOutcome,
-    TypeCheckResult, TypeChecker, TypeEnvironment, is_const_widening};
+    LambdaInstance, OperatorCall, TemplateBody, TraitBody, TraitOutcome, TypeCheckResult,
+    TypeChecker, TypeEnvironment, deprecated_message, is_const_widening, template_symbol_of,
+    unspecified_signature_type,
+};
 pub use types::{
     BindingTypes, CharType, ConversionMethod, FloatType, IntType, NominalType, Type, TypeTable,
-    UnspecifiedType,
-    is_byte_pointer_cast, is_byte_pointer_conversion, mangle_type,
+    UnspecifiedType, is_byte_pointer_cast, is_byte_pointer_conversion, mangle_type,
 };

@@ -19,8 +19,9 @@
 // constructor. The trade is one allocation for the held value.
 
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.util;
+from std.util import *;
 
 // A value that is either an `A` or a `B`.
 export
@@ -133,12 +134,12 @@ template <A type, B type>
 fn release(this &Variant2<A, B>) void {
     if (this._first != nullptr) {
         this._first->__drop__();
-        util.free(this._first as *byte);
+        free(this._first as *byte);
         this._first = nullptr;
     }
     if (this._second != nullptr) {
         this._second->__drop__();
-        util.free(this._second as *byte);
+        free(this._second as *byte);
         this._second = nullptr;
     }
     this._tag = -1;
@@ -193,7 +194,7 @@ export
 template <A type, B type>
 fn set_first(this &Variant2<A, B>, value A) void {
     this.release();
-    storage *A = util.allocate(sizeof(A)) as *A;
+    storage *A = allocate(sizeof(A)) as *A;
     storage->__init__(value);
     this._first = storage;
     this._tag = 0;
@@ -207,7 +208,7 @@ export
 template <A type, B type>
 fn set_second(this &Variant2<A, B>, value B) void {
     this.release();
-    storage *B = util.allocate(sizeof(B)) as *B;
+    storage *B = allocate(sizeof(B)) as *B;
     storage->__init__(value);
     this._second = storage;
     this._tag = 1;

@@ -80,10 +80,7 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("answers");
-    assert_eq!(
-        scratch.run("answers", source),
-        "1 0 1\n0 1 0\n0 1 1\n1 1\n"
-    );
+    assert_eq!(scratch.run("answers", source), "1 0 1\n0 1 0\n0 1 1\n1 1\n");
 }
 
 #[test]

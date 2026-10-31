@@ -30,9 +30,7 @@ impl<'ctx> Lowerer<'ctx> {
                 }
                 // The bare `int`, which is what an integer builtin parameter
                 // is declared as.
-                fallc_sema::builtins::BuiltinType::Integer => {
-                    context.i32_type().into()
-                }
+                fallc_sema::builtins::BuiltinType::Integer => context.i32_type().into(),
                 fallc_sema::builtins::BuiltinType::Void => {
                     return Err(CodegenError::waiting_for_spec(
                         "a builtin with a void parameter",
@@ -62,8 +60,7 @@ impl<'ctx> Lowerer<'ctx> {
             fallc_sema::builtins::BuiltinType::Integer => {
                 context.i32_type().fn_type(&param_types, false)
             }
-            fallc_sema::builtins::BuiltinType::Any
-            | fallc_sema::builtins::BuiltinType::Text => {
+            fallc_sema::builtins::BuiltinType::Any | fallc_sema::builtins::BuiltinType::Text => {
                 return Err(CodegenError::Emit(format!(
                     "internal error: `{name}` is lowered by the compiler and has no \
                      declaration"
@@ -117,10 +114,7 @@ impl<'ctx> Lowerer<'ctx> {
                 .get(&ast.expr(expr).span)
                 .map(|binding| binding.storage)
                 .ok_or_else(|| {
-                    CodegenError::waiting_for_spec(
-                        "an aggregate value that has no address",
-                        span,
-                    )
+                    CodegenError::waiting_for_spec("an aggregate value that has no address", span)
                 }),
             None => Err(CodegenError::waiting_for_spec(
                 "an aggregate value that has no address",
@@ -138,8 +132,15 @@ impl<'ctx> Lowerer<'ctx> {
         target: ExprId,
     ) -> Option<LocalBinding<'static>> {
         match &ast.expr(target).kind {
-            ExprKind::Field(field) if self.external_global_refs.contains_key(&ast.expr(target).span) => {
-                let qualified = self.external_global_refs.get(&ast.expr(target).span)?.clone();
+            ExprKind::Field(field)
+                if self
+                    .external_global_refs
+                    .contains_key(&ast.expr(target).span) =>
+            {
+                let qualified = self
+                    .external_global_refs
+                    .get(&ast.expr(target).span)?
+                    .clone();
                 let _ = field;
                 let (global, ty) = self.external_global(&qualified)?;
                 Some(LocalBinding {
@@ -152,7 +153,10 @@ impl<'ctx> Lowerer<'ctx> {
                 // checker recorded which qualified name it stands for, and the
                 // symbol is that module's object. Without this a write to an
                 // imported global looked for a local one and found nothing.
-                if let Some(qualified) = self.external_global_refs.get(&ast.expr(target).span).cloned()
+                if let Some(qualified) = self
+                    .external_global_refs
+                    .get(&ast.expr(target).span)
+                    .cloned()
                     && let Some((global, ty)) = self.external_global(&qualified)
                 {
                     return Some(LocalBinding {
@@ -160,26 +164,36 @@ impl<'ctx> Lowerer<'ctx> {
                         ty,
                     });
                 }
+                // Inside a coroutine a binding's storage is a frame slot. The
+                // address of that slot is an instruction, and an instruction
+                // from the block a binding was declared in does not dominate a
+                // block the machine resumes in -- so the address is taken again
+                // here, in the block that uses it, rather than reused from the
+                // scope.
+                if let Some((field, ty)) = self.coroutine_slot_name(name) {
+                    let storage = self.coroutine_slot_pointer(builder, field, name).ok()?;
+                    return Some(LocalBinding { storage, ty });
+                }
                 self.lookup_binding(name)
-                .or_else(|| {
-                    self.globals
-                        .get(name)
-                        .copied()
-                        .map(|(global, ty)| LocalBinding {
-                            storage: global.as_pointer_value(),
-                            ty,
-                        })
-                })
-                // A function has an address but no storage of its own: `&f` is
-                // the function pointer, and there is nothing to load.
-                .or_else(|| {
-                    let wanted = types.get(target).cloned();
-                    self.function_pointer(name, wanted.as_ref())
-                        .map(|pointer| LocalBinding {
-                            storage: pointer,
-                            ty: pointer.get_type().into(),
-                        })
-                })
+                    .or_else(|| {
+                        self.globals
+                            .get(name)
+                            .copied()
+                            .map(|(global, ty)| LocalBinding {
+                                storage: global.as_pointer_value(),
+                                ty,
+                            })
+                    })
+                    // A function has an address but no storage of its own: `&f` is
+                    // the function pointer, and there is nothing to load.
+                    .or_else(|| {
+                        let wanted = types.get(target).cloned();
+                        self.function_pointer(name, wanted.as_ref())
+                            .map(|pointer| LocalBinding {
+                                storage: pointer,
+                                ty: pointer.get_type().into(),
+                            })
+                    })
             }
             // A dereference resolves to the pointer's value used as storage.
             //
@@ -305,7 +319,13 @@ impl<'ctx> Lowerer<'ctx> {
         builder: &Builder<'static>,
         index: &IndexExpr,
         span: fallc_span::Span,
-    ) -> Result<Option<(inkwell::values::PointerValue<'static>, inkwell::types::BasicTypeEnum<'static>)>, CodegenError> {
+    ) -> Result<
+        Option<(
+            inkwell::values::PointerValue<'static>,
+            inkwell::types::BasicTypeEnum<'static>,
+        )>,
+        CodegenError,
+    > {
         let object_ty = types
             .get(index.object)
             .cloned()
@@ -328,7 +348,12 @@ impl<'ctx> Lowerer<'ctx> {
     }
 
     /// Returns the Fallthrough type of an operand, if it is an int or float.
-    pub(super) fn int_or_float_type(&self, ast: &Ast, types: &TypeTable, expr: ExprId) -> Option<Type> {
+    pub(super) fn int_or_float_type(
+        &self,
+        ast: &Ast,
+        types: &TypeTable,
+        expr: ExprId,
+    ) -> Option<Type> {
         let _ = ast;
         // A literal expression may have no recorded type when it appears where
         // no expectation was published, such as inside a binary operation
@@ -448,24 +473,26 @@ impl<'ctx> Lowerer<'ctx> {
         let name = format!("{base}.i{}", int_type.get_bit_width());
         let context = self.backend.context();
         // The intrinsic takes the operands and returns `{ iN, i1 }`.
-        let struct_type = context.struct_type(
-            &[int_type.into(), context.bool_type().into()],
-            false,
-        );
+        let struct_type =
+            context.struct_type(&[int_type.into(), context.bool_type().into()], false);
         let signature = struct_type.fn_type(&[int_type.into(), int_type.into()], false);
-        let intrinsic = self.backend.module().get_function(&name).unwrap_or_else(|| {
-            let function = self.backend.module().add_function(&name, signature, None);
-            // The intrinsic's own attributes, so LLVM knows it has no side
-            // effects and may be optimised like the arithmetic it replaces.
-            function.add_attribute(
-                inkwell::attributes::AttributeLoc::Function,
-                context.create_enum_attribute(
-                    inkwell::attributes::Attribute::get_named_enum_kind_id("nounwind"),
-                    0,
-                ),
-            );
-            function
-        });
+        let intrinsic = self
+            .backend
+            .module()
+            .get_function(&name)
+            .unwrap_or_else(|| {
+                let function = self.backend.module().add_function(&name, signature, None);
+                // The intrinsic's own attributes, so LLVM knows it has no side
+                // effects and may be optimised like the arithmetic it replaces.
+                function.add_attribute(
+                    inkwell::attributes::AttributeLoc::Function,
+                    context.create_enum_attribute(
+                        inkwell::attributes::Attribute::get_named_enum_kind_id("nounwind"),
+                        0,
+                    ),
+                );
+                function
+            });
 
         let call = builder
             .build_call(intrinsic, &[lhs.into(), rhs.into()], "ovf")
@@ -625,7 +652,10 @@ impl<'ctx> Lowerer<'ctx> {
         let mut args: Vec<inkwell::values::BasicMetadataValueEnum<'static>> =
             vec![receiver_address.into()];
         if method.takes_selector {
-            let selector = self.backend.context().ptr_type(inkwell::AddressSpace::default());
+            let selector = self
+                .backend
+                .context()
+                .ptr_type(inkwell::AddressSpace::default());
             args.push(selector.const_null().into());
         }
 
@@ -892,10 +922,12 @@ impl<'ctx> Lowerer<'ctx> {
             BasicValueEnum::PointerValue(pointer) => pointer,
             value => self.store_temporary(builder, value, "converted")?,
         };
-        let mut args: Vec<inkwell::values::BasicMetadataValueEnum<'static>> =
-            vec![receiver.into()];
+        let mut args: Vec<inkwell::values::BasicMetadataValueEnum<'static>> = vec![receiver.into()];
         if method.takes_selector {
-            let selector = self.backend.context().ptr_type(inkwell::AddressSpace::default());
+            let selector = self
+                .backend
+                .context()
+                .ptr_type(inkwell::AddressSpace::default());
             args.push(selector.const_null().into());
         }
         if method.signature.throws {
@@ -904,9 +936,7 @@ impl<'ctx> Lowerer<'ctx> {
                 .map_err(|error| CodegenError::Emit(error.to_string()))?;
             return self
                 .unwrap_throwing(ast, types, builder, span, call)?
-                .ok_or_else(|| {
-                    CodegenError::waiting_for_spec("this implicit conversion", span)
-                });
+                .ok_or_else(|| CodegenError::waiting_for_spec("this implicit conversion", span));
         }
         self.build_value_call(builder, function, &method.symbol, args, span)?
             .ok_or_else(|| CodegenError::waiting_for_spec("this implicit conversion", span))
@@ -964,5 +994,4 @@ impl<'ctx> Lowerer<'ctx> {
         let _ = ast;
         Ok(converted)
     }
-
 }

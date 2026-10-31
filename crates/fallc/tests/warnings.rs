@@ -12,20 +12,17 @@ use fallc_diag::WarningPolicy;
 
 /// Compiles `source` and returns the outcome plus everything printed.
 fn compile(source: &str) -> (Outcome, String) {
-    compile_text_with_warnings(
-        "test.ft",
-        source,
-        &[EmitKind::Llvm],
-        &WarningPolicy::new(),
-    )
+    compile_text_with_warnings("test.ft", source, &[EmitKind::Llvm], &WarningPolicy::new())
 }
 
 /// Compiles `source` with `flags` applied, the way the driver would.
 fn compile_with(source: &str, flags: &[&str]) -> (Outcome, String) {
-    let options = Options::parse(&["test.ft".to_owned(), "--check".to_owned()]
-        .into_iter()
-        .chain(flags.iter().map(|flag| (*flag).to_owned()))
-        .collect::<Vec<_>>())
+    let options = Options::parse(
+        &["test.ft".to_owned(), "--check".to_owned()]
+            .into_iter()
+            .chain(flags.iter().map(|flag| (*flag).to_owned()))
+            .collect::<Vec<_>>(),
+    )
     .expect("the flags are well formed");
     let Command::Compile { warnings, .. } = &options.command else {
         panic!("expected a compile command");
@@ -99,7 +96,10 @@ fn main() int {
     assert!(printed.contains("S0141"), "{printed}");
     // One remark per block, not one per statement behind the `return`.
     assert_eq!(printed.matches("S0141").count(), 1, "{printed}");
-    assert!(printed.contains("this statement can never run"), "{printed}");
+    assert!(
+        printed.contains("this statement can never run"),
+        "{printed}"
+    );
 }
 
 #[test]
@@ -155,11 +155,8 @@ fn a_group_that_was_turned_off_stays_off_under_werror() {
 
 #[test]
 fn an_unknown_warning_is_refused_and_the_known_ones_are_listed() {
-    let error = Options::parse(&[
-        "test.ft".to_owned(),
-        "-Wno-nonsense".to_owned(),
-    ])
-    .expect_err("an unknown group is refused");
+    let error = Options::parse(&["test.ft".to_owned(), "-Wno-nonsense".to_owned()])
+        .expect_err("an unknown group is refused");
     assert!(error.contains("unknown warning"), "{error}");
     assert!(error.contains("unused"), "{error}");
     assert!(error.contains("unreachable"), "{error}");
@@ -196,7 +193,8 @@ fn main() int {
 
     // An `extern` function has no body, so its parameters are never read and
     // never could be: that is not a remark about this program.
-    let external = "@extern_C fn puts(text *const c8) int;\n\nfn main() int {\n    return puts(\"hi\");\n}\n";
+    let external =
+        "@extern_C fn puts(text *const c8) int;\n\nfn main() int {\n    return puts(\"hi\");\n}\n";
     let (outcome, printed) = compile(external);
     assert_eq!(outcome, Outcome::Success, "{printed}");
     assert!(!printed.contains("S0142"), "{printed}");
@@ -218,7 +216,10 @@ fn main() int {
     let (outcome, printed) = compile(source);
     assert_eq!(outcome, Outcome::Success, "{printed}");
     assert!(printed.contains("S0143"), "{printed}");
-    assert!(printed.contains("`x` shadows an outer binding"), "{printed}");
+    assert!(
+        printed.contains("`x` shadows an outer binding"),
+        "{printed}"
+    );
 }
 
 #[test]
@@ -265,12 +266,22 @@ fn main() int {
     let warnings = warnings_only(source);
     // `if (true)` and `while (false)`: two remarks.
     assert_eq!(warnings.len(), 2, "{warnings:?}");
-    assert!(warnings.iter().any(|line| line.contains("always true")), "{warnings:?}");
-    assert!(warnings.iter().any(|line| line.contains("loop can never run")), "{warnings:?}");
+    assert!(
+        warnings.iter().any(|line| line.contains("always true")),
+        "{warnings:?}"
+    );
+    assert!(
+        warnings
+            .iter()
+            .any(|line| line.contains("loop can never run")),
+        "{warnings:?}"
+    );
     // A `const` is a switch the author can flip, and `while (true)` is how an
     // infinite loop is written.
     assert!(
-        !warnings.iter().any(|line| line.contains("S0144") && line.contains("ON")),
+        !warnings
+            .iter()
+            .any(|line| line.contains("S0144") && line.contains("ON")),
         "{warnings:?}"
     );
 }
@@ -308,7 +319,10 @@ fn a_value_compared_with_itself_is_reported() {
     let (outcome, printed) = compile(source);
     assert_eq!(outcome, Outcome::Success, "{printed}");
     assert!(printed.contains("S0146"), "{printed}");
-    assert!(printed.contains("compares a value with itself"), "{printed}");
+    assert!(
+        printed.contains("compares a value with itself"),
+        "{printed}"
+    );
 }
 
 #[test]
@@ -372,7 +386,10 @@ fn a_value_read_after_a_move_is_reported() {
     let (outcome, printed) = compile(source);
     assert_eq!(outcome, Outcome::Success, "{printed}");
     assert!(printed.contains("S0148"), "{printed}");
-    assert!(printed.contains("`a` is read after it was moved from"), "{printed}");
+    assert!(
+        printed.contains("`a` is read after it was moved from"),
+        "{printed}"
+    );
     // The move itself is not a read, and `b` is not empty.
     assert!(!printed.contains("`b` is read"), "{printed}");
 }
@@ -468,7 +485,10 @@ fn main() int {
 "#;
     let (outcome, printed) = compile(source);
     assert_eq!(outcome, Outcome::Failure, "{printed}");
-    assert!(printed.contains("needs a value the compiler knows"), "{printed}");
+    assert!(
+        printed.contains("needs a value the compiler knows"),
+        "{printed}"
+    );
     assert!(!printed.contains("= note:"), "{printed}");
 
     let (outcome, verbose) = compile_with(source, &["-Wverbose"]);

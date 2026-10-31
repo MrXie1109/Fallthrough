@@ -63,21 +63,17 @@ impl TypeChecker {
                     }
                     // A function that never comes back cannot hand a value to
                     // anyone: the declaration and the attribute would disagree.
-                    let declares_a_value = !matches!(
-                        return_type,
-                        fallc_ast::TypeSyntax::Auto(_)
-                    ) && !matches!(
-                        return_type,
-                        fallc_ast::TypeSyntax::Named(named) if named.path == "void"
-                    );
+                    let declares_a_value = !matches!(return_type, fallc_ast::TypeSyntax::Auto(_))
+                        && !matches!(
+                            return_type,
+                            fallc_ast::TypeSyntax::Named(named) if named.path == "void"
+                        );
                     if declares_a_value {
                         self.diagnostics.push(
-                            Diagnostic::error(
-                                "a `@noreturn` function has no value to return",
-                            )
-                            .with_code(DiagnosticCode::sema(156))
-                            .with_span(attr.span)
-                            .with_note("declare it `void`, or drop the attribute"),
+                            Diagnostic::error("a `@noreturn` function has no value to return")
+                                .with_code(DiagnosticCode::sema(156))
+                                .with_span(attr.span)
+                                .with_note("declare it `void`, or drop the attribute"),
                         );
                     }
                 }
@@ -123,8 +119,14 @@ impl TypeChecker {
                     }
                     self.overridable_functions.insert(name_span);
                 }
-                "export" | "extern_C" | "constexpr" | "noinline" | "maybe_unused"
-                | "cold" => {}
+                // `@coroutine`'s own shape is checked here; what it must return
+                // is checked where the declaration's types are known.
+                "coroutine" => {
+                    if !attr.arguments.is_empty() {
+                        self.attribute_arity(attr, 0);
+                    }
+                }
+                "export" | "extern_C" | "constexpr" | "noinline" | "maybe_unused" | "cold" => {}
                 other => self.unknown_attribute(other, attr.span),
             }
         }
@@ -195,8 +197,8 @@ impl TypeChecker {
                 // Storage and export spellings the parser already folded into
                 // the binding's fields, plus the ones the checker treats as
                 // intent markers; none of them is a diagnostic on a variable.
-                "export" | "static" | "thread_local" | "constexpr" | "extern_C"
-                | "must_use" | "maybe_unused" | "cold" => {}
+                "export" | "static" | "thread_local" | "constexpr" | "extern_C" | "must_use"
+                | "maybe_unused" | "cold" => {}
                 other => self.unknown_attribute(other, attr.span),
             }
         }
@@ -252,6 +254,14 @@ impl TypeChecker {
                 (name, previous)
             })
             .collect();
+        // The question is asked once per candidate, and two candidates may share
+        // one condition's span -- a family's two `@enable_if`s are two
+        // *declarations*, so they do not, but one declaration is considered
+        // against several receivers and each folds its condition afresh. The
+        // answer filed by the previous asking belongs to the previous receiver,
+        // so it is dropped before this one is worked out: keeping it made a
+        // candidate answer with a neighbour's verdict.
+        self.constant_values.remove(&ast.expr(*condition).span);
         let _ = self.check_expr(ast, resolutions, types, *condition, &Type::BOOL);
         let value = self
             .constant_values
@@ -370,8 +380,10 @@ impl TypeChecker {
             );
             return;
         }
-        self.binding_alignments
-            .insert(name_span, u64::try_from(value).expect("a positive alignment"));
+        self.binding_alignments.insert(
+            name_span,
+            u64::try_from(value).expect("a positive alignment"),
+        );
     }
 
     /// Reads the value an `@align(..)` asks for.
@@ -436,12 +448,10 @@ impl TypeChecker {
             };
             if value <= 0 || (value & (value - 1)) != 0 {
                 self.diagnostics.push(
-                    Diagnostic::error(format!(
-                        "`@align({value})` is not a power of two"
-                    ))
-                    .with_code(DiagnosticCode::sema(138))
-                    .with_span(span)
-                    .with_note("an alignment is a power of two, and it must be positive"),
+                    Diagnostic::error(format!("`@align({value})` is not a power of two"))
+                        .with_code(DiagnosticCode::sema(138))
+                        .with_span(span)
+                        .with_note("an alignment is a power of two, and it must be positive"),
                 );
                 continue;
             }
@@ -548,7 +558,12 @@ impl TypeChecker {
                     let mut alignment: i64 = 1;
                     for (name, field) in &nominal.fields {
                         largest = largest.max(self.size_of_at(field, depth + 1)?);
-                        alignment = alignment.max(self.field_alignment(&nominal, name, field, depth + 1)?);
+                        alignment = alignment.max(self.field_alignment(
+                            &nominal,
+                            name,
+                            field,
+                            depth + 1,
+                        )?);
                     }
                     return Some(round_up(largest, alignment));
                 }
@@ -596,7 +611,8 @@ impl TypeChecker {
                 let nominal = self.complete_nominal(nominal);
                 let mut alignment: i64 = 1;
                 for (name, field) in &nominal.fields {
-                    alignment = alignment.max(self.field_alignment(&nominal, name, field, depth + 1)?);
+                    alignment =
+                        alignment.max(self.field_alignment(&nominal, name, field, depth + 1)?);
                 }
                 Some(alignment)
             }
@@ -647,7 +663,10 @@ impl TypeChecker {
     /// name the type being declared -- `next *Node` inside `Node`. What that
     /// self-reference records is the name; the fields live in the table, and a
     /// shallow entry is completed from it here.
-    pub(super) fn complete_nominal(&self, nominal: &crate::types::NominalType) -> crate::types::NominalType {
+    pub(super) fn complete_nominal(
+        &self,
+        nominal: &crate::types::NominalType,
+    ) -> crate::types::NominalType {
         if !nominal.fields.is_empty() {
             return nominal.clone();
         }
@@ -659,7 +678,6 @@ impl TypeChecker {
             .cloned()
             .unwrap_or_else(|| nominal.clone())
     }
-
 }
 
 /// The message of a declaration's `@deprecated`, if it has the attribute.
@@ -670,17 +688,17 @@ impl TypeChecker {
 #[must_use]
 pub fn deprecated_message(ast: &Ast, attrs: &[fallc_ast::Attr]) -> Option<String> {
     let attr = attrs.iter().find(|attr| attr.name == "deprecated")?;
-    let message = attr.arguments.first().and_then(|argument| {
-        match &ast.expr(*argument).kind {
+    let message = attr
+        .arguments
+        .first()
+        .and_then(|argument| match &ast.expr(*argument).kind {
             ExprKind::StringLiteral(text) => {
                 let body = fallc_ast::literal::string_body(text);
                 Some(
-                    String::from_utf8_lossy(&fallc_ast::literal::decode_escapes(body))
-                        .into_owned(),
+                    String::from_utf8_lossy(&fallc_ast::literal::decode_escapes(body)).into_owned(),
                 )
             }
             _ => None,
-        }
-    });
+        });
     Some(message.unwrap_or_default())
 }

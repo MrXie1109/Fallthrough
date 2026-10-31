@@ -28,8 +28,9 @@
 // because it is fine for configuration-sized texts and not for a hostile one.
 
 import std.optional;
+from std.optional import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 
 // The result of a search: a half-open range of the text.
 export type Match {

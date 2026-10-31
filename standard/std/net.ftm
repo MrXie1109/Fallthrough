@@ -24,12 +24,13 @@
 // and a failed `accept` or `connect` closes nothing the caller did not close.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.bytes;
-from std.bytes import Bytes;
+from std.bytes import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.internal.net_sys;
+from std.internal.net_sys import *;
 
 // Starts the platform's socket layer once per process.
 export fn __setup__() void {

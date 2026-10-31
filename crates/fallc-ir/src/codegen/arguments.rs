@@ -84,8 +84,7 @@ impl<'ctx> Lowerer<'ctx> {
             other => Self::basic_value_of(other),
         };
         if let Some(basic) = basic {
-            let converted =
-                self.convert_implicit(ast, types, builder, arg, basic, span)?;
+            let converted = self.convert_implicit(ast, types, builder, arg, basic, span)?;
             return Ok(converted.into());
         }
         Ok(value)
@@ -106,10 +105,7 @@ impl<'ctx> Lowerer<'ctx> {
         // path expects. This comes first because the paths below see the
         // literal's own array type, not the type the call wants.
         if self.lowering_literal != Some(ast.expr(arg).span)
-            && let Some(symbol) = self
-                .literal_constructions
-                .get(&ast.expr(arg).span)
-                .cloned()
+            && let Some(symbol) = self.literal_constructions.get(&ast.expr(arg).span).cloned()
         {
             let address =
                 self.lower_literal_construction(ast, types, builder, arg, &symbol, span)?;
@@ -138,10 +134,7 @@ impl<'ctx> Lowerer<'ctx> {
         // below: that path sees the *concrete* type -- a buffer, an aggregate
         // -- and would pass the buffer's own storage, a different shape from
         // the box the callee reads.
-        if self
-            .interface_conversions
-            .contains_key(&ast.expr(arg).span)
-        {
+        if self.interface_conversions.contains_key(&ast.expr(arg).span) {
             return Ok(self
                 .lower_expr(ast, types, builder, arg)?
                 .ok_or_else(|| CodegenError::waiting_for_spec("this argument", span))?
@@ -155,10 +148,9 @@ impl<'ctx> Lowerer<'ctx> {
             .get(arg)
             .is_some_and(|ty| self.aggregate_is_by_address(ty))
         {
-            return Ok(
-                self.lower_aggregate_source(ast, types, builder, arg, span)?
-                    .into(),
-            );
+            return Ok(self
+                .lower_aggregate_source(ast, types, builder, arg, span)?
+                .into());
         }
         // A reference or pointer parameter takes the argument's address, which
         // the checker recorded. This is the same thing a method call does with
@@ -405,9 +397,7 @@ impl<'ctx> Lowerer<'ctx> {
                         &fallc_sema::TemplateArgument::Int(number),
                         span,
                     )?
-                    .ok_or_else(|| {
-                        CodegenError::waiting_for_spec("this default argument", span)
-                    })?;
+                    .ok_or_else(|| CodegenError::waiting_for_spec("this default argument", span))?;
                 // A call to a template whose signature is not in this unit's
                 // tables may hand over fewer slots than there are parameters:
                 // the omitted ones are what is being filled.
@@ -539,7 +529,12 @@ impl<'ctx> Lowerer<'ctx> {
     /// The arguments' types select it, by the same rule the checker used: the
     /// parameter types must match exactly. The checker has already rejected an
     /// ambiguous call, so the first exact match is the one it meant.
-    pub(super) fn overload_for(&self, name: &str, call: &CallExpr, types: &TypeTable) -> Option<String> {
+    pub(super) fn overload_for(
+        &self,
+        name: &str,
+        call: &CallExpr,
+        types: &TypeTable,
+    ) -> Option<String> {
         // Every function's symbol carries its parameter types, so a call is
         // resolved by building that symbol from the arguments. The alternatives
         // cover the cases where the argument's recorded type is not exactly the
@@ -593,5 +588,4 @@ impl<'ctx> Lowerer<'ctx> {
     pub(super) fn method_symbol(&self, span: Span) -> Option<String> {
         self.method_calls.get(&span).cloned()
     }
-
 }

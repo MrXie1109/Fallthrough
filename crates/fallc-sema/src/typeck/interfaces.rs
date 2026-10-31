@@ -143,13 +143,9 @@ impl TypeChecker {
             // type still picks which one answers.
             let mut merged = (*body.resolutions).clone();
             for def in &resolutions.defs {
-                if !merged
-                    .defs
-                    .iter()
-                    .any(|existing| {
-                        existing.name == def.name && existing.name_span == def.name_span
-                    })
-                {
+                if !merged.defs.iter().any(|existing| {
+                    existing.name == def.name && existing.name_span == def.name_span
+                }) {
                     merged.defs.push(def.clone());
                 }
             }
@@ -230,7 +226,8 @@ impl TypeChecker {
                     continue;
                 }
                 let mut fits = true;
-                for (written, expected) in signature.param_types.iter().skip(1).zip(&expected_params)
+                for (written, expected) in
+                    signature.param_types.iter().skip(1).zip(&expected_params)
                 {
                     let param = self.resolve_type_syntax(written, true);
                     if !self.is_compatible(&param, expected) {
@@ -425,8 +422,7 @@ impl TypeChecker {
                 .collect();
             let source_returns =
                 self.resolve_template_type(&source_method.returns, &source_substitution);
-            let target_returns =
-                self.resolve_template_type(&method.returns, &target_substitution);
+            let target_returns = self.resolve_template_type(&method.returns, &target_substitution);
             if source_params != target_params
                 || source_returns != target_returns
                 || source_method.throws != method.throws
@@ -501,12 +497,9 @@ impl TypeChecker {
                 return None;
             }
             self.diagnostics.push(
-                Diagnostic::error(format!(
-                    "`{base}` has no method `{}`",
-                    field.field
-                ))
-                .with_code(DiagnosticCode::sema(2))
-                .with_span(span),
+                Diagnostic::error(format!("`{base}` has no method `{}`", field.field))
+                    .with_code(DiagnosticCode::sema(2))
+                    .with_span(span),
             );
             return None;
         };

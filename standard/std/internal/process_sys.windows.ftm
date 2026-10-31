@@ -17,8 +17,9 @@
 // (a single word today) does not carry yet.
 
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.util;
+from std.util import *;
 
 @extern_C fn CreateProcessA(
     application_name *const char,

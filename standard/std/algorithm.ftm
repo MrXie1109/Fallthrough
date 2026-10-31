@@ -26,7 +26,9 @@
 // argument rather than a second algorithm.
 
 import std.util;
+from std.util import *;
 import std.iterator;
+from std.iterator import *;
 
 // The equality order: `==`.
 //
@@ -81,8 +83,8 @@ fn swap(first It, second It) void {
         return;
     }
     hold auto = *first;
-    *first = util.move(*second);
-    *second = util.move(hold);
+    *first = move(*second);
+    *second = move(hold);
 }
 
 // Puts the range in order, smallest first.

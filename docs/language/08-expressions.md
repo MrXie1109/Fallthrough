@@ -1,6 +1,6 @@
-# 07 Expressions
+# 08 Expressions
 
-> [中文](07-expressions.zh.md)
+> [中文](08-expressions.zh.md)
 
 ## Scope
 
@@ -44,14 +44,14 @@ fn main() int except {
 This program prints `n is 42`, then `0x2a`.
 
 2.1.2 A placeholder is `{expr}` or `{expr:spec}`. The `spec` is the ordinary format
-specification ([06 Exceptions](06-exceptions.md) is not involved): `{:>8}`, `{:08}`,
+specification ([06 Exceptions](07-exceptions.md) is not involved): `{:>8}`, `{:08}`,
 `{:.2f}`, `{:#x}` and the conversions `{!s}`/`{!r}` behave exactly as they do in a
 written format string, because that is what they become.
 
 2.1.3 `{{` and `}}` are one literal brace, so `f"{{x}}"` is `{x}` and not a placeholder.
 
 2.1.4 The call may raise, so an interpolated string is a call site like any other: it
-needs a `try`, a `??` or a `!!` ([06 Exceptions](06-exceptions.md#evaluation-site-obligations)).
+needs a `try`, a `??` or a `!!` ([06 Exceptions](07-exceptions.md#evaluation-site-obligations)).
 The literal carries no mark of its own — where the failure goes is the program's choice,
 written at the use.
 
@@ -245,7 +245,7 @@ fn main() int except {
 7.9 `@meta.compilable(T)` answers whether the *name* `T` exists, not whether an
 arbitrary expression built from it compiles. To ask whether a block compiles, use
 `if (auto) @constexpr`, which is specified in
-[05 Statements](05-statements.md#probing-whether-a-block-compiles).
+[05 Statements](06-statements.md#probing-whether-a-block-compiles).
 
 ## Special methods
 
@@ -351,7 +351,7 @@ When there is no candidate or the candidate is not unique, the implementation **
 report a diagnostic.
 
 8.6.5 When an implicit construction or conversion can raise, the call-site duty is the
-same as for an explicit call; see [06 Exceptions](06-exceptions.md).
+same as for an explicit call; see [06 Exceptions](07-exceptions.md).
 
 ### Visibility
 

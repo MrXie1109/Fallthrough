@@ -18,9 +18,9 @@
 // question without raising, for a caller that is asking rather than requiring.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 from std.tuple import Pair;
 
 // The largest code point Unicode has.

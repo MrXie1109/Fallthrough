@@ -144,12 +144,7 @@ impl Parser {
     /// for functions. Everything else is left for the checker: `@must_use`,
     /// `@unused`, `@deprecated`, `@enable_if`, `@likely` and so on have
     /// semantics of their own rather than a flag already in the tree.
-    fn apply_declaration_attributes(
-        &mut self,
-        ast: &mut Ast,
-        id: ItemId,
-        attrs: &[Attr],
-    ) {
+    fn apply_declaration_attributes(&mut self, ast: &mut Ast, id: ItemId, attrs: &[Attr]) {
         let exported = attrs.iter().any(|attr| attr.name == "export");
         let constexpr = attrs.iter().any(|attr| attr.name == "constexpr");
         let extern_c = attrs.iter().any(|attr| attr.name == "extern_C");
@@ -178,7 +173,11 @@ impl Parser {
     }
 
     /// Parses the run of `@name` / `@name(args)` before a declaration.
-    pub(super) fn parse_attributes(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<Vec<Attr>> {
+    pub(super) fn parse_attributes(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<Vec<Attr>> {
         let mut attrs = Vec::new();
         while stream.at(TokenKind::Punct(Punctuation::At)) {
             let at = stream.advance();
@@ -255,10 +254,7 @@ impl Parser {
         if stream.at(TokenKind::Keyword(Keyword::StaticAssert)) {
             let node = self.parse_static_assert(stream, ast)?;
             let span = node.span;
-            return Some(
-                ast.builder()
-                    .alloc_item(ItemKind::StaticAssert(node), span),
-            );
+            return Some(ast.builder().alloc_item(ItemKind::StaticAssert(node), span));
         }
 
         // `template <..>` prefixes a declaration, so it is read first and then
@@ -325,33 +321,13 @@ impl Parser {
                 self.report_unexpected(stream, "an interface declaration");
                 return None;
             }
-            return self.parse_interface(
-                stream,
-                ast,
-                prefix.exported,
-                start,
-                template_params,
-            );
+            return self.parse_interface(stream, ast, prefix.exported, start, template_params);
         }
         if stream.at(TokenKind::Keyword(Keyword::Type)) {
-            return self.parse_type_declaration(
-                stream,
-                ast,
-                prefix,
-                start,
-                template_params,
-                false,
-            );
+            return self.parse_type_declaration(stream, ast, prefix, start, template_params, false);
         }
         if stream.at(TokenKind::Keyword(Keyword::Union)) {
-            return self.parse_type_declaration(
-                stream,
-                ast,
-                prefix,
-                start,
-                template_params,
-                true,
-            );
+            return self.parse_type_declaration(stream, ast, prefix, start, template_params, true);
         }
         if stream.at(TokenKind::Keyword(Keyword::Enum)) {
             return self.parse_enum(stream, ast, prefix, start, template_params);
@@ -360,8 +336,7 @@ impl Parser {
         // `NAME const Type = value;` -- a constant is a binding whose type is
         // `const`-qualified, so it is written the way every other declaration
         // is: the name first, then what it is.
-        if stream.at(TokenKind::Ident)
-            && stream.peek_kind(1) == TokenKind::Keyword(Keyword::Const)
+        if stream.at(TokenKind::Ident) && stream.peek_kind(1) == TokenKind::Keyword(Keyword::Const)
         {
             if !template_params.is_empty() {
                 self.report_unexpected(stream, "a templated declaration");
@@ -426,10 +401,7 @@ impl Parser {
                     span,
                 ));
             }
-            return Some(
-                ast.builder()
-                    .alloc_item(ItemKind::Variable(bind), span),
-            );
+            return Some(ast.builder().alloc_item(ItemKind::Variable(bind), span));
         }
         // The old spelling, refused with the rule rather than a vague error.
         if stream.at(TokenKind::Keyword(Keyword::Const)) {
@@ -531,9 +503,7 @@ impl Parser {
                 {
                     return false;
                 }
-                TokenKind::Punct(Punctuation::CloseParen) | TokenKind::Eof
-                    if parens > 0 =>
-                {
+                TokenKind::Punct(Punctuation::CloseParen) | TokenKind::Eof if parens > 0 => {
                     return false;
                 }
                 _ => {}
@@ -588,8 +558,7 @@ impl Parser {
                     let name = self.token_text(stream, &callee);
                     self.expect_punct(stream, Punctuation::OpenParen, "`(`")?;
                     let mut arguments = Vec::new();
-                    while !stream.at(TokenKind::Punct(Punctuation::CloseParen))
-                        && !stream.at_eof()
+                    while !stream.at(TokenKind::Punct(Punctuation::CloseParen)) && !stream.at_eof()
                     {
                         let argument = match stream.current_kind() {
                             TokenKind::Int | TokenKind::String | TokenKind::Char => {
@@ -610,10 +579,9 @@ impl Parser {
                     }
                     self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
                     let span = callee.span;
-                    let callee_expr = ast.builder().alloc_expr(
-                        fallc_ast::ExprKind::Name(name),
-                        span,
-                    );
+                    let callee_expr = ast
+                        .builder()
+                        .alloc_expr(fallc_ast::ExprKind::Name(name), span);
                     let call = fallc_ast::CallExpr {
                         callee: callee_expr,
                         args: arguments,
@@ -622,7 +590,8 @@ impl Parser {
                         explicit_template_arguments: false,
                     };
                     TemplateArgumentSyntax::Value(
-                        ast.builder().alloc_expr(fallc_ast::ExprKind::Call(call), span),
+                        ast.builder()
+                            .alloc_expr(fallc_ast::ExprKind::Call(call), span),
                     )
                 }
                 // `OpenMode.READ` may name a constant or a type, and only the
@@ -630,9 +599,7 @@ impl Parser {
                 // `Device<OpenMode.READ>` names the constant `READ`. The path is
                 // kept as written, and the checker reads it by the parameter's
                 // kind.
-                TokenKind::Ident
-                    if stream.peek_kind(1) == TokenKind::Punct(Punctuation::Dot) =>
-                {
+                TokenKind::Ident if stream.peek_kind(1) == TokenKind::Punct(Punctuation::Dot) => {
                     let start = stream.current_span();
                     let first = self.parse_ident(stream, "a name")?;
                     let mut path = self.token_text(stream, &first);
@@ -720,9 +687,9 @@ impl Parser {
                     return None;
                 }
                 match &kind {
-                    TemplateParamKind::Type => {
-                        Some(fallc_ast::TemplateDefault::Type(self.parse_type(stream, ast)?))
-                    }
+                    TemplateParamKind::Type => Some(fallc_ast::TemplateDefault::Type(
+                        self.parse_type(stream, ast)?,
+                    )),
                     TemplateParamKind::Value(_) => {
                         let was_in_header = self.in_template_header;
                         self.in_template_header += 1;
@@ -1009,12 +976,10 @@ impl Parser {
                         ),
                     },
                     other => self.diagnostics.push(
-                        Diagnostic::error(format!(
-                            "`@{other}` is not an attribute of a field"
-                        ))
-                        .with_code(DiagnosticCode::parser(2))
-                        .with_span(attr.span)
-                        .with_note("a field takes `@align(N)` or `mutable`"),
+                        Diagnostic::error(format!("`@{other}` is not an attribute of a field"))
+                            .with_code(DiagnosticCode::parser(2))
+                            .with_span(attr.span)
+                            .with_note("a field takes `@align(N)` or `mutable`"),
                     ),
                 }
             }
@@ -1170,9 +1135,7 @@ impl Parser {
                 let kind = if stream.at(TokenKind::Keyword(Keyword::Type)) {
                     stream.advance();
                     fallc_ast::TemplateParamKind::Type
-                } else if stream.at(TokenKind::Punct(Punctuation::Comma))
-                    || stream.at_gt()
-                {
+                } else if stream.at(TokenKind::Punct(Punctuation::Comma)) || stream.at_gt() {
                     fallc_ast::TemplateParamKind::Type
                 } else {
                     fallc_ast::TemplateParamKind::Value(self.parse_type(stream, ast)?)
@@ -1427,9 +1390,7 @@ impl Parser {
             // A type written where one belongs: `int`, `*int`, `[2]int`,
             // `fn(int) int`.
             fallc_ast::ExprKind::TypeLiteral(written) => Some((**written).clone()),
-            fallc_ast::ExprKind::TypeOf(inner) => {
-                self.written_argument_type(ast, *inner)
-            }
+            fallc_ast::ExprKind::TypeOf(inner) => self.written_argument_type(ast, *inner),
             fallc_ast::ExprKind::Name(name) => Some(named_type(name, node.span)),
             fallc_ast::ExprKind::Field(field) => {
                 // `std.String`: a type named through its module.
@@ -1572,7 +1533,9 @@ impl Parser {
             if let Some(bang) = stream.eat(TokenKind::Punct(Punctuation::Bang)) {
                 let void_token = self.parse_ident(stream, "`void`")?;
                 end = bang.span.to(void_token.span);
-                Some(fallc_ast::TraitResult::NotVoid(bang.span.to(void_token.span)))
+                Some(fallc_ast::TraitResult::NotVoid(
+                    bang.span.to(void_token.span),
+                ))
             } else if stream.at(TokenKind::Keyword(Keyword::True))
                 || stream.at(TokenKind::Keyword(Keyword::False))
             {
@@ -1589,7 +1552,9 @@ impl Parser {
                 let text = self.token_text(stream, &token);
                 let (digits, _) = split_numeric_suffix(&text);
                 let value: i64 = integer_literal_value(digits)?;
-                Some(fallc_ast::TraitResult::Value(fallc_ast::TraitValue::Int(value)))
+                Some(fallc_ast::TraitResult::Value(fallc_ast::TraitValue::Int(
+                    value,
+                )))
             } else {
                 let written = self.parse_type(stream, ast)?;
                 end = written.span();
@@ -1711,7 +1676,11 @@ impl Parser {
     /// for something the identifier rules exclude.
     ///
     /// Returns the name and the span it was written at.
-    pub(super) fn parse_name_or_string(&mut self, stream: &mut TokenStream, what: &str) -> Option<(String, Span)> {
+    pub(super) fn parse_name_or_string(
+        &mut self,
+        stream: &mut TokenStream,
+        what: &str,
+    ) -> Option<(String, Span)> {
         if stream.at(TokenKind::String) {
             let token = stream.advance();
             let text = self.token_text(stream, &token);
@@ -1738,7 +1707,11 @@ impl Parser {
         Some((name, span))
     }
 
-    pub(super) fn parse_import(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<ItemId> {
+    pub(super) fn parse_import(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ItemId> {
         let start = stream.current_span();
         stream.advance(); // `import`
         let (module, name_span) = self.parse_name_or_string(stream, "a module name")?;
@@ -1844,7 +1817,8 @@ impl Parser {
         // is the only place it can mean anything, so an identifier that says
         // `dynamic` there is the link kind, and a program may still name
         // something `dynamic` anywhere else.
-        let kind = if stream.at(TokenKind::Ident) && self.token_text(stream, stream.peek(0)) == "dynamic"
+        let kind = if stream.at(TokenKind::Ident)
+            && self.token_text(stream, stream.peek(0)) == "dynamic"
         {
             stream.advance();
             LinkKind::Dynamic
@@ -1934,7 +1908,6 @@ impl Parser {
                 | TokenKind::Punct(Punctuation::Question)
         )
     }
-
 }
 
 /// A written type that is nothing but a name.
@@ -2005,11 +1978,7 @@ impl Parser {
     }
 
     /// Parses `{ declarations }` at the top level.
-    fn parse_item_block(
-        &mut self,
-        stream: &mut TokenStream,
-        ast: &mut Ast,
-    ) -> Option<Vec<ItemId>> {
+    fn parse_item_block(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<Vec<ItemId>> {
         self.expect_punct(stream, Punctuation::OpenBrace, "`{`")?;
         let mut items = Vec::new();
         while !stream.at(TokenKind::Punct(Punctuation::CloseBrace)) && !stream.at_eof() {

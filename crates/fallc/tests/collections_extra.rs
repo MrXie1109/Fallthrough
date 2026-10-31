@@ -73,10 +73,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("bitset");
-    assert_eq!(
-        scratch.run("bitset", source),
-        "70 3 67 1\n0 2 1\n1 0\n1\n"
-    );
+    assert_eq!(scratch.run("bitset", source), "70 3 67 1\n0 2 1\n1 0\n1\n");
 }
 
 #[test]
@@ -126,8 +123,5 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("list");
-    assert_eq!(
-        scratch.run("list", source),
-        "3 1 3\n1 2 3 \n1 3 1\n1\n"
-    );
+    assert_eq!(scratch.run("list", source), "3 1 3\n1 2 3 \n1 3 1\n1\n");
 }

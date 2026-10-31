@@ -26,11 +26,13 @@
 // scan, which is the right cost for a configuration file.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.optional;
+from std.optional import *;
 import std.util;
+from std.util import *;
 
 // What kind of value an entry holds.
 export enum TomlKind int {
@@ -80,7 +82,7 @@ export fn __init__(this &TomlValue, other &const TomlValue) void {
 export fn __init__(this &TomlValue, other &&TomlValue) void {
     this._kind = other._kind;
     (&this._text)->__init__();
-    this._text = util.move(other._text);
+    this._text = move(other._text);
     this._integer = other._integer;
     this._real = other._real;
     this._boolean = other._boolean;
@@ -157,9 +159,9 @@ export fn __init__(this &TomlEntry, other &&TomlEntry) void {
     (&this._table)->__init__();
     (&this._key)->__init__();
     (&this._value)->__init__();
-    this._table = util.move(other._table);
-    this._key = util.move(other._key);
-    this._value = util.move(other._value);
+    this._table = move(other._table);
+    this._key = move(other._key);
+    this._value = move(other._value);
 }
 
 // Releases an entry's storage.
@@ -183,7 +185,7 @@ export fn __init__(this &TomlDocument) void {
 // Moves a document's storage.
 export fn __init__(this &TomlDocument, other &&TomlDocument) void {
     (&this._entries)->__init__();
-    this._entries = util.move(other._entries);
+    this._entries = move(other._entries);
 }
 
 // Releases the entries.
@@ -323,8 +325,8 @@ fn parse_entry(this &Parser) void except {
     entry TomlEntry = TomlEntry();
     entry._table = this._table;
     entry._key = key;
-    entry._value = util.move(value);
-    this._document->_entries.push(util.move(entry));
+    entry._value = move(value);
+    this._document->_entries.push(move(entry));
     this.skip_horizontal();
     if (this._index < this._text.length() && !this.at('\n') && !this.at('\r')) {
         raise "ValueError": "unexpected text after a value";
@@ -362,7 +364,7 @@ fn parse_value(this &Parser) TomlValue except {
         value_text String = this.parse_string()??;
         value TomlValue = TomlValue();
         value._kind = TomlKind.STRING as int;
-        value._text = util.move(value_text);
+        value._text = move(value_text);
         return value;
     }
     if (this.at('t')) {

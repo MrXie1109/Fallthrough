@@ -15,14 +15,16 @@
 // logarithmic, and neither reorders anything else.
 
 import std.memory;
-from std.memory import DefaultAllocator, alloc, free;
-from std.tree import Greater, Less;
+from std.memory import *;
 // The comparators are called through `__call__`, which is a definition of the
 // module that declares them: importing the *types* by name is not enough for a
 // body here to reach their method.
 import std.tree;
+from std.tree import *;
 import std.util;
+from std.util import *;
 import std.type_traits;
+from std.type_traits import *;
 
 // How much room an empty heap asks for, in elements.
 INITIAL_CAPACITY const usize = 8;
@@ -145,7 +147,7 @@ fn reserve(this &Heap<T, Cmp, A>, wanted usize) void {
         if ($MOVES(T)) @constexpr {
             target->__init__(this._data[index]);
         } else {
-            target->__init__(util.move(this._data[index]));
+            target->__init__(move(this._data[index]));
         }
         source *T = &this._data[index];
         source->__drop__();
@@ -220,7 +222,7 @@ template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn push(this &Heap<T, Cmp, A>, value T) void {
     this.reserve(this._len + 1);
     target *T = &this._data[this._len];
-    target->__init__(util.move(value));
+    target->__init__(move(value));
     this._len += 1;
     this.sift_up(this._len - 1);
 }
@@ -230,7 +232,7 @@ export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn top(this &const Heap<T, Cmp, A>) &const T {
     if (this._len == 0) {
-        util.panic("Heap top of an empty heap");
+        panic("Heap top of an empty heap");
     }
     return this._data[0];
 }
@@ -243,7 +245,7 @@ export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn top(this &Heap<T, Cmp, A>) &T {
     if (this._len == 0) {
-        util.panic("Heap top of an empty heap");
+        panic("Heap top of an empty heap");
     }
     return this._data[0];
 }
@@ -253,15 +255,15 @@ export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn pop(this &Heap<T, Cmp, A>) T {
     if (this._len == 0) {
-        util.panic("Heap pop of an empty heap");
+        panic("Heap pop of an empty heap");
     }
     this._len -= 1;
-    removed T = util.move(this._data[0]);
+    removed T = move(this._data[0]);
     gone *T = &this._data[0];
     gone->__drop__();
     if (this._len > 0) {
         root *T = &this._data[0];
-        root->__init__(util.move(this._data[this._len]));
+        root->__init__(move(this._data[this._len]));
         last *T = &this._data[this._len];
         last->__drop__();
         this.sift_down(0);
@@ -317,7 +319,7 @@ fn __drop__(this &PriorityQueue<T, Cmp, A>) void {
 export
 template <T type, Cmp type = Less<T>, A type = DefaultAllocator>
 fn push(this &PriorityQueue<T, Cmp, A>, value T) void {
-    this.heap.push(util.move(value));
+    this.heap.push(move(value));
 }
 
 // Removes the value whose priority comes first.

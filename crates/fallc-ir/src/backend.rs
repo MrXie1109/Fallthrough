@@ -414,7 +414,8 @@ impl Backend {
     /// Associated rather than a method, because the checker is built before the
     /// module is and so has no backend to ask.
     pub fn pointer_bits() -> u32 {
-        let Ok(machine) = Backend::new("pointer-width").target_machine(OptimizationLevel::None) else {
+        let Ok(machine) = Backend::new("pointer-width").target_machine(OptimizationLevel::None)
+        else {
             // A machine that cannot be created leaves the width unknown, and
             // the checker reports `sizeof` of a pointer-containing type as not
             // being a constant -- which is what it is when the target is
@@ -451,12 +452,15 @@ impl Backend {
     /// The module must be linked into a module of the same context; that is
     /// why this is a method on the backend rather than a free function.
     pub fn read_module(&self, path: &std::path::Path) -> Result<Module<'static>, CodegenError> {
-        let buffer = inkwell::memory_buffer::MemoryBuffer::create_from_file(path).map_err(
-            |error| CodegenError::Emit(format!("cannot read `{}`: {error}", path.display())),
-        )?;
-        self.context().create_module_from_ir(buffer).map_err(|error| {
-            CodegenError::Emit(format!("cannot load bitcode `{}`: {error}", path.display()))
-        })
+        let buffer =
+            inkwell::memory_buffer::MemoryBuffer::create_from_file(path).map_err(|error| {
+                CodegenError::Emit(format!("cannot read `{}`: {error}", path.display()))
+            })?;
+        self.context()
+            .create_module_from_ir(buffer)
+            .map_err(|error| {
+                CodegenError::Emit(format!("cannot load bitcode `{}`: {error}", path.display()))
+            })
     }
 
     /// Links a module into this backend's module.
@@ -511,7 +515,6 @@ impl Backend {
         TargetMachine::get_default_triple()
     }
 }
-
 
 // Every target machine this thread has built, by level and relocation.
 //

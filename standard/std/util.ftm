@@ -11,6 +11,7 @@
 
 import C;
 import std.type_traits;
+from std.type_traits import *;
 
 // A value that exists only for a compile-time probe.
 //
@@ -64,7 +65,7 @@ fn move(value &T) &&T {
 export
 template <T type>
 fn forward(value T) &&T {
-    if (IsReference(T)) @constexpr {
+    if (std.type_traits.IsReference(T)) @constexpr {
         return value;
     } else {
         return move(value);
@@ -150,7 +151,7 @@ fn move_can_raise() bool {
 // and a call to a function whose body contains the query is not folded. The
 // macro expands to the query itself, so the condition is foldable at the place
 // it is written -- which is why the containers use it.
-export define MOVES(T) except(T(util.fake<&&T>()))
+export define MOVES(T) except(T(fake<&&T>()))
 
 // Whether moving a `T` can raise.
 //

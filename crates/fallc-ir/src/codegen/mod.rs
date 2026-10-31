@@ -33,9 +33,9 @@ use inkwell::values::{BasicValue as _, BasicValueEnum, FunctionValue};
 
 use fallc_ast::{
     AssignExpr, Ast, BinaryExpr, BinaryOp, BindStmt, BlockId, CallExpr, CastExpr, ElseBranch,
-    ExprId, ExprKind, FieldExpr, ForCStmt, FunctionItem, IfStmt, IncDecExpr, IncDecOp,
-    IndexExpr, Initializer, ItemId, ItemKind, LoopStmt, ReturnStmt, StmtId, StmtKind, SwitchStmt,
-    TypeSyntax, TypedInitExpr, UnaryExpr, UnaryOp,
+    ExprId, ExprKind, FieldExpr, ForCStmt, FunctionItem, IfStmt, IncDecExpr, IncDecOp, IndexExpr,
+    Initializer, ItemId, ItemKind, LoopStmt, ReturnStmt, StmtId, StmtKind, SwitchStmt, TypeSyntax,
+    TypedInitExpr, UnaryExpr, UnaryOp,
 };
 use fallc_sema::{BindingTypes, Type};
 
@@ -517,6 +517,8 @@ pub struct ModuleResolutions {
     pub templated_methods: std::collections::HashSet<Span>,
     /// The declarations `@enable_if` removed.
     pub disabled_functions: std::collections::HashSet<Span>,
+    /// The parameters and answer of each coroutine member a program calls.
+    pub coroutine_calls: HashMap<Span, (Vec<fallc_sema::Type>, fallc_sema::Type)>,
     /// The lambda each call calls.
     pub lambda_calls: HashMap<Span, fallc_sema::LambdaInstance>,
     /// The lambda each value-position use denotes.
@@ -609,6 +611,7 @@ impl ModuleResolutions {
             in_place_by_address: checked.in_place_by_address.clone(),
             init_calls: checked.init_calls.clone(),
             method_calls: checked.method_calls.clone(),
+            coroutine_calls: checked.coroutine_calls.clone(),
             indirect_receivers: checked.indirect_receivers.clone(),
             assign_methods: checked.assign_methods.clone(),
             deref_reads: checked.deref_reads.clone(),
@@ -758,7 +761,6 @@ impl BuildMode {
     pub const fn checks_arithmetic(self) -> bool {
         matches!(self, BuildMode::Debug)
     }
-
 }
 
 /// How hard LLVM should work on the generated code.
@@ -1194,6 +1196,25 @@ pub struct Lowerer<'ctx> {
     /// Empty for every ordinary function, whose parameters are resolved from
     /// their written types as they always were.
     pre_resolved_params: Vec<fallc_sema::Type>,
+    /// The coroutine body being lowered, when one is.
+    ///
+    /// A coroutine is emitted as a state machine rather than as a straight
+    /// body, so the lowering of a `yield` needs to know what shape that machine
+    /// has: which types travel, where the frame is, and where the resume entry
+    /// points are. `None` means the body being lowered is an ordinary function.
+    coroutine: Option<CoroutineContext<'static>>,
+    /// The name spans of the `@coroutine` functions in this tree.
+    ///
+    /// The set is what sends a function down the state-machine path; its
+    /// absence is what keeps every ordinary function on the straight-body path.
+    function_coroutines: std::collections::HashSet<Span>,
+    /// What each coroutine entry built, by the type of the object it returns.
+    ///
+    /// `resume` and `result` are declared in the standard library and
+    /// implemented here, once per coroutine *type*: they only ever touch the
+    /// frame's fixed head, so every coroutine returning the same
+    /// `Coroutine<S, Y, R>` shares one implementation.
+    coroutine_frames: HashMap<String, CoroutineFrame>,
     /// The arguments passed as their address, by the argument's span; see
     /// `fallc_sema::CheckedProgram::by_address_arguments`.
     by_address_arguments: std::collections::HashSet<Span>,
@@ -1237,6 +1258,8 @@ pub struct Lowerer<'ctx> {
     /// The checker decides this, because only it knows which definition the
     /// call selected.
     method_calls: HashMap<Span, String>,
+    /// The parameters and answer of each coroutine member the program calls.
+    coroutine_calls: HashMap<Span, (Vec<fallc_sema::Type>, fallc_sema::Type)>,
     indirect_receivers: HashMap<Span, String>,
     /// The calls whose callee may raise, so a check follows each one.
     throwing_calls: std::collections::HashSet<Span>,
@@ -1346,25 +1369,25 @@ pub struct Lowerer<'ctx> {
     library_objects: Vec<std::path::PathBuf>,
 }
 
-
-mod install;
-mod functions;
-mod statements;
+mod arguments;
+mod arithmetic;
+mod builtins;
+pub mod cache;
+mod calls;
+mod coroutines;
+mod diagnostics;
 mod exceptions;
 mod expressions;
+mod external;
+mod functions;
+mod install;
 mod interfaces;
 mod lambdas;
-mod arithmetic;
-mod stores;
-mod calls;
-mod external;
-pub mod cache;
-mod arguments;
 mod methods;
-mod builtins;
 mod runtime;
-mod diagnostics;
-
+mod statements;
+mod stores;
+use coroutines::{CoroutineContext, CoroutineFrame, contains_yield};
 
 impl Codegen for Lowerer<'_> {
     fn emit_item(&mut self, ast: &Ast, item: ItemId) -> Result<(), CodegenError> {
@@ -1452,4 +1475,3 @@ mod tests {
         assert!(lowerer.emit_item(&ast, item).is_err());
     }
 }
-

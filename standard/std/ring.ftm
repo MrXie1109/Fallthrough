@@ -17,7 +17,9 @@
 // `index`.
 
 import std.optional;
+from std.optional import *;
 import std.util;
+from std.util import *;
 
 // A fixed-size first-in, first-out buffer.
 export
@@ -45,7 +47,7 @@ fn __init__(this &Ring<T>, capacity usize) void {
     this._head = 0;
     this._len = 0;
     if (capacity > 0usize) {
-        this._storage = util.allocate(sizeof(T) * capacity) as *T;
+        this._storage = allocate(sizeof(T) * capacity) as *T;
     }
 }
 
@@ -55,7 +57,7 @@ template <T type>
 fn __drop__(this &Ring<T>) void {
     this.clear();
     if (this._storage != nullptr) {
-        util.free(this._storage as *byte);
+        free(this._storage as *byte);
         this._storage = nullptr;
     }
 }

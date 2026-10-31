@@ -18,6 +18,7 @@
 // the library where its element-wise rules can be read.
 
 import std.util;
+from std.util import *;
 
 // Two values, named by position.
 export
@@ -56,8 +57,8 @@ fn __init__(this &Pair<A, B>, other &const Pair<A, B>) void {
 export
 template <A type, B type>
 fn __init__(this &Pair<A, B>, other &&Pair<A, B>) void {
-    (&this.first)->__init__(util.move(other.first));
-    (&this.second)->__init__(util.move(other.second));
+    (&this.first)->__init__(move(other.first));
+    (&this.second)->__init__(move(other.second));
 }
 
 // Copies another pair into this one.
@@ -76,8 +77,8 @@ fn __assign__(this &Pair<A, B>, other &const Pair<A, B>) void {
 export
 template <A type, B type>
 fn __assign__(this &Pair<A, B>, other &&Pair<A, B>) void {
-    this.first = util.move(other.first);
-    this.second = util.move(other.second);
+    this.first = move(other.first);
+    this.second = move(other.second);
 }
 
 // Releases both elements.
@@ -148,9 +149,9 @@ fn __init__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
 export
 template <A type, B type, C type>
 fn __init__(this &Triple<A, B, C>, other &&Triple<A, B, C>) void {
-    (&this.first)->__init__(util.move(other.first));
-    (&this.second)->__init__(util.move(other.second));
-    (&this.third)->__init__(util.move(other.third));
+    (&this.first)->__init__(move(other.first));
+    (&this.second)->__init__(move(other.second));
+    (&this.third)->__init__(move(other.third));
 }
 
 // Copies another triple into this one.
@@ -170,9 +171,9 @@ fn __assign__(this &Triple<A, B, C>, other &const Triple<A, B, C>) void {
 export
 template <A type, B type, C type>
 fn __assign__(this &Triple<A, B, C>, other &&Triple<A, B, C>) void {
-    this.first = util.move(other.first);
-    this.second = util.move(other.second);
-    this.third = util.move(other.third);
+    this.first = move(other.first);
+    this.second = move(other.second);
+    this.third = move(other.third);
 }
 
 // Releases all three elements.

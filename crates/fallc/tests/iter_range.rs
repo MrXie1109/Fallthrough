@@ -77,10 +77,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("iter");
-    assert_eq!(
-        scratch.run("iter", source),
-        "2 0 1 0\n4\n6 1\n"
-    );
+    assert_eq!(scratch.run("iter", source), "2 0 1 0\n4\n6 1\n");
 }
 
 #[test]

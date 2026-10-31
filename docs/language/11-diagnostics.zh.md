@@ -1,6 +1,6 @@
-# 10 诊断
+# 11 诊断
 
-> [English](10-diagnostics.md)
+> [English](11-diagnostics.md)
 
 ## 范围
 

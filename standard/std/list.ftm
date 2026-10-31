@@ -17,7 +17,9 @@
 // whose `__deref__` is the element. `end()` is the null position.
 
 import std.optional;
+from std.optional import *;
 import std.util;
+from std.util import *;
 
 // One node of the list.
 export
@@ -70,7 +72,7 @@ fn push(this &List<T>, value T) void {
 export
 template <T type>
 fn push_back(this &List<T>, value T) void {
-    node *ListNode<T> = util.allocate(sizeof(ListNode<T>)) as *ListNode<T>;
+    node *ListNode<T> = allocate(sizeof(ListNode<T>)) as *ListNode<T>;
     node._previous = this._tail;
     node._next = nullptr;
     (&node._value)->__init__(value);
@@ -90,7 +92,7 @@ fn push_back(this &List<T>, value T) void {
 export
 template <T type>
 fn push_front(this &List<T>, value T) void {
-    node *ListNode<T> = util.allocate(sizeof(ListNode<T>)) as *ListNode<T>;
+    node *ListNode<T> = allocate(sizeof(ListNode<T>)) as *ListNode<T>;
     node._previous = nullptr;
     node._next = this._head;
     (&node._value)->__init__(value);
@@ -147,7 +149,7 @@ fn unlink(this &List<T>, node *ListNode<T>) void {
         this._tail = node._previous;
     }
     (&node._value)->__drop__();
-    util.free(node as *byte);
+    free(node as *byte);
     this._len -= 1;
 }
 
@@ -207,7 +209,7 @@ fn clear(this &List<T>) void {
     while (node != nullptr) {
         next *ListNode<T> = node._next;
         (&node._value)->__drop__();
-        util.free(node as *byte);
+        free(node as *byte);
         node = next;
     }
     this._head = nullptr;

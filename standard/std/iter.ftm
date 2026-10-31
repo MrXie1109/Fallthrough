@@ -12,6 +12,7 @@
 // iterator operations the body needs.
 
 import std.iterator;
+from std.iterator import *;
 
 // Moves `first` forward `count` steps, or to `last` if the range ends first.
 

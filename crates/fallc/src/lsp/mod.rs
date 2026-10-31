@@ -53,10 +53,7 @@ pub fn run() -> u8 {
             // The client closed the connection: the protocol's own exit.
             Ok(None) => return 0,
             Err(error) => {
-                let _ = write_message(
-                    &mut output,
-                    &error_response(Value::Null, -32700, &error),
-                );
+                let _ = write_message(&mut output, &error_response(Value::Null, -32700, &error));
                 return 1;
             }
         };
@@ -163,10 +160,7 @@ impl Server {
                         json::Value::Object(
                             [
                                 ("uri".to_owned(), Value::string(uri)),
-                                (
-                                    "diagnostics".to_owned(),
-                                    Value::Array(Vec::new()),
-                                ),
+                                ("diagnostics".to_owned(), Value::Array(Vec::new())),
                             ]
                             .into_iter()
                             .collect(),
@@ -188,10 +182,7 @@ impl Server {
         let mut capabilities = std::collections::BTreeMap::new();
         // Full sync: every change sends the whole file. Incremental would need
         // the ranges applied in order, and a full document is one message.
-        capabilities.insert(
-            "textDocumentSync".to_owned(),
-            Value::number(1),
-        );
+        capabilities.insert("textDocumentSync".to_owned(), Value::number(1));
         Value::Object(
             [
                 ("capabilities".to_owned(), Value::Object(capabilities)),
@@ -291,9 +282,7 @@ fn to_protocol(session: &Session, subject: &Path, reported_as: &Path) -> Vec<Val
             fallc_diag::Severity::Error | fallc_diag::Severity::Bug => 1,
             fallc_diag::Severity::Warning => 2,
         };
-        let code = diagnostic
-            .code
-            .map(|code| Value::string(code.to_string()));
+        let code = diagnostic.code.map(|code| Value::string(code.to_string()));
         let message = match &code {
             Some(Value::String(code)) => format!("[{code}] {}", diagnostic.message),
             _ => diagnostic.message.clone(),
@@ -349,7 +338,10 @@ fn related(sources: &fallc_span::SourceMap, span: fallc_span::Span) -> Value {
         Some(file) => json::Value::Object(
             [
                 ("uri".to_owned(), Value::string(path_to_uri(file.path()))),
-                ("range".to_owned(), range_of(sources, Some(span), file.path())),
+                (
+                    "range".to_owned(),
+                    range_of(sources, Some(span), file.path()),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -393,7 +385,12 @@ fn range_of(
     )
 }
 
-fn position_range(start_line: u32, start_character: u32, end_line: u32, end_character: u32) -> Value {
+fn position_range(
+    start_line: u32,
+    start_character: u32,
+    end_line: u32,
+    end_character: u32,
+) -> Value {
     json::Value::Object(
         [
             (
@@ -605,11 +602,8 @@ fn read_message(input: &mut impl BufRead) -> Result<Option<Value>, String> {
     input
         .read_exact(&mut body)
         .map_err(|error| format!("cannot read the message body: {error}"))?;
-    let text = String::from_utf8(body)
-        .map_err(|_| "the message body is not UTF-8".to_owned())?;
-    json::parse(&text)
-        .map(Some)
-        .map_err(|error| error.message)
+    let text = String::from_utf8(body).map_err(|_| "the message body is not UTF-8".to_owned())?;
+    json::parse(&text).map(Some).map_err(|error| error.message)
 }
 
 /// Writes one `Content-Length` framed message.

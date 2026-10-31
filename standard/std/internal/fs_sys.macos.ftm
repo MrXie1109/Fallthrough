@@ -5,7 +5,9 @@
 
 import C;
 import std.array;
+from std.array import *;
 import std.string;
+from std.string import *;
 
 @extern_C fn mkdir(path *const char, mode u32) int;
 @extern_C fn opendir(path *const char) *byte;

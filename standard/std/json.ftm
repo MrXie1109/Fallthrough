@@ -25,12 +25,15 @@
 // such key" is a question rather than a failure.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.optional;
+from std.optional import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.unicode;
+from std.unicode import *;
 import std.util;
+from std.util import *;
 
 // The kind of a JSON value.
 export enum JsonKind int {
@@ -100,10 +103,10 @@ export fn __init__(this &JsonNodeData, other &&JsonNodeData) void {
     (&this._children)->__init__();
     (&this._keys)->__init__();
     (&this._values)->__init__();
-    this._text = util.move(other._text);
-    this._children = util.move(other._children);
-    this._keys = util.move(other._keys);
-    this._values = util.move(other._values);
+    this._text = move(other._text);
+    this._children = move(other._children);
+    this._keys = move(other._keys);
+    this._values = move(other._values);
 }
 
 // Copies a node into this one.
@@ -143,7 +146,7 @@ export fn __init__(this &JsonDocument) void {
 // Moves a document's storage.
 export fn __init__(this &JsonDocument, other &&JsonDocument) void {
     (&this._nodes)->__init__();
-    this._nodes = util.move(other._nodes);
+    this._nodes = move(other._nodes);
     this._root = other._root;
 }
 

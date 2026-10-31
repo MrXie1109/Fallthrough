@@ -15,6 +15,7 @@
 
 // `std.os` supplies the process id `signal_self` delivers to.
 import std.os;
+from std.os import *;
 
 @extern_C fn signal(number int, handler *fn(int) void) *fn(int) void;
 @extern_C fn kill(pid int, number int) int;

@@ -17,10 +17,11 @@
 // cell starts as. `Grid<int>(rows, columns, 0)` is a grid of zeros.
 
 import std.array;
-from std.array import Array;
+from std.array import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 import std.util;
+from std.util import *;
 
 // A two-dimensional array of `T`.
 export
@@ -107,7 +108,7 @@ export
 template <T type>
 fn at(this &Grid<T>, row usize, column usize) &T {
     if (row >= this._rows || column >= this._columns) {
-        util.panic("Grid index out of range");
+        panic("Grid index out of range");
     }
     return this._data[row * this._columns + column];
 }
@@ -120,7 +121,7 @@ export
 template <T type>
 fn at(this &const Grid<T>, row usize, column usize) &const T {
     if (row >= this._rows || column >= this._columns) {
-        util.panic("Grid index out of range");
+        panic("Grid index out of range");
     }
     return this._data[row * this._columns + column];
 }

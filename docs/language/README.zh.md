@@ -60,7 +60,7 @@
 
 - 接受符合本规范的程序，并产生本文件规定的可观察行为；
 - 对违反本规范约束的程序给出诊断，除非本文件明确允许其他行为；
-- 以本文件规定的编号类别报告诊断（见 [10 诊断](10-diagnostics.zh.md)）。
+- 以本文件规定的编号类别报告诊断（见 [10 诊断](11-diagnostics.zh.md)）。
 
 4.3 实现可以对程序施加本文件未规定的资源限制（时间、内存、递归深度、模板实例化
 次数等）。达到限制时，实现必须给出诊断，不得静默产生违反本规范的结果。
@@ -91,12 +91,13 @@
 | [02 类型](02-types.zh.md) | 类型系统、布局与对齐、类型等价、隐式调整 |
 | [03 声明](03-declarations.zh.md) | 声明形式、绑定与初始化、属性、宏、traits、interface、模板 |
 | [04 函数](04-functions.zh.md) | 函数、成员函数、lambda、调用约定、参数传递、重载、移动 |
-| [05 语句](05-statements.zh.md) | 块、条件、循环、范围循环、`switch`、跳转、`defer`、编译期断言 |
-| [06 异常](06-exceptions.zh.md) | 异常模型、`raise`、`try`、`??`、`!!`、调用点义务 |
-| [07 表达式](07-expressions.zh.md) | 表达式形式、转换、运算符、赋值、特殊方法、求值顺序 |
-| [08 模块](08-modules.zh.md) | 导入与导出、名字身份、模块查找、多文件与链接 |
-| [09 作用域](09-scopes.zh.md) | 作用域、遮蔽、重复声明、`_`、生命周期 |
-| [10 诊断](10-diagnostics.zh.md) | 诊断编号、结构、警告组、抑制、颜色、去重 |
+| [05 协程](05-coroutines.zh.md) | `@coroutine`、`yield`、`resume`、`result`、状态机 |
+| [06 语句](06-statements.zh.md) | 块、条件、循环、范围循环、`switch`、跳转、`defer`、编译期断言 |
+| [06 异常](07-exceptions.zh.md) | 异常模型、`raise`、`try`、`??`、`!!`、调用点义务 |
+| [07 表达式](08-expressions.zh.md) | 表达式形式、转换、运算符、赋值、特殊方法、求值顺序 |
+| [08 模块](09-modules.zh.md) | 导入与导出、名字身份、模块查找、多文件与链接 |
+| [09 作用域](10-scopes.zh.md) | 作用域、遮蔽、重复声明、`_`、生命周期 |
+| [10 诊断](11-diagnostics.zh.md) | 诊断编号、结构、警告组、抑制、颜色、去重 |
 | [附录 A](appendix-a-errors.zh.md) | 稳定诊断编号、级别与消息模板对照表 |
 | [附录 B](appendix-b-special-methods.zh.md) | 特殊方法对照表：调用时机、签名约定、约束，以及类型未声明时实现提供的缺省形式 |
 | [附录 C](appendix-c-attributes.zh.md) | 属性对照表：可写位置、含义与约束 |
@@ -107,9 +108,10 @@
 
 1. [00 总则](00-start.zh.md) 与 [01 词法](01-lexical.zh.md)：源文件是什么、如何变成记号；
 2. [02 类型](02-types.zh.md) 与 [03 声明](03-declarations.zh.md)：类型系统与名字的引入；
-3. [04 函数](04-functions.zh.md)、[05 语句](05-statements.zh.md)、[07 表达式](07-expressions.zh.md)：行为；
-4. [06 异常](06-exceptions.zh.md)、[08 模块](08-modules.zh.md)、[09 作用域](09-scopes.zh.md)：较大程序需要的规则；
-5. [10 诊断](10-diagnostics.zh.md) 与两个附录：参考表。
+3. [04 函数](04-functions.zh.md)、[05 协程](05-coroutines.zh.md)、[06 语句](06-statements.zh.md)、
+   [08 表达式](08-expressions.zh.md)：行为；
+4. [06 异常](07-exceptions.zh.md)、[08 模块](09-modules.zh.md)、[09 作用域](10-scopes.zh.md)：较大程序需要的规则；
+5. [10 诊断](11-diagnostics.zh.md) 与两个附录：参考表。
 
 ## 修订说明
 
@@ -118,13 +120,14 @@
 | 变化 | 位置 |
 | ---- | ---- |
 | 英文为主文本，中文翻译为 `*.zh.md` | 每个分册 |
-| `defer { … }` 在作用域结束时执行一个块 | [05 §8](05-statements.zh.md#defer)、[09 §5.7](09-scopes.zh.md#生命周期与销毁) |
+| `defer { … }` 在作用域结束时执行一个块 | [06 §8](06-statements.zh.md#defer)、[10 §5.7](10-scopes.zh.md#生命周期与销毁) |
 | `export` 重新作为关键字，不再是属性；`@export` 会报诊断 | [01 §5](01-lexical.zh.md#关键字)、[03 §9](03-declarations.zh.md#属性) |
-| `try` 后可跟多个 `except` 子句，具名与裸子句按上到下尝试 | [06 §5](06-exceptions.zh.md) |
+| `try` 后可跟多个 `except` 子句，具名与裸子句按上到下尝试 | [07 §5](07-exceptions.zh.md) |
 | 类型特征由 `std.type_traits` 家族回答；`$MOVES(T)` 是 `std.util.move_can_raise<T>()` 在常量位置的包装宏 | [03 §11.4](03-declarations.zh.md#内建类型特征) |
 | 按值聚合形参用其拷贝构造建立副本，并在函数的每条退出路径上析构 | [04 §4.3](04-functions.zh.md#按值聚合实参的语义) |
 | 编译产物还可以是静态库或共享库 | [00 §4.1](00-start.zh.md#编译接口) |
 | 诊断附录是去重后的单张表，与编译器代码逐项核对 | [附录 A](appendix-a-errors.zh.md) |
+| `@coroutine` 函数是状态机：`yield` 挂起它，`resume` 运行到下一次挂起，`result` 回答它返回了什么 | [05](05-coroutines.zh.md) |
 | 特殊方法附录写出缺省形式，而不只是声明过的形式 | [附录 B](appendix-b-special-methods.zh.md) |
 | 每个属性只列一次，并注明可写位置 | [附录 C](appendix-c-attributes.zh.md) |
 

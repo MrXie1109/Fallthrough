@@ -15,8 +15,8 @@ struct Scratch {
 
 impl Scratch {
     fn new(label: &str) -> Scratch {
-        let directory = std::env::temp_dir()
-            .join(format!("fallc-forward-{label}-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("fallc-forward-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a temporary directory can be created");
         Scratch { directory }

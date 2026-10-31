@@ -287,8 +287,7 @@ pub fn find_module_file(name: &str, importer: &Path, search_path: &[PathBuf]) ->
 /// has to link.
 #[must_use]
 pub fn target_platform() -> String {
-    std::env::var("FALLC_TARGET_OS")
-        .unwrap_or_else(|_| std::env::consts::OS.to_owned())
+    std::env::var("FALLC_TARGET_OS").unwrap_or_else(|_| std::env::consts::OS.to_owned())
 }
 
 /// Derives a module name from a file path, by dropping the extension.

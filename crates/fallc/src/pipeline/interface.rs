@@ -10,7 +10,7 @@
 //! Nothing here decides anything. It writes out what a declaration already
 //! says, in the syntax the language reads back.
 
-use fallc_ast::{TypeSyntax, Ast};
+use fallc_ast::{Ast, TypeSyntax};
 
 /// Renders a written type back to source text.
 ///
@@ -51,7 +51,11 @@ pub(super) fn type_syntax_in(ty: &TypeSyntax, ast: Option<&Ast>) -> String {
             }
             out
         }
-        TypeSyntax::Array(array) => format!("[{}]{}", expr_text(array.len, ast), type_syntax_in(&array.element, ast)),
+        TypeSyntax::Array(array) => format!(
+            "[{}]{}",
+            expr_text(array.len, ast),
+            type_syntax_in(&array.element, ast)
+        ),
         TypeSyntax::UnsizedArray(element) => format!("[]{}", type_syntax(element)),
         TypeSyntax::Pointer(inner) => format!("*{}", type_syntax_in(inner, ast)),
         TypeSyntax::PointerToConst(inner) => format!("*const {}", type_syntax_in(inner, ast)),
@@ -59,13 +63,17 @@ pub(super) fn type_syntax_in(ty: &TypeSyntax, ast: Option<&Ast>) -> String {
         TypeSyntax::Reference(inner) => format!("&{}", type_syntax_in(inner, ast)),
         TypeSyntax::ConstReference(inner) => format!("&const {}", type_syntax_in(inner, ast)),
         TypeSyntax::RvalueReference(inner) => format!("&&{}", type_syntax_in(inner, ast)),
-        TypeSyntax::ConstRvalueReference(inner) => format!("&&const {}", type_syntax_in(inner, ast)),
+        TypeSyntax::ConstRvalueReference(inner) => {
+            format!("&&const {}", type_syntax_in(inner, ast))
+        }
         TypeSyntax::Volatile(inner) => format!("volatile {}", type_syntax_in(inner, ast)),
         TypeSyntax::Const(inner) => format!("const {}", type_syntax_in(inner, ast)),
         TypeSyntax::Auto(_) => "auto".to_owned(),
         TypeSyntax::DecltypeAuto(_) => "type(auto)".to_owned(),
         TypeSyntax::TypeOf(node) => format!("type({})", expr_text(node.operand, ast)),
-        TypeSyntax::Member(member) => format!("{}.{}", type_syntax_in(&member.outer, ast), member.name),
+        TypeSyntax::Member(member) => {
+            format!("{}.{}", type_syntax_in(&member.outer, ast), member.name)
+        }
         TypeSyntax::Function(function) => {
             let parameters: Vec<String> = function
                 .parameters
@@ -132,11 +140,7 @@ pub(super) fn expr_syntax(ast: &Ast, id: fallc_ast::ExprId) -> String {
         ExprKind::Name(name) => name.clone(),
         ExprKind::NullPointer => "nullptr".to_owned(),
         ExprKind::Unary(unary) => {
-            format!(
-                "{}{}",
-                unary.op.spelling(),
-                expr_syntax(ast, unary.operand)
-            )
+            format!("{}{}", unary.op.spelling(), expr_syntax(ast, unary.operand))
         }
         ExprKind::Binary(binary) => format!(
             "({} {} {})",
@@ -149,17 +153,12 @@ pub(super) fn expr_syntax(ast: &Ast, id: fallc_ast::ExprId) -> String {
             expr_syntax(ast, cast.operand),
             type_syntax_in(&cast.ty, Some(ast))
         ),
-        ExprKind::Field(field) => format!(
-            "{}.{}",
-            expr_syntax(ast, field.object),
-            field.field
-        ),
+        ExprKind::Field(field) => format!("{}.{}", expr_syntax(ast, field.object), field.field),
         // Every other form is not something an interface states, and writing a
         // placeholder keeps the renderer total without pretending to support it.
         _ => String::new(),
     }
 }
-
 
 fn binary_op_spelling(op: fallc_ast::BinaryOp) -> &'static str {
     op.spelling()
@@ -178,7 +177,9 @@ fn binary_op_spelling(op: fallc_ast::BinaryOp) -> &'static str {
 #[must_use]
 pub(super) fn render(exports: &fallc_sema::ExternalModule, module: &str, ast: &Ast) -> String {
     let mut out = String::new();
-    out.push_str(&format!("// {module}.it -- the interface of module `{module}`.\n"));
+    out.push_str(&format!(
+        "// {module}.it -- the interface of module `{module}`.\n"
+    ));
     out.push_str("// Generated from the module's export table; do not edit.\n\n");
 
     // Types come first: a signature may name one.
@@ -238,7 +239,10 @@ pub(super) fn render(exports: &fallc_sema::ExternalModule, module: &str, ast: &A
     variable_names.sort();
     for name in variable_names {
         let variable = &exports.variables[name];
-        out.push_str(&format!("export {name} {} @extern_C;\n", type_syntax_in(&variable.ty, Some(ast))));
+        out.push_str(&format!(
+            "export {name} {} @extern_C;\n",
+            type_syntax_in(&variable.ty, Some(ast))
+        ));
     }
 
     // Functions last, so every type a signature names is already declared.
@@ -279,10 +283,17 @@ fn render_type(ty: &fallc_sema::ExportType, ast: &Ast) -> String {
     }
     out.push_str(" {\n");
     for field in &ty.fields {
-        out.push_str(&format!("    {} {};\n", field.name, type_syntax_in(&field.ty, Some(ast))));
+        out.push_str(&format!(
+            "    {} {};\n",
+            field.name,
+            type_syntax_in(&field.ty, Some(ast))
+        ));
     }
     for (name, target) in &ty.nested {
-        out.push_str(&format!("    type {name} = {};\n", type_syntax_in(target, Some(ast))));
+        out.push_str(&format!(
+            "    type {name} = {};\n",
+            type_syntax_in(target, Some(ast))
+        ));
     }
     out.push_str("}\n");
     out
@@ -294,7 +305,11 @@ fn render_template_parameter(param: &fallc_ast::TemplateParam, ast: &Ast) -> Str
     match &param.kind {
         TemplateParamKind::Type => format!("{}{pack} type", param.name),
         TemplateParamKind::Value(written) => {
-            format!("{}{pack} {}", param.name, type_syntax_in(written, Some(ast)))
+            format!(
+                "{}{pack} {}",
+                param.name,
+                type_syntax_in(written, Some(ast))
+            )
         }
     }
 }

@@ -9,7 +9,7 @@
 // instead of pretending a CRC is a CRC.
 
 import std.bytes;
-from std.bytes import Bytes;
+from std.bytes import *;
 
 // CRC-8, polynomial 0x07, initial value 0.
 export fn crc8(data &const Bytes) u8 {

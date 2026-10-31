@@ -16,15 +16,14 @@
 
 import C;
 import std.fs;
-// `cwd`, `tempdir` and `home` return a `Path`, and a program that imported
-// only this module has to be able to name it. The rest of `std.fs` stays with
-// `std.fs`: a module exports what its own API needs, not everything its
-// dependencies happen to declare.
-export from std.fs import Path;
-from std.fs import Path;
+from std.fs import *;
+// `cwd`, `tempdir` and `home` return a `Path`, which is `std.fs`'s type; a
+// program that names it imports that module. Re-exporting it here would make
+// this module a second source of one name.
 import std.internal.os_sys;
+from std.internal.os_sys import *;
 import std.string;
-from std.string import String;
+from std.string import *;
 
 // The process's identifier, which is what a platform's tools call the PID.
 export fn pid() int {

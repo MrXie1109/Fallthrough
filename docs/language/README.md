@@ -39,7 +39,7 @@ reference. A reference that states a version applies only in that version; a ref
 that states no version applies in its latest version.
 
 - the volumes themselves: [00](00-start.md) through
-  [10](10-diagnostics.md), together with
+  [10](11-diagnostics.md), together with
   [Appendix A](appendix-a-errors.md) (diagnostic codes),
   [Appendix B](appendix-b-special-methods.md) (special methods, and the forms the
   implementation supplies for a type that declares none) and
@@ -80,7 +80,7 @@ undefined.
 - diagnose a program that violates a constraint of this standard, unless this document
   explicitly permits other behavior;
 - report diagnostics under the numbered categories specified in this document (see
-  [10 Diagnostics](10-diagnostics.md)).
+  [10 Diagnostics](11-diagnostics.md)).
 
 4.3 An implementation may impose resource limits on a program that this document does
 not specify (time, memory, recursion depth, number of template instantiations, and so
@@ -120,12 +120,13 @@ prevails. In examples, `...` denotes an omission and is not part of the language
 | [02 Types](02-types.md) | The type system, layout and alignment, type equivalence, implicit adjustments |
 | [03 Declarations](03-declarations.md) | Declaration forms, bindings and initialization, attributes, macros, traits, interface, templates |
 | [04 Functions](04-functions.md) | Functions, member functions, lambda, call conventions, argument passing, overloading, moves |
-| [05 Statements](05-statements.md) | Blocks, conditions, loops, range loops, `switch`, jumps, `defer`, compile-time assertions |
-| [06 Exceptions](06-exceptions.md) | The exception model, `raise`, `try`, `??`, `!!`, obligations at a call site |
-| [07 Expressions](07-expressions.md) | Expression forms, conversions, operators, assignment, special methods, evaluation order |
-| [08 Modules](08-modules.md) | Importing and exporting, name identity, module lookup, multi-file compilation and linking |
-| [09 Scopes](09-scopes.md) | Scopes, shadowing, repeated declarations, `_`, lifetimes |
-| [10 Diagnostics](10-diagnostics.md) | Diagnostic numbers, structure, warning groups, suppression, color, deduplication |
+| [05 Coroutines](05-coroutines.md) | `@coroutine`, `yield`, `resume`, `result`, the state machine |
+| [06 Statements](06-statements.md) | Blocks, conditions, loops, range loops, `switch`, jumps, `defer`, compile-time assertions |
+| [06 Exceptions](07-exceptions.md) | The exception model, `raise`, `try`, `??`, `!!`, obligations at a call site |
+| [07 Expressions](08-expressions.md) | Expression forms, conversions, operators, assignment, special methods, evaluation order |
+| [08 Modules](09-modules.md) | Importing and exporting, name identity, module lookup, multi-file compilation and linking |
+| [09 Scopes](10-scopes.md) | Scopes, shadowing, repeated declarations, `_`, lifetimes |
+| [10 Diagnostics](11-diagnostics.md) | Diagnostic numbers, structure, warning groups, suppression, color, deduplication |
 
 ## Reading order
 
@@ -136,11 +137,11 @@ first three are enough to read a program, and the rest are needed to write one:
    file is and how it becomes tokens;
 2. [02 Types](02-types.md) and [03 Declarations](03-declarations.md) — the type system
    and how names are introduced;
-3. [04 Functions](04-functions.md), [05 Statements](05-statements.md) and
-   [07 Expressions](07-expressions.md) — behavior;
-4. [06 Exceptions](06-exceptions.md), [08 Modules](08-modules.md) and
-   [09 Scopes](09-scopes.md) — the rules a larger program needs;
-5. [10 Diagnostics](10-diagnostics.md) and the appendices — reference tables.
+3. [04 Functions](04-functions.md), [05 Coroutines](05-coroutines.md),
+   [06 Statements](06-statements.md) and [08 Expressions](08-expressions.md) — behavior;
+4. [06 Exceptions](07-exceptions.md), [08 Modules](09-modules.md) and
+   [09 Scopes](10-scopes.md) — the rules a larger program needs;
+5. [10 Diagnostics](11-diagnostics.md) and the appendices — reference tables.
 
 ## Revision of this edition
 
@@ -150,14 +151,15 @@ text, not a note.
 | Change | Where |
 | ------ | ----- |
 | English is the primary text; the Chinese translation is `*.zh.md` | every volume |
-| `defer { … }` runs a block when its scope ends | [05 §8](05-statements.md#defer), [09 §5.7](09-scopes.md#lifetime-and-destruction) |
+| `defer { … }` runs a block when its scope ends | [06 §8](06-statements.md#defer), [10 §5.7](10-scopes.md#lifetime-and-destruction) |
 | `export` is a keyword again, not an attribute; `@export` is a diagnostic | [01 §5](01-lexical.md#keywords), [03 §9](03-declarations.md#attributes) |
-| `try` may carry several `except` clauses, named and bare, tried top to bottom | [06 §5](06-exceptions.md) |
+| `try` may carry several `except` clauses, named and bare, tried top to bottom | [07 §5](07-exceptions.md) |
 | type traits are answered by `std.type_traits` families; `$MOVES(T)` is the constant-position wrapper around `std.util.move_can_raise<T>()` | [03 §11.4](03-declarations.md#built-in-type-traits) |
 | a by-value aggregate parameter is copied by its copy constructor and destroyed at every way out of the function | [04 §4.3](04-functions.md#semantics-of-aggregate-arguments-passed-by-value) |
 | a compilation may produce a static or shared library as well as an executable or object | [00 §4.1](00-start.md#compilation-interface) |
 | the diagnostic appendix is a single deduplicated table generated against the compiler's codes | [Appendix A](appendix-a-errors.md) |
 | the special-method appendix states the default forms, not only the declared ones | [Appendix B](appendix-b-special-methods.md) |
+| a `@coroutine` function is a state machine: `yield` suspends it, `resume` runs it to the next suspension, `result` answers what it returned | [05](05-coroutines.md) |
 | every attribute is listed once, with where it may be written | [Appendix C](appendix-c-attributes.md) |
 
 ## Entries not yet finalised

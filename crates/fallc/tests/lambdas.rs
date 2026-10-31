@@ -254,8 +254,11 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("raise");
-    assert_eq!(scratch.run("raise", source), "caught
-");
+    assert_eq!(
+        scratch.run("raise", source),
+        "caught
+"
+    );
 }
 
 #[test]
@@ -278,8 +281,11 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("inner-try");
-    assert_eq!(scratch.run("inner-try", source), "42
-");
+    assert_eq!(
+        scratch.run("inner-try", source),
+        "42
+"
+    );
 }
 
 #[test]
