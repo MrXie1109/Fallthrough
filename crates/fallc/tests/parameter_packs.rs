@@ -53,7 +53,6 @@ impl Drop for Scratch {
     }
 }
 
-
 #[test]
 fn a_parameter_pack_takes_any_number_of_arguments() {
     let source = r#"import std;
@@ -234,7 +233,10 @@ fn main() int {
         &[EmitKind::Llvm],
     );
     assert_eq!(outcome, Outcome::Success, "{diagnostics}");
-    assert!(diagnostics.contains("`values` is never read"), "{diagnostics}");
+    assert!(
+        diagnostics.contains("`values` is never read"),
+        "{diagnostics}"
+    );
 }
 
 #[test]

@@ -10,7 +10,10 @@ use super::*;
 ///
 /// A minimal resolver, because the code generator needs a `Type` and the
 /// checker's own resolution is not reachable from here.
-pub(super) fn resolve_signature_type(ty: &fallc_ast::TypeSyntax, in_parameter: bool) -> fallc_sema::Type {
+pub(super) fn resolve_signature_type(
+    ty: &fallc_ast::TypeSyntax,
+    in_parameter: bool,
+) -> fallc_sema::Type {
     resolve_signature_type_with(ty, in_parameter, &[])
 }
 
@@ -57,6 +60,8 @@ pub(super) fn resolve_signature_type_with(
             // `Crate<int>` -- because that name is what the symbol is built
             // from, and the two modules have to agree on it.
             if !named.arguments.is_empty() {
+                // The member's name, built from the arguments as the checker
+                // spells them.
                 let arguments: Vec<Type> = named
                     .arguments
                     .iter()
@@ -120,9 +125,11 @@ pub(super) fn resolve_signature_type_with(
         // `type(expr)` is resolved by the checker, which has the expression in
         // hand; a signature that only sees the written form cannot ask.
         TypeSyntax::TypeOf(node) => Type::unspecified("type(..)".to_owned(), node.span),
-        TypeSyntax::Const(inner) => {
-            Type::Const(Box::new(resolve_signature_type_with(inner, in_parameter, declared)))
-        }
+        TypeSyntax::Const(inner) => Type::Const(Box::new(resolve_signature_type_with(
+            inner,
+            in_parameter,
+            declared,
+        ))),
         TypeSyntax::Pointer(inner) => Type::Pointer {
             pointee: Box::new(resolve_signature_type_with(inner, false, declared)),
             pointee_is_const: false,
@@ -148,9 +155,9 @@ pub(super) fn resolve_signature_type_with(
             referent_is_const: true,
             is_rvalue: true,
         },
-        TypeSyntax::Volatile(inner) => {
-            Type::Volatile(Box::new(resolve_signature_type_with(inner, false, declared)))
-        }
+        TypeSyntax::Volatile(inner) => Type::Volatile(Box::new(resolve_signature_type_with(
+            inner, false, declared,
+        ))),
         TypeSyntax::Reference(inner) => Type::Reference {
             referent: Box::new(resolve_signature_type_with(inner, false, declared)),
             referent_is_const: false,
@@ -309,8 +316,10 @@ fn path_before(tokens: &[fallc_lexer::Token], index: usize) -> Option<String> {
     while start >= 2 {
         let dot = tokens.get(start - 1)?;
         let previous = tokens.get(start - 2)?;
-        if !matches!(dot.kind, fallc_lexer::TokenKind::Punct(fallc_lexer::Punctuation::Dot))
-            || !matches!(previous.kind, fallc_lexer::TokenKind::Ident)
+        if !matches!(
+            dot.kind,
+            fallc_lexer::TokenKind::Punct(fallc_lexer::Punctuation::Dot)
+        ) || !matches!(previous.kind, fallc_lexer::TokenKind::Ident)
         {
             break;
         }
@@ -350,7 +359,10 @@ fn path_after(tokens: &[fallc_lexer::Token], start: usize) -> Option<(String, us
         let Some(dot) = tokens.get(index + 1) else {
             break;
         };
-        if !matches!(dot.kind, fallc_lexer::TokenKind::Punct(fallc_lexer::Punctuation::Dot)) {
+        if !matches!(
+            dot.kind,
+            fallc_lexer::TokenKind::Punct(fallc_lexer::Punctuation::Dot)
+        ) {
             break;
         }
         index += 2;
@@ -372,9 +384,9 @@ fn written_reexports(tokens: &[fallc_lexer::Token]) -> Vec<(String, Option<Vec<S
         // `@export from M import ..`; both publish the same names.
         let attribute = matches!(tokens[index].kind, TokenKind::Punct(Punctuation::At));
         let export_at = if attribute { index + 1 } else { index };
-        let export = tokens
-            .get(export_at)
-            .is_some_and(|token| token.kind == TokenKind::Ident && token.spelling() == Some("export"));
+        let export = tokens.get(export_at).is_some_and(|token| {
+            token.kind == TokenKind::Ident && token.spelling() == Some("export")
+        });
         let from = tokens
             .get(export_at + 1)
             .is_some_and(|token| matches!(token.kind, TokenKind::Keyword(Keyword::From)));
@@ -466,7 +478,10 @@ fn imported_macros(
         for definition in module_macros(session, &module, importer, search_path, visited, cache) {
             // A name imported along two paths is one name; the first module
             // that publishes it wins, as it does for every other member.
-            if !macros.iter().any(|existing| existing.name == definition.name) {
+            if !macros
+                .iter()
+                .any(|existing| existing.name == definition.name)
+            {
                 macros.push(definition.clone());
             }
             // The same definition is also reachable through the module that
@@ -546,7 +561,10 @@ fn module_macros(
         let Some(definition) = details.get(name.as_str()).copied() else {
             continue;
         };
-        if exported.iter().any(|existing| existing.name == definition.name) {
+        if exported
+            .iter()
+            .any(|existing| existing.name == definition.name)
+        {
             continue;
         }
         exported.push(definition.clone());
@@ -558,7 +576,11 @@ fn module_macros(
             let wanted = selection
                 .as_ref()
                 .is_none_or(|names| names.contains(&definition.name));
-            if wanted && !exported.iter().any(|existing| existing.name == definition.name) {
+            if wanted
+                && !exported
+                    .iter()
+                    .any(|existing| existing.name == definition.name)
+            {
                 exported.push(definition);
             }
         }
@@ -573,10 +595,8 @@ fn macro_references(body: &[fallc_lexer::Token]) -> Vec<String> {
     use fallc_lexer::{Punctuation, TokenKind};
     let mut names = Vec::new();
     for window in body.windows(2) {
-        if matches!(
-            window[0].kind,
-            TokenKind::Punct(Punctuation::Dollar)
-        ) && matches!(window[1].kind, TokenKind::Ident)
+        if matches!(window[0].kind, TokenKind::Punct(Punctuation::Dollar))
+            && matches!(window[1].kind, TokenKind::Ident)
             && let Some(text) = window[1].spelling()
         {
             names.push(text.to_owned());
@@ -584,7 +604,6 @@ fn macro_references(body: &[fallc_lexer::Token]) -> Vec<String> {
     }
     names
 }
-
 
 /// Prints the resident size under `FALLC_STAGES`, for finding what a module's
 /// check actually costs.
@@ -594,7 +613,11 @@ fn report_rss(label: &str, module: &str) {
     }
     let resident = std::fs::read_to_string("/proc/self/statm")
         .ok()
-        .and_then(|text| text.split_whitespace().nth(1).and_then(|p| p.parse::<u64>().ok()))
+        .and_then(|text| {
+            text.split_whitespace()
+                .nth(1)
+                .and_then(|p| p.parse::<u64>().ok())
+        })
         .map(|p| p * 4096 / (1024 * 1024))
         .unwrap_or(0);
     eprintln!("    {module:<32} {label:<24} {resident:>5} MB");
@@ -684,7 +707,11 @@ pub(super) fn load_imports(
         if std::env::var_os("FALLC_STAGES").is_some() {
             let resident = std::fs::read_to_string("/proc/self/statm")
                 .ok()
-                .and_then(|text| text.split_whitespace().nth(1).and_then(|p| p.parse::<u64>().ok()))
+                .and_then(|text| {
+                    text.split_whitespace()
+                        .nth(1)
+                        .and_then(|p| p.parse::<u64>().ok())
+                })
                 .map(|p| p * 4096 / (1024 * 1024))
                 .unwrap_or(0);
             eprintln!(
@@ -813,10 +840,8 @@ fn stamp_cache_hashes(
             name.hash(&mut hasher);
             return hasher.finish();
         }
-        let mut parts: Vec<(String, u64)> = vec![(
-            name.to_owned(),
-            own.get(name).copied().unwrap_or_default(),
-        )];
+        let mut parts: Vec<(String, u64)> =
+            vec![(name.to_owned(), own.get(name).copied().unwrap_or_default())];
         if let Some(dependencies) = module_imports.get(name) {
             for dependency in dependencies {
                 parts.push((
@@ -839,7 +864,13 @@ fn stamp_cache_hashes(
         hash
     }
     for body in bodies.iter_mut() {
-        body.cache_hash = closure(&body.module.clone(), &own, module_imports, &mut memo, &mut visiting);
+        body.cache_hash = closure(
+            &body.module.clone(),
+            &own,
+            module_imports,
+            &mut memo,
+            &mut visiting,
+        );
     }
 }
 
@@ -944,11 +975,7 @@ pub(super) fn register_imported_enums(
     enums: &[(String, fallc_sema::ExportEnum)],
 ) {
     for (name, exported) in enums {
-        checker.add_imported_enum(
-            name.clone(),
-            exported.base.as_ref(),
-            &exported.members,
-        );
+        checker.add_imported_enum(name.clone(), exported.base.as_ref(), &exported.members);
     }
 }
 
@@ -1266,7 +1293,8 @@ pub(super) fn load_module(
             bodies,
             module_imports,
             mode,
-            macro_cache,        ) else {
+            macro_cache,
+        ) else {
             continue;
         };
         // Only `export from` re-exports. A plain `from M import *` brings the
@@ -1299,9 +1327,21 @@ pub(super) fn load_module(
     // `name()` returns `String`, which comes from `std.string`. A signature is
     // filed by its types, so both have to resolve to the same nominal type the
     // definition does, fields included.
-    // A declared type's name, its fields' names and written types, and whether
-    // it is a union.
-    type WrittenType = (String, Vec<(String, fallc_ast::TypeSyntax)>, bool);
+    // A declared type's name, its fields' names and written types, whether it is
+    // a union, and -- for a family -- its template parameters.
+    //
+    // The parameters are here because this list is what a signature written
+    // against the type is resolved with. Leaving them out made a family a plain
+    // name on this side: `H30<int, int>` resolved to the bare `H30`, the
+    // argument list was gone, and a method's `@enable_if` -- which folds against
+    // the receiver's own arguments -- had nothing to fold and removed the
+    // method. The declaring module keeps them, so the importer has to as well.
+    type WrittenType = (
+        String,
+        Vec<(String, fallc_ast::TypeSyntax)>,
+        bool,
+        Vec<fallc_ast::TemplateParam>,
+    );
     let mut written: Vec<WrittenType> = Vec::new();
     for &item in &parsed_ast.items {
         if let fallc_ast::ItemKind::TypeDeclaration(declaration) = &parsed_ast.item(item).kind {
@@ -1313,12 +1353,13 @@ pub(super) fn load_module(
                     .map(|field| (field.name.clone(), field.ty.clone()))
                     .collect(),
                 matches!(declaration.kind, fallc_ast::TypeDeclKind::Union),
+                declaration.template_params.clone(),
             ));
         }
     }
     for dependency in direct_imports.iter().filter_map(|name| imported.get(name)) {
         for (type_name, ty) in &dependency.types {
-            if written.iter().any(|(name, _, _)| name == type_name) {
+            if written.iter().any(|(name, _, _, _)| name == type_name) {
                 continue;
             }
             written.push((
@@ -1328,6 +1369,7 @@ pub(super) fn load_module(
                     .map(|field| (field.name.clone(), field.ty.clone()))
                     .collect(),
                 ty.is_union,
+                ty.template_params.clone(),
             ));
         }
     }
@@ -1338,7 +1380,7 @@ pub(super) fn load_module(
     // with the definition about its shape.
     let names: Vec<fallc_sema::NominalType> = written
         .iter()
-        .map(|(name, _, is_union)| fallc_sema::NominalType {
+        .map(|(name, _, is_union, _)| fallc_sema::NominalType {
             name: name.clone(),
             fields: Vec::new(),
             mutable_fields: Vec::new(),
@@ -1361,7 +1403,7 @@ pub(super) fn load_module(
     // `register_imported_types`.
     for _ in 0..4 {
         let previous = known.clone();
-        for (index, (_, fields, _)) in written.iter().enumerate() {
+        for (index, (_, fields, _, _)) in written.iter().enumerate() {
             known[index].fields = fields
                 .iter()
                 .map(|(field, ty)| {
@@ -1675,8 +1717,7 @@ pub(super) fn load_module(
         // another module's family under the same symbol -- `Box<int>` from
         // `std.memory` and a module's own `Box<int>` mangle alike -- and the
         // wrong declaration then met the body.
-        let mut reachable: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut reachable: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut pending_names: Vec<String> = direct_imports.clone();
         while let Some(dependency) = pending_names.pop() {
             if !reachable.insert(dependency.clone()) {
@@ -1707,7 +1748,10 @@ pub(super) fn load_module(
                             function: function.clone(),
                             attrs: body.ast.item(*item).attrs.clone(),
                             environment: Some(std::rc::Rc::clone(&body.environment)),
-                            bindings: super::module_variable_bindings(&body.ast, &body.binding_types),
+                            bindings: super::module_variable_bindings(
+                                &body.ast,
+                                &body.binding_types,
+                            ),
                         },
                     );
                 }
@@ -1750,8 +1794,8 @@ pub(super) fn load_module(
             }
         }
         report_rss("pre-check", name);
-    let checked = checker.check(&parsed_ast, &resolutions);
-    report_rss("checked", name);
+        let checked = checker.check(&parsed_ast, &resolutions);
+        report_rss("checked", name);
         session.report_all(checked.diagnostics.clone());
         // Every module-level constant, already folded by the module's own
         // check -- which is where the tree its expression ids belong to was in
@@ -1805,7 +1849,11 @@ pub(super) fn load_module(
         if std::env::var_os("FALLC_STAGES").is_some() {
             let resident = std::fs::read_to_string("/proc/self/statm")
                 .ok()
-                .and_then(|text| text.split_whitespace().nth(1).and_then(|p| p.parse::<u64>().ok()))
+                .and_then(|text| {
+                    text.split_whitespace()
+                        .nth(1)
+                        .and_then(|p| p.parse::<u64>().ok())
+                })
                 .map(|p| p * 4096 / (1024 * 1024))
                 .unwrap_or(0);
             eprintln!(
@@ -1863,7 +1911,9 @@ pub(super) fn load_module(
                 // overloads of one name are two entries under two *different*
                 // keys only when their parameters differ -- which is exactly
                 // what the symbol distinguishes.
-                externals.entry(qualified.clone()).or_insert_with(|| external.clone());
+                externals
+                    .entry(qualified.clone())
+                    .or_insert_with(|| external.clone());
                 externals.insert(format!("{qualified}#{}", external.symbol), external);
             }
         }
@@ -2061,11 +2111,11 @@ pub(super) fn install_imports(
     let mut requested = direct.to_vec();
     requested.sort();
     let register = |resolver: &mut fallc_sema::Resolver,
-                        module_names: &mut Vec<String>,
-                        registered: &mut std::collections::HashMap<String, String>,
-                        module: &str,
-                        key: String,
-                        short: bool| {
+                    module_names: &mut Vec<String>,
+                    registered: &mut std::collections::HashMap<String, String>,
+                    module: &str,
+                    key: String,
+                    short: bool| {
         match registered.get(&key) {
             Some(existing) if existing != module => {
                 // A transitive module may not take a name the file asked for;
@@ -2085,9 +2135,23 @@ pub(super) fn install_imports(
         let _ = short;
     };
     for (module, _path) in &requested {
-        register(resolver, &mut module_names, &mut registered, module, module.clone(), false);
+        register(
+            resolver,
+            &mut module_names,
+            &mut registered,
+            module,
+            module.clone(),
+            false,
+        );
         if let Some((_, last)) = module.rsplit_once('.') {
-            register(resolver, &mut module_names, &mut registered, module, last.to_owned(), true);
+            register(
+                resolver,
+                &mut module_names,
+                &mut registered,
+                module,
+                last.to_owned(),
+                true,
+            );
         }
     }
     // Then everything else by its full name, so that a module reached through
@@ -2097,7 +2161,14 @@ pub(super) fn install_imports(
     loaded.sort();
     let mut all_names: Vec<String> = Vec::new();
     for name in loaded {
-        register(resolver, &mut module_names, &mut registered, name, name.clone(), false);
+        register(
+            resolver,
+            &mut module_names,
+            &mut registered,
+            name,
+            name.clone(),
+            false,
+        );
         // The *checker* knows every module by its last segment as well: a
         // body instantiated in this unit was written in another module and
         // says `util.move(..)`, so `util` has to be a module name here even
@@ -2141,4 +2212,3 @@ pub(super) fn module_keys(name: &str) -> Vec<String> {
     }
     keys
 }
-

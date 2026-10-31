@@ -16,3 +16,6 @@ scratch/
 
 # Cooperative file locks for parallel agents.
 .locks/
+
+# Scratch programs written while checking the compiler by hand.
+.tmp/

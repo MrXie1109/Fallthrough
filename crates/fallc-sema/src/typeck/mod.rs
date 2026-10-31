@@ -251,7 +251,9 @@ fn literal_condition(ast: &Ast, condition: fallc_ast::ExprId) -> Option<bool> {
         fallc_ast::ExprKind::BoolLiteral(value) => Some(*value),
         fallc_ast::ExprKind::IntLiteral(literal) => {
             let text = literal.digits.replace('_', "");
-            let (radix, digits) = if let Some(rest) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+            let (radix, digits) = if let Some(rest) =
+                text.strip_prefix("0x").or_else(|| text.strip_prefix("0X"))
+            {
                 (16, rest)
             } else if let Some(rest) = text.strip_prefix("0o").or_else(|| text.strip_prefix("0O")) {
                 (8, rest)
@@ -261,7 +263,9 @@ fn literal_condition(ast: &Ast, condition: fallc_ast::ExprId) -> Option<bool> {
                 (10, text.as_str())
             };
             // A literal too large for `u64` is not something to guess about.
-            u64::from_str_radix(digits, radix).ok().map(|value| value != 0)
+            u64::from_str_radix(digits, radix)
+                .ok()
+                .map(|value| value != 0)
         }
         _ => None,
     }
@@ -367,8 +371,7 @@ fn round_up(value: i64, alignment: i64) -> i64 {
 fn is_rvalue_reference_syntax(ty: &fallc_ast::TypeSyntax) -> bool {
     matches!(
         ty,
-        fallc_ast::TypeSyntax::RvalueReference(_)
-            | fallc_ast::TypeSyntax::ConstRvalueReference(_)
+        fallc_ast::TypeSyntax::RvalueReference(_) | fallc_ast::TypeSyntax::ConstRvalueReference(_)
     )
 }
 
@@ -1434,6 +1437,13 @@ pub struct TypeCheckResult {
     /// fell back to searching every known symbol for a match -- guesswork
     /// rather than resolution.
     pub method_calls: std::collections::HashMap<Span, String>,
+    /// The parameters and answer of each coroutine member a program calls.
+    ///
+    /// `resume` and `result` are the compiler's, so they are not declared in the
+    /// library and have no instantiation to read a signature from. What the call
+    /// is is decided by the coroutine's own three types, and it is recorded here
+    /// so that code generation builds the same call the checker resolved.
+    pub coroutine_calls: std::collections::HashMap<Span, (Vec<Type>, Type)>,
     /// The `__deref__` or `__pointer__` call a member call makes first, for a
     /// receiver reached through an indirection.
     pub indirect_receivers: std::collections::HashMap<Span, String>,
@@ -1534,8 +1544,7 @@ pub struct TypeChecker {
     /// declaration arrived without `alignas`: the alignment is an expression in
     /// the declaring module's tree, so what travels is the number, keyed by the
     /// family's name and read when the member is built.
-    imported_field_alignments:
-        std::collections::HashMap<String, Vec<(String, u64)>>,
+    imported_field_alignments: std::collections::HashMap<String, Vec<(String, u64)>>,
     /// The declaration tables of the modules whose template bodies are being
     /// checked, innermost last.
     type_environments: Vec<std::rc::Rc<TypeEnvironment>>,
@@ -1955,10 +1964,8 @@ pub struct TypeChecker {
     default_values: std::collections::HashMap<fallc_span::Span, i64>,
     /// The constant arguments each call fills its omitted parameters with, by
     /// the call's span.
-    default_arguments: std::collections::HashMap<
-        fallc_span::Span,
-        Vec<(usize, i64, crate::types::Type)>,
-    >,
+    default_arguments:
+        std::collections::HashMap<fallc_span::Span, Vec<(usize, i64, crate::types::Type)>>,
     /// The defaults left to an expression, by the call's span.
     default_expressions: ExpressionDefaults,
     /// The type suffix of each literal, `None` where none was written.
@@ -1982,31 +1989,113 @@ pub struct TypeChecker {
     /// two functions are being checked at once. Functions are only ever
     /// declared at the top level.
     return_types: Vec<(String, Type)>,
+    /// The `@coroutine` functions being checked, innermost last.
+    ///
+    /// A stack for the same reason `return_types` is one: a coroutine may be a
+    /// template, and instantiating it checks its body inside the caller's. An
+    /// empty stack means no coroutine surrounds the expression being checked,
+    /// which is what makes `yield` outside one an error.
+    ///
+    /// The three types are the coroutine's `Send`, `Yield` and `Return` -- read
+    /// off the declared `std.Coroutine<S, Y, R>` return type, never re-derived
+    /// from the body. `yield` produces the `Send` the resumer sent and takes the
+    /// `Yield` the coroutine hands back, and looking either one up again would
+    /// be the same rule written twice.
+    coroutines: Vec<CoroutineShape>,
+    /// The names of the `@coroutine` functions this check has seen.
+    ///
+    /// Calling one creates a coroutine and returns it; the body does not run.
+    /// So a call never raises, whatever the body may do -- the body's failures
+    /// leave through `resume` or `result`, which is where a caller asks for
+    /// them.
+    coroutine_functions: std::collections::HashSet<String>,
+    /// The parameters and answer of each coroutine member this check resolved.
+    ///
+    /// `resume` and `result` are the compiler's members, so no declaration in a
+    /// module gives them a signature: what a call is comes from the coroutine's
+    /// own three types. Recording it here is what lets code generation build the
+    /// same call the checker resolved.
+    coroutine_calls: std::collections::HashMap<Span, (Vec<Type>, Type)>,
 }
 
+/// What a `@coroutine` function's declaration fixes about its body.
+#[derive(Clone, Debug)]
+pub(super) struct CoroutineShape {
+    /// The name of the function, for diagnostics.
+    pub name: String,
+    /// What `resume` hands to the body, and what `yield` produces.
+    pub send: Type,
+    /// What `yield` hands back to the resumer, and what `resume` produces.
+    pub yield_ty: Type,
+    /// What `c.result()` produces when the body returns.
+    pub return_ty: Type,
+}
+
+impl CoroutineShape {
+    /// The three types of a `std.Coroutine<S, Y, R>` return type.
+    ///
+    /// The answer is read from the *type*, not from the spelling: a member of a
+    /// family carries the family it came from and the arguments that made it,
+    /// so the three types are those arguments and nothing is parsed back out of
+    /// a string. `None` means the declaration is not a coroutine's.
+    pub(super) fn from_return(return_ty: &Type) -> Option<Self> {
+        let Type::Nominal(nominal) = return_ty.unqualified() else {
+            return None;
+        };
+        let (family, arguments) = nominal.template_arguments.as_ref()?;
+        // `std.Coroutine` and a library that writes `Coroutine` name the same
+        // family; the last segment is the name the declaration was written
+        // with.
+        let bare = family
+            .rsplit_once('.')
+            .map_or(family.as_str(), |(_, last)| last);
+        if bare != "Coroutine" || arguments.0.len() != 3 {
+            return None;
+        }
+        let mut types = Vec::with_capacity(3);
+        for argument in &arguments.0 {
+            let crate::template::TemplateArgument::Type(ty) = argument else {
+                return None;
+            };
+            types.push(ty.clone());
+        }
+        Some(Self {
+            name: String::new(),
+            send: types[0].clone(),
+            yield_ty: types[1].clone(),
+            return_ty: types[2].clone(),
+        })
+    }
+
+    /// The three types of a coroutine value's type, when the value is one.
+    ///
+    /// The same reading `from_return` does, applied to a *value*: a receiver
+    /// written `&Coroutine<..>` is the coroutine behind the reference.
+    pub(super) fn of(ty: &Type) -> Option<Self> {
+        Self::from_return(ty.referent().unwrap_or(ty))
+    }
+}
 
 mod attributes;
 
 pub use attributes::deprecated_message;
 mod calls;
+mod expressions;
 mod interfaces;
 mod lambdas;
-mod expressions;
 mod methods;
-mod packs;
 mod operators;
+mod packs;
 mod setup;
 mod statements;
 mod templates;
 mod types;
-
 
 impl Default for TypeChecker {
     fn default() -> Self {
         TypeChecker::new(64)
     }
 }
-
 
 /// The symbol a templated function is registered under.
 ///
@@ -2036,27 +2125,25 @@ pub fn template_symbol_of(name: &str, params: &[fallc_ast::TypeSyntax]) -> Strin
 pub fn unspecified_signature_type(ty: &fallc_ast::TypeSyntax) -> crate::types::Type {
     use crate::types::Type;
     use fallc_ast::TypeSyntax;
-    let pointer = |inner: &TypeSyntax, pointee_is_const: bool, pointer_is_const: bool| {
-        Type::Pointer {
+    let pointer =
+        |inner: &TypeSyntax, pointee_is_const: bool, pointer_is_const: bool| Type::Pointer {
             pointee: Box::new(unspecified_signature_type(inner)),
             pointee_is_const,
             pointer_is_const,
-        }
-    };
-    let reference = |inner: &TypeSyntax, referent_is_const: bool, is_rvalue: bool| Type::Reference {
-        referent: Box::new(unspecified_signature_type(inner)),
-        referent_is_const,
-        is_rvalue,
-    };
+        };
+    let reference =
+        |inner: &TypeSyntax, referent_is_const: bool, is_rvalue: bool| Type::Reference {
+            referent: Box::new(unspecified_signature_type(inner)),
+            referent_is_const,
+            is_rvalue,
+        };
     match ty {
         TypeSyntax::Named(named) => Type::from_name(&named.path)
             .unwrap_or_else(|| Type::unspecified(named.path.clone(), named.span)),
         TypeSyntax::Auto(span) => Type::unspecified("auto", *span),
         // A nested type is named through its outer one, which a module reading
         // a written signature cannot resolve; the checker that did knows.
-        TypeSyntax::Member(member) => {
-            Type::unspecified(member.name.clone(), member.span)
-        }
+        TypeSyntax::Member(member) => Type::unspecified(member.name.clone(), member.span),
         TypeSyntax::Pointer(inner) => pointer(inner, false, false),
         TypeSyntax::PointerToConst(inner) => pointer(inner, true, false),
         TypeSyntax::ConstPointer(inner) => pointer(inner, false, true),
@@ -2064,15 +2151,11 @@ pub fn unspecified_signature_type(ty: &fallc_ast::TypeSyntax) -> crate::types::T
         TypeSyntax::ConstReference(inner) => reference(inner, true, false),
         TypeSyntax::RvalueReference(inner) => reference(inner, false, true),
         TypeSyntax::ConstRvalueReference(inner) => reference(inner, true, true),
-        TypeSyntax::Volatile(inner) => {
-            Type::Volatile(Box::new(unspecified_signature_type(inner)))
-        }
+        TypeSyntax::Volatile(inner) => Type::Volatile(Box::new(unspecified_signature_type(inner))),
         TypeSyntax::Const(inner) => Type::Const(Box::new(unspecified_signature_type(inner))),
         // The type an expression has is known to the checker that asked, and
         // not to a module reading the written form.
-        TypeSyntax::TypeOf(node) => {
-            Type::unspecified("type(..)".to_owned(), node.span)
-        }
+        TypeSyntax::TypeOf(node) => Type::unspecified("type(..)".to_owned(), node.span),
         TypeSyntax::DecltypeAuto(span) => Type::unspecified("type(auto)".to_owned(), *span),
         // `[]T` in a parameter list is `*T`, and `[]const T` is `*const T` --
         // the same rule `resolve_type_syntax` applies. The two must agree:

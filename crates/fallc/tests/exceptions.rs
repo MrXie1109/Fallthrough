@@ -114,7 +114,10 @@ fn main() int {
     assert!(output.contains("ok 6"), "{output}");
     assert!(output.contains("caught ValueError: negative"), "{output}");
     assert!(!output.contains("never"), "{output}");
-    assert!(!output.contains("bad "), "the call ran past the raise:\n{output}");
+    assert!(
+        !output.contains("bad "),
+        "the call ran past the raise:\n{output}"
+    );
 }
 
 #[test]
@@ -137,7 +140,10 @@ fn main() int {
 "#;
     let scratch = Scratch::new("no-message");
     let output = scratch.run("no-message", source);
-    assert!(output.contains("name [ZeroError] what [] len 0"), "{output}");
+    assert!(
+        output.contains("name [ZeroError] what [] len 0"),
+        "{output}"
+    );
 }
 
 #[test]
@@ -261,7 +267,10 @@ fn main() int {
     let scratch = Scratch::new("propagate");
     let output = scratch.run("propagate", source);
     assert!(output.contains("value 5"), "{output}");
-    assert!(output.contains("main saw DeepError: from inner"), "{output}");
+    assert!(
+        output.contains("main saw DeepError: from inner"),
+        "{output}"
+    );
     // The `try` in `middle` catches the re-raise `??` produced, and its
     // handler raises again to pass it on.
     assert!(output.contains("middle caught -1"), "{output}");
@@ -522,14 +531,21 @@ fn main() int except {
         executable.display().to_string(),
     ];
     let options = Options::parse(&args).expect("the arguments are well formed");
-    assert_eq!(run(&options), std::process::ExitCode::SUCCESS, "did not compile");
+    assert_eq!(
+        run(&options),
+        std::process::ExitCode::SUCCESS,
+        "did not compile"
+    );
     let output = std::process::Command::new(&executable)
         .output()
         .expect("the program can be run");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("before"), "{stdout}");
-    assert!(stderr.contains("uncaught exception: Boom: from main"), "{stderr}");
+    assert!(
+        stderr.contains("uncaught exception: Boom: from main"),
+        "{stderr}"
+    );
     assert_eq!(output.status.code(), Some(70), "{output:?}");
 }
 
@@ -693,7 +709,10 @@ fn main() int {
     let scratch = Scratch::new("throwing-operator");
     let output = scratch.run("throwing-operator", source);
     assert!(output.contains("90"), "{output}");
-    assert!(output.contains("caught OverflowError: too large"), "{output}");
+    assert!(
+        output.contains("caught OverflowError: too large"),
+        "{output}"
+    );
     assert!(!output.contains("never"), "{output}");
 }
 
@@ -774,11 +793,18 @@ fn an_uncaught_exception_without_a_message_prints_only_the_name() {
         executable.display().to_string(),
     ];
     let options = Options::parse(&args).expect("the arguments are well formed");
-    assert_eq!(run(&options), std::process::ExitCode::SUCCESS, "did not compile");
+    assert_eq!(
+        run(&options),
+        std::process::ExitCode::SUCCESS,
+        "did not compile"
+    );
     let output = std::process::Command::new(&executable)
         .output()
         .expect("the program can be run");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "uncaught exception: Boom\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "uncaught exception: Boom\n"
+    );
     assert_eq!(output.status.code(), Some(70), "{output:?}");
 }
 
@@ -798,7 +824,11 @@ fn the_exception_runtime_comes_without_an_import() {
         executable.display().to_string(),
     ];
     let options = Options::parse(&args).expect("the arguments are well formed");
-    assert_eq!(run(&options), std::process::ExitCode::SUCCESS, "did not compile");
+    assert_eq!(
+        run(&options),
+        std::process::ExitCode::SUCCESS,
+        "did not compile"
+    );
     let output = std::process::Command::new(&executable)
         .output()
         .expect("the program can be run");
@@ -843,7 +873,8 @@ fn main() int except {
     return risky()??;
 }
 "#;
-    let (outcome, printed) = fallc::pipeline::compile_text("quiet.ft", source, &[fallc::cli::EmitKind::Llvm]);
+    let (outcome, printed) =
+        fallc::pipeline::compile_text("quiet.ft", source, &[fallc::cli::EmitKind::Llvm]);
     assert_eq!(outcome, fallc::Outcome::Success, "{printed}");
     assert!(!printed.contains("S0083"), "{printed}");
 }
@@ -925,7 +956,10 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("assign-through-ref");
-    assert_eq!(scratch.run("assign_ref", source), "caught AssignFailed\n1\n");
+    assert_eq!(
+        scratch.run("assign_ref", source),
+        "caught AssignFailed\n1\n"
+    );
 }
 
 #[test]
@@ -1019,14 +1053,8 @@ fn main() int except {
 "#;
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("`noisy` may raise"),
-        "{diagnostics}"
-    );
-    assert!(
-        diagnostics.contains("`louder` may raise"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("`noisy` may raise"), "{diagnostics}");
+    assert!(diagnostics.contains("`louder` may raise"), "{diagnostics}");
 }
 
 #[test]

@@ -1,12 +1,12 @@
-# 05 Statements
+# 06 Statements
 
-> [中文](05-statements.zh.md)
+> [中文](06-statements.zh.md)
 
 ## Scope
 
 This volume specifies the forms and semantics of statements: blocks, conditions, loops
 (including the range form), `switch`, jumps, deferred blocks and compile-time
-assertions. Statements related to exceptions are given in [06 Exceptions](06-exceptions.md).
+assertions. Statements related to exceptions are given in [06 Exceptions](07-exceptions.md).
 
 ## Statement forms
 
@@ -100,7 +100,7 @@ other position is an error.
 
 3.2.7 Where a value is wanted, an `if` with both branches is itself the value: each branch
 is a block, and what it gives is what the `if` gives
-(see [09 Scopes §2.2](09-scopes.md#scopes)). Both branches **must** give the same type, and
+(see [09 Scopes §2.2](10-scopes.md#scopes)). Both branches **must** give the same type, and
 an `if` without `else` gives no value. A conditional expression `cond ? a : b` says the same
 thing when both sides are single expressions.
 
@@ -146,7 +146,7 @@ as a variable that is never read, does not.
 
 3.4.3 `if (auto) @constexpr` is the way to ask whether a *block* compiles, as
 `@meta.compilable(T)` asks whether a *name* does
-(see [07 Expressions §7.9](07-expressions.md#compile-time-queries)).
+(see [07 Expressions §7.9](08-expressions.md#compile-time-queries)).
 
 ```ft
 import C;

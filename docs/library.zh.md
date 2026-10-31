@@ -426,7 +426,7 @@ os.arch();                // "x86_64" / "aarch64"：同上
 ## 跨平台
 
 同一份接口、每平台一份实现：文件命名成 `名字.<平台>.ftm`，加载器按目标平台优先读它
-（见 [08 模块](language/08-modules.zh.md#模块在哪里找)）。线程、互斥量、条件变量在 `std/internal/sync_sys.ftm`（glibc）、`std/internal/sync_sys.macos.ftm`
+（见 [09 模块](language/09-modules.zh.md#模块在哪里找)）。线程、互斥量、条件变量在 `std/internal/sync_sys.ftm`（glibc）、`std/internal/sync_sys.macos.ftm`
 （Darwin，互斥量要 `pthread_mutex_init`，零字节不是初始值）与
 `std/internal/sync_sys.windows.ftm`（Windows，SRW 锁 + 条件变量 + `CreateThread`）之间切换；系统熵源在 `std/internal/random_entropy.ftm` /
 `std/internal/random_entropy.windows.ftm`；进程与环境在 `std/internal/os_sys.ftm` / `std/internal/os_sys.macos.ftm` /
@@ -929,7 +929,7 @@ if ($meta.WINDOWS) @constexpr { ... } else { ... }
 
 宏在解析前展开，所以能出现在任何记号位置；它们由编译器的内建宏（`$__builtin_FILE` 等）
 包装而来，实现细节不在语言里。平台相关的库实现放在 `名字.平台.ftm` 文件里，加载器
-按目标平台优先选择它，见 [08 模块](language/08-modules.zh.md#模块在哪里找)。
+按目标平台优先选择它，见 [09 模块](language/09-modules.zh.md#模块在哪里找)。
 
 ## 限制
 

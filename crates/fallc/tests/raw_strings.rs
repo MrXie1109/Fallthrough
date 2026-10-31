@@ -106,7 +106,6 @@ fn main() int {
     return 0;
 }
 "#;
-    let (outcome, printed) =
-        compile_text("t.ft", source, &[fallc::cli::EmitKind::Llvm]);
+    let (outcome, printed) = compile_text("t.ft", source, &[fallc::cli::EmitKind::Llvm]);
     assert_eq!(outcome, fallc::Outcome::Success, "{printed}");
 }

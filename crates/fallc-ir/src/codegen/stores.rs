@@ -648,6 +648,27 @@ impl<'ctx> Lowerer<'ctx> {
         assign: &AssignExpr,
         span: fallc_span::Span,
     ) -> Result<Option<BasicValueEnum<'static>>, CodegenError> {
+        // Inside a coroutine a `yield` in the value splits the machine into
+        // blocks: a load or an address taken before the suspension does not
+        // dominate a use after it. The value is produced first -- that is what
+        // suspends the machine -- and the assignment itself is then lowered in
+        // the block the machine resumed in, through the same path as any other
+        // assignment: a type that defines `__assign__` still gets that call, and
+        // one that does not is still copied member by member.
+        let suspends = self.coroutine.is_some() && contains_yield(ast, assign.value);
+        let yielded: Option<BasicValueEnum<'static>> = if suspends {
+            Some(
+                self.lower_expr(ast, types, builder, assign.value)?
+                    .ok_or_else(|| {
+                        CodegenError::waiting_for_spec(
+                            "the value this `yield` produces",
+                            ast.expr(assign.value).span,
+                        )
+                    })?,
+            )
+        } else {
+            None
+        };
         let Some(binding) = self.lower_lvalue(ast, types, builder, assign.target) else {
             return Err(CodegenError::waiting_for_spec(
                 "assigning to this expression",
@@ -680,7 +701,17 @@ impl<'ctx> Lowerer<'ctx> {
             && let Some(symbol) = self.assign_methods.get(&span).cloned()
         {
             let function = self.resolved_function(&symbol, "`__assign__`", span)?;
-            let value = self.lower_argument(ast, types, builder, assign.value, span)?;
+            let value = match yielded {
+                // A value the machine produced before it suspended is already a
+                // value; `__assign__` takes it by address when its parameter is
+                // an aggregate, so it is stored where a lowered argument would
+                // have been.
+                Some(yielded) => self
+                    .store_temporary(builder, yielded, "assign.value")?
+                    .as_basic_value_enum()
+                    .into(),
+                None => self.lower_argument(ast, types, builder, assign.value, span)?,
+            };
             let call = builder
                 .build_call(function, &[binding.storage.into(), value], "assign")
                 .map_err(|error| CodegenError::Emit(error.to_string()))?;
@@ -709,7 +740,10 @@ impl<'ctx> Lowerer<'ctx> {
                                 CodegenError::waiting_for_spec("this pointer's type", span)
                             })?;
                         let pointee = pointer_ty.pointee().cloned().ok_or_else(|| {
-                            CodegenError::waiting_for_spec("a compound assignment on a non-pointer", span)
+                            CodegenError::waiting_for_spec(
+                                "a compound assignment on a non-pointer",
+                                span,
+                            )
                         })?;
                         let current = builder
                             .build_load(binding.ty, binding.storage, "current")
@@ -722,9 +756,7 @@ impl<'ctx> Lowerer<'ctx> {
                         };
                         let offset = self
                             .lower_expr(ast, types, builder, assign.value)?
-                            .ok_or_else(|| {
-                                CodegenError::waiting_for_spec("this offset", span)
-                            })?;
+                            .ok_or_else(|| CodegenError::waiting_for_spec("this offset", span))?;
                         let BasicValueEnum::IntValue(offset) = offset else {
                             return Err(CodegenError::waiting_for_spec(
                                 "a non-integer pointer offset",
@@ -763,46 +795,50 @@ impl<'ctx> Lowerer<'ctx> {
                     // The operand is passed as the method's parameter says: a
                     // pointer parameter takes an address, which is what makes
                     // `s += "text"` work.
-                    let value: inkwell::values::BasicMetadataValueEnum<'static> =
-                        if self.in_place_by_address.get(&span).copied().unwrap_or(false) {
-                            // A string literal is constructed into the type the
-                            // method expects, and it is that temporary's address
-                            // the parameter wants -- not the character array the
-                            // literal itself is.
-                            if let Some(symbol) = self
-                                .literal_constructions
-                                .get(&ast.expr(assign.value).span)
-                                .cloned()
-                            {
-                                self.lower_literal_construction(
-                                    ast,
-                                    types,
-                                    builder,
-                                    assign.value,
-                                    &symbol,
-                                    span,
-                                )?
-                                .as_basic_value_enum()
-                                .into()
-                            } else {
-                                let lowered = self
-                                    .lower_expr(ast, types, builder, assign.value)?
-                                    .ok_or_else(|| {
-                                        CodegenError::waiting_for_spec("this operand", span)
-                                    })?;
-                                match lowered {
-                                    BasicValueEnum::PointerValue(pointer) => {
-                                        pointer.as_basic_value_enum().into()
-                                    }
-                                    value => self
-                                        .store_temporary(builder, value, "operand")?
-                                        .as_basic_value_enum()
-                                        .into(),
-                                }
-                            }
+                    let value: inkwell::values::BasicMetadataValueEnum<'static> = if self
+                        .in_place_by_address
+                        .get(&span)
+                        .copied()
+                        .unwrap_or(false)
+                    {
+                        // A string literal is constructed into the type the
+                        // method expects, and it is that temporary's address
+                        // the parameter wants -- not the character array the
+                        // literal itself is.
+                        if let Some(symbol) = self
+                            .literal_constructions
+                            .get(&ast.expr(assign.value).span)
+                            .cloned()
+                        {
+                            self.lower_literal_construction(
+                                ast,
+                                types,
+                                builder,
+                                assign.value,
+                                &symbol,
+                                span,
+                            )?
+                            .as_basic_value_enum()
+                            .into()
                         } else {
-                            self.lower_adopted_argument(ast, types, builder, assign.value, span)?
-                        };
+                            let lowered = self
+                                .lower_expr(ast, types, builder, assign.value)?
+                                .ok_or_else(|| {
+                                    CodegenError::waiting_for_spec("this operand", span)
+                                })?;
+                            match lowered {
+                                BasicValueEnum::PointerValue(pointer) => {
+                                    pointer.as_basic_value_enum().into()
+                                }
+                                value => self
+                                    .store_temporary(builder, value, "operand")?
+                                    .as_basic_value_enum()
+                                    .into(),
+                            }
+                        }
+                    } else {
+                        self.lower_adopted_argument(ast, types, builder, assign.value, span)?
+                    };
                     let function = match self.backend.module().get_function(&symbol) {
                         Some(function) => function,
                         None => {
@@ -823,11 +859,7 @@ impl<'ctx> Lowerer<'ctx> {
                         }
                     };
                     let call = builder
-                        .build_call(
-                            function,
-                            &[binding.storage.into(), value],
-                            "inplace",
-                        )
+                        .build_call(function, &[binding.storage.into(), value], "inplace")
                         .map_err(|error| CodegenError::Emit(error.to_string()))?;
                     let result = self.unwrap_throwing(ast, types, builder, span, call)?;
                     // The method's result is stored back into the target, so
@@ -911,9 +943,7 @@ impl<'ctx> Lowerer<'ctx> {
                     let rhs = if method.argument_by_address {
                         let value = self
                             .lower_expr(ast, types, builder, assign.value)?
-                            .ok_or_else(|| {
-                                CodegenError::waiting_for_spec("this operand", span)
-                            })?;
+                            .ok_or_else(|| CodegenError::waiting_for_spec("this operand", span))?;
                         match value {
                             BasicValueEnum::PointerValue(pointer) => {
                                 pointer.as_basic_value_enum().into()
@@ -943,13 +973,19 @@ impl<'ctx> Lowerer<'ctx> {
         let _ = stored;
 
         let new_value = match assign.op {
-            None if aggregate_target => self
-                .lower_aggregate_source(ast, types, builder, assign.value, span)?
-                .as_basic_value_enum(),
+            None if aggregate_target => match yielded {
+                Some(yielded) => yielded,
+                None => self
+                    .lower_aggregate_source(ast, types, builder, assign.value, span)?
+                    .as_basic_value_enum(),
+            },
             None => {
-                let value = self
-                    .lower_expr(ast, types, builder, assign.value)?
-                    .ok_or_else(|| CodegenError::waiting_for_spec("this value", span))?;
+                let value = match yielded {
+                    Some(yielded) => yielded,
+                    None => self
+                        .lower_expr(ast, types, builder, assign.value)?
+                        .ok_or_else(|| CodegenError::waiting_for_spec("this value", span))?,
+                };
                 // A lossless integer promotion of the right-hand side is a
                 // conversion the checker recorded, not one the source wrote.
                 let value = self.convert_adopted(
@@ -978,9 +1014,8 @@ impl<'ctx> Lowerer<'ctx> {
                     .deref_reads
                     .get(&ast.expr(assign.target).span)
                     .cloned()
-                    .and_then(|referent| {
-                        TypeMapper::new(self.backend.context()).map(&referent)
-                    }) {
+                    .and_then(|referent| TypeMapper::new(self.backend.context()).map(&referent))
+                {
                     Some(referent_llvm) => builder
                         .build_load(referent_llvm, binding.storage, "current")
                         .map_err(|error| CodegenError::Emit(error.to_string()))?,
@@ -988,9 +1023,12 @@ impl<'ctx> Lowerer<'ctx> {
                         .build_load(binding.ty, binding.storage, "current")
                         .map_err(|error| CodegenError::Emit(error.to_string()))?,
                 };
-                let rhs = self
-                    .lower_expr(ast, types, builder, assign.value)?
-                    .ok_or_else(|| CodegenError::waiting_for_spec("this value", span))?;
+                let rhs = match yielded {
+                    Some(yielded) => yielded,
+                    None => self
+                        .lower_expr(ast, types, builder, assign.value)?
+                        .ok_or_else(|| CodegenError::waiting_for_spec("this value", span))?,
+                };
                 let operand_ty = match binding.ty {
                     inkwell::types::BasicTypeEnum::IntType(int) => {
                         if int.get_bit_width() == 1 {
@@ -1006,9 +1044,7 @@ impl<'ctx> Lowerer<'ctx> {
             }
         };
 
-        if aggregate_target
-            && let BasicValueEnum::PointerValue(source) = new_value
-        {
+        if aggregate_target && let BasicValueEnum::PointerValue(source) = new_value {
             let size = binding.ty.size_of().ok_or_else(|| {
                 CodegenError::waiting_for_spec("an aggregate of unknown size", span)
             })?;
@@ -1241,5 +1277,4 @@ impl<'ctx> Lowerer<'ctx> {
         // A postfix operator yields the value from before the change.
         Ok(Some(if incdec.postfix { previous } else { updated }))
     }
-
 }

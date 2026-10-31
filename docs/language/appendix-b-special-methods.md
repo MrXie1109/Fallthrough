@@ -5,7 +5,7 @@
 ## B.1 Scope
 
 Every special method the language calls on a fixed construct, as a table. The normative
-text is [07 Expressions §8](07-expressions.md#special-methods); this appendix is a
+text is [07 Expressions §8](08-expressions.md#special-methods); this appendix is a
 reference and creates no rule of its own.
 
 ## B.2 How to read the tables
@@ -33,13 +33,13 @@ matters it is said in the notes.
 B.2.3 `__init__` is explicit construction only; `__im_init__` also serves implicit
 initialisation. `__as__` is explicit conversion only; `__im_as__` also serves implicit
 conversion. Declaring an `im` form declares the plain one as well
-([07 Expressions §8.6](07-expressions.md#implicit-initialisation-and-implicit-conversions)).
+([07 Expressions §8.6](08-expressions.md#implicit-initialisation-and-implicit-conversions)).
 
 B.2.4 For a type to have a special method in another module, the method **must** be
-`export`ed together with the type ([08 Modules](08-modules.md#the-export-table)).
+`export`ed together with the type ([08 Modules](09-modules.md#the-export-table)).
 
 B.2.5 A method that may raise is declared `except`, and the call-site duty of
-[06 Exceptions](06-exceptions.md) then applies wherever the language calls it implicitly.
+[06 Exceptions](07-exceptions.md) then applies wherever the language calls it implicitly.
 
 ## B.3 Construction, assignment and destruction
 
@@ -160,7 +160,7 @@ B.8.3 `__as__` and `__im_as__` **must** have the selector as their second parame
 B.8.4 The operand of `__inc__`, `__dec__` and the assignment forms **must** be a place.
 
 B.8.5 Two identical nominal types are not compared member by member: a type that wants
-comparison **must** declare it ([07 Expressions §8.4](07-expressions.md#operators-and-comparison)).
+comparison **must** declare it ([07 Expressions §8.4](08-expressions.md#operators-and-comparison)).
 
 B.8.6 Special methods take part in overload resolution like any member function, so one
 type may declare several `__init__`, `__assign__` or `__as__` for different sources.

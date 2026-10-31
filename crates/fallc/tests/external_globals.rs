@@ -60,11 +60,7 @@ impl Drop for Scratch {
 
 #[test]
 fn an_external_variable_declaration_is_in_the_tree() {
-    let (outcome, tree) = compile_text(
-        "t.ft",
-        "export counter int @extern_C;\n",
-        &[EmitKind::Ast],
-    );
+    let (outcome, tree) = compile_text("t.ft", "export counter int @extern_C;\n", &[EmitKind::Ast]);
     assert_eq!(outcome, Outcome::Success, "{tree}");
     assert!(tree.contains("ExternVariable"), "{tree}");
     assert!(tree.contains("counter"), "{tree}");

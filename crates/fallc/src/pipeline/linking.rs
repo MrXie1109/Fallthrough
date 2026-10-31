@@ -68,7 +68,11 @@ pub(super) fn temporary_object_path(input: &Path) -> PathBuf {
 /// both are defined by code generation itself (see
 /// `fallc_ir::codegen::runtime`), so the link line is the objects and whatever
 /// the program asked for.
-pub(super) fn link_executable(objects: &[PathBuf], output: &Path, links: &[LinkRequest]) -> Result<(), String> {
+pub(super) fn link_executable(
+    objects: &[PathBuf],
+    output: &Path,
+    links: &[LinkRequest],
+) -> Result<(), String> {
     link_objects(objects, output, links, false)
 }
 
@@ -235,4 +239,3 @@ pub(super) fn module_name_for(path: &Path) -> String {
         .unwrap_or("main")
         .to_owned()
 }
-

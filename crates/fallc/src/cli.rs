@@ -319,16 +319,16 @@ impl Options {
                 }
                 "--no-trivia" => preserve_trivia = false,
                 "--color" => {
-                    let value = args.next().ok_or_else(|| "`--color` needs a value".to_owned())?;
-                    color = ColorChoice::parse(value).ok_or_else(|| {
-                        "`--color` takes `auto`, `always`, or `never`".to_owned()
-                    })?;
+                    let value = args
+                        .next()
+                        .ok_or_else(|| "`--color` needs a value".to_owned())?;
+                    color = ColorChoice::parse(value)
+                        .ok_or_else(|| "`--color` takes `auto`, `always`, or `never`".to_owned())?;
                 }
                 other if other.starts_with("--color=") => {
                     let value = &other["--color=".len()..];
-                    color = ColorChoice::parse(value).ok_or_else(|| {
-                        "`--color` takes `auto`, `always`, or `never`".to_owned()
-                    })?;
+                    color = ColorChoice::parse(value)
+                        .ok_or_else(|| "`--color` takes `auto`, `always`, or `never`".to_owned())?;
                 }
                 other if other.starts_with("--emit=") => {
                     let value = &other["--emit=".len()..];
@@ -456,13 +456,8 @@ mod tests {
 
     #[test]
     fn warning_flags_are_collected() {
-        let options = Options::parse(&args(&[
-            "a.ft",
-            "-Wno-unused",
-            "-Werror",
-            "-Wunreachable",
-        ]))
-        .expect("valid");
+        let options = Options::parse(&args(&["a.ft", "-Wno-unused", "-Werror", "-Wunreachable"]))
+            .expect("valid");
         match options.command {
             Command::Compile { warnings, .. } => {
                 let mut expected = fallc_diag::WarningPolicy::new();
@@ -477,9 +472,8 @@ mod tests {
 
     #[test]
     fn wall_turns_every_group_on_again() {
-        let options =
-            Options::parse(&args(&["a.ft", "-Wno-unused", "-Wno-unreachable", "-Wall"]))
-                .expect("valid");
+        let options = Options::parse(&args(&["a.ft", "-Wno-unused", "-Wno-unreachable", "-Wall"]))
+            .expect("valid");
         match options.command {
             Command::Compile { warnings, .. } => {
                 assert_eq!(warnings, fallc_diag::WarningPolicy::new());

@@ -119,7 +119,9 @@ impl TypeChecker {
         let mut names = Names { found: Vec::new() };
         match &lambda.body {
             fallc_ast::LambdaBody::Expression(value) => walk_expr(ast, *value, &mut names),
-            fallc_ast::LambdaBody::Block(block) => fallc_ast::visit::walk_block(ast, *block, &mut names),
+            fallc_ast::LambdaBody::Block(block) => {
+                fallc_ast::visit::walk_block(ast, *block, &mut names)
+            }
         }
 
         let parameters: std::collections::HashSet<&str> = lambda
@@ -135,17 +137,16 @@ impl TypeChecker {
             if captures.iter().any(|capture| capture.name == name) {
                 continue;
             }
-            let Some(def) = resolutions
-                .resolve(span)
-                .and_then(|id| resolutions.def(id))
-            else {
+            let Some(def) = resolutions.resolve(span).and_then(|id| resolutions.def(id)) else {
                 continue;
             };
             // Only a local or a parameter of the enclosing function is a
             // capture: a module-level object has a name of its own, and a
             // constant is a value.
-            if !matches!(def.kind, crate::resolve::DefKind::Local | crate::resolve::DefKind::Param)
-            {
+            if !matches!(
+                def.kind,
+                crate::resolve::DefKind::Local | crate::resolve::DefKind::Param
+            ) {
                 continue;
             }
             if def.scope.as_raw() == 0 {
@@ -154,8 +155,8 @@ impl TypeChecker {
             // A declaration inside the lambda's own body is not a capture. Its
             // name span says which it is, and that is true before the body has
             // been checked, which is when this runs.
-            let inside_body = def.name_span.lo >= lambda.span.lo
-                && def.name_span.hi <= lambda.span.hi;
+            let inside_body =
+                def.name_span.lo >= lambda.span.lo && def.name_span.hi <= lambda.span.hi;
             if inside_body {
                 continue;
             }
@@ -228,8 +229,7 @@ impl TypeChecker {
         // raise that no `try` in the same body catches leaves the lambda as a
         // function that raises. The call site then has to handle it.
         self.throws_allowed.push(true);
-        self.lambda_raise_stack
-            .push((self.protected_depth, false));
+        self.lambda_raise_stack.push((self.protected_depth, false));
         let returns = match &lambda.body {
             fallc_ast::LambdaBody::Expression(value) => {
                 let previous = self.expected.take();
@@ -300,14 +300,8 @@ impl TypeChecker {
             .iter()
             .all(|parameter| parameter.ty.is_some());
         if typed {
-            let parameter_types = self.lambda_parameter_types(
-                ast,
-                resolutions,
-                types,
-                lambda,
-                None,
-                lambda.span,
-            )?;
+            let parameter_types =
+                self.lambda_parameter_types(ast, resolutions, types, lambda, None, lambda.span)?;
             let instance = self.instantiate_lambda(
                 ast,
                 resolutions,
@@ -438,14 +432,8 @@ impl TypeChecker {
         span: fallc_span::Span,
     ) -> Option<Type> {
         let info = self.closures.get(name)?.clone();
-        let parameter_types = self.lambda_parameter_types(
-            ast,
-            resolutions,
-            types,
-            &info.lambda,
-            Some(node),
-            span,
-        )?;
+        let parameter_types =
+            self.lambda_parameter_types(ast, resolutions, types, &info.lambda, Some(node), span)?;
         let instance = self.instantiate_lambda(
             ast,
             resolutions,

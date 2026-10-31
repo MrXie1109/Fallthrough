@@ -115,7 +115,10 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("priority");
-    assert_eq!(scratch.run("priority", source), "top 10 length 3\n10 20 30\n");
+    assert_eq!(
+        scratch.run("priority", source),
+        "top 10 length 3\n10 20 30\n"
+    );
 }
 
 #[test]

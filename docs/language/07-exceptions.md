@@ -1,6 +1,6 @@
-# 06 Exceptions
+# 07 Exceptions
 
-> [中文](06-exceptions.zh.md)
+> [中文](07-exceptions.zh.md)
 
 ## Scope
 
@@ -27,7 +27,7 @@ test; raising requires no unwind tables and does not change the ABI of functions
 not raise.
 
 2.5 When an exception leaves a scope, the bindings already constructed in that scope
-**must** be destroyed in the order specified in [09 Scopes](09-scopes.md).
+**must** be destroyed in the order specified in [09 Scopes](10-scopes.md).
 
 ## Declaring that a function may raise
 

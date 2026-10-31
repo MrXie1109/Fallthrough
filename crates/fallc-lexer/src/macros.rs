@@ -778,8 +778,7 @@ impl Preprocessor {
             // told apart by their spelling.
             if let Some((text, is_string)) = self.builtins.value(&name, dollar.span.lo) {
                 let token = if is_string {
-                    Token::new(TokenKind::String, invocation_span)
-                        .with_text(format!("\"{text}\""))
+                    Token::new(TokenKind::String, invocation_span).with_text(format!("\"{text}\""))
                 } else {
                     Token::new(TokenKind::Int, invocation_span).with_text(text)
                 };

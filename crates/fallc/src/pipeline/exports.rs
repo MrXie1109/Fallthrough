@@ -97,7 +97,10 @@ pub(super) fn external_signature(
     } else {
         fallc_ast::special::symbol_for(
             &signature.written_name,
-            &params.iter().map(fallc_sema::mangle_type).collect::<Vec<_>>(),
+            &params
+                .iter()
+                .map(fallc_sema::mangle_type)
+                .collect::<Vec<_>>(),
         )
     };
     fallc_ir::ExternalSignature {
@@ -200,8 +203,11 @@ pub(super) fn symbol_of_template(ast: &Ast, function: &fallc_ast::FunctionItem) 
     let _ = ast;
     // One rule, in one place: the checker rebuilds this key from the signature
     // a call selected, so the two must not be two implementations.
-    let types: Vec<fallc_ast::TypeSyntax> =
-        function.params.iter().map(|param| param.ty.clone()).collect();
+    let types: Vec<fallc_ast::TypeSyntax> = function
+        .params
+        .iter()
+        .map(|param| param.ty.clone())
+        .collect();
     fallc_sema::template_symbol_of(&function.name, &types)
 }
 
@@ -243,9 +249,8 @@ fn substitute_aliases_within(
     depth: u32,
 ) -> fallc_ast::TypeSyntax {
     use fallc_ast::{TemplateArgumentSyntax, TypeSyntax};
-    let inner = |ty: &fallc_ast::TypeSyntax| {
-        Box::new(substitute_aliases_within(ty, aliases, depth))
-    };
+    let inner =
+        |ty: &fallc_ast::TypeSyntax| Box::new(substitute_aliases_within(ty, aliases, depth));
     match ty {
         TypeSyntax::Named(named) => {
             if named.arguments.is_empty()
@@ -275,20 +280,18 @@ fn substitute_aliases_within(
             len_span: array.len_span,
             element: inner(&array.element),
         }),
-        TypeSyntax::Function(function) => {
-            TypeSyntax::Function(fallc_ast::FunctionTypeSyntax {
-                abi: function.abi.clone(),
-                parameters: function
-                    .parameters
-                    .iter()
-                    .map(|parameter| substitute_aliases_within(parameter, aliases, depth))
-                    .collect(),
-                variadic: function.variadic,
-                throws: function.throws,
-                returns: inner(&function.returns),
-                span: function.span,
-            })
-        }
+        TypeSyntax::Function(function) => TypeSyntax::Function(fallc_ast::FunctionTypeSyntax {
+            abi: function.abi.clone(),
+            parameters: function
+                .parameters
+                .iter()
+                .map(|parameter| substitute_aliases_within(parameter, aliases, depth))
+                .collect(),
+            variadic: function.variadic,
+            throws: function.throws,
+            returns: inner(&function.returns),
+            span: function.span,
+        }),
         TypeSyntax::Member(member) => TypeSyntax::Member(fallc_ast::TypeMember {
             outer: inner(&member.outer),
             name: member.name.clone(),
@@ -525,11 +528,8 @@ pub(super) fn collect_exports(
                                         .pattern
                                         .iter()
                                         .map(|written| {
-                                            let written =
-                                                substitute_aliases(written, &aliases);
-                                            resolve_signature_type_with(
-                                                &written, false, declared,
-                                            )
+                                            let written = substitute_aliases(written, &aliases);
+                                            resolve_signature_type_with(&written, false, declared)
                                         })
                                         .collect();
                                     // The member's name, so that a member this
@@ -621,9 +621,7 @@ pub(super) fn collect_exports(
                 fallc_ast::BindingType::Written(written) => type_of_types
                     .get(&written.span())
                     .cloned()
-                    .unwrap_or_else(|| {
-                        resolve_signature_type_with(written, false, declared)
-                    }),
+                    .unwrap_or_else(|| resolve_signature_type_with(written, false, declared)),
                 // The checker deduced it. A binding's type is filed by its
                 // name's span, which is what every other declaration uses.
                 fallc_ast::BindingType::Auto(span) => binding_types
@@ -637,10 +635,7 @@ pub(super) fn collect_exports(
                     symbol: format!("{module_name}.{}", variable.name),
                     ty,
                     // A deprecation is part of what the declaration publishes.
-                    deprecated: fallc_sema::deprecated_message(
-                        ast,
-                        &ast.item(item).attrs,
-                    ),
+                    deprecated: fallc_sema::deprecated_message(ast, &ast.item(item).attrs),
                     thread_local: variable.is_thread_local,
                 },
             );
@@ -667,7 +662,10 @@ pub(super) fn collect_exports(
                     // A member's value is folded by the module's own check,
                     // which is where its expression's tree was in hand. A
                     // missing value means the check reported it already.
-                    (member.name.clone(), constants.get(&qualified).copied().unwrap_or(0))
+                    (
+                        member.name.clone(),
+                        constants.get(&qualified).copied().unwrap_or(0),
+                    )
                 })
                 .collect();
             exports.add_enum(
@@ -754,7 +752,8 @@ pub(super) fn collect_exports(
                 .cloned()
                 .unwrap_or_else(|| resolve_signature_type_with(ty, in_parameter, declared))
         };
-        let resolved = if function.template_params.is_empty() && !function.has_pack()
+        let resolved = if function.template_params.is_empty()
+            && !function.has_pack()
             && !method_of_family(function, &families)
         {
             let params: Vec<fallc_sema::Type> = function
@@ -770,7 +769,10 @@ pub(super) fn collect_exports(
             } else {
                 fallc_ast::special::symbol_for(
                     &function.name,
-                    &params.iter().map(fallc_sema::mangle_type).collect::<Vec<_>>(),
+                    &params
+                        .iter()
+                        .map(fallc_sema::mangle_type)
+                        .collect::<Vec<_>>(),
                 )
             };
             Some(fallc_sema::ResolvedSignature {
@@ -839,4 +841,3 @@ pub(super) fn collect_exports(
     }
     exports
 }
-

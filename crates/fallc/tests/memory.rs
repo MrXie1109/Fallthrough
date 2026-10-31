@@ -17,7 +17,8 @@ struct Scratch {
 
 impl Scratch {
     fn new(label: &str) -> Scratch {
-        let directory = std::env::temp_dir().join(format!("fallc-mem-{label}-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("fallc-mem-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a temporary directory can be created");
         Scratch { directory }
@@ -131,10 +132,7 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("observe");
-    assert_eq!(
-        scratch.run("observe", source),
-        "2 1\nexpired 1 strong 0\n"
-    );
+    assert_eq!(scratch.run("observe", source), "2 1\nexpired 1 strong 0\n");
 }
 
 #[test]

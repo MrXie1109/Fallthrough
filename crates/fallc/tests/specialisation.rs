@@ -192,10 +192,7 @@ fn main() int {
 "#;
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("is ambiguous"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("is ambiguous"), "{diagnostics}");
 }
 
 #[test]

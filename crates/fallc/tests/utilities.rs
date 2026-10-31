@@ -163,8 +163,5 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("grid");
-    assert_eq!(
-        scratch.run("grid", source),
-        "2 3 6 7\n0\n9\n1 9\n"
-    );
+    assert_eq!(scratch.run("grid", source), "2 3 6 7\n0\n9\n1 9\n");
 }

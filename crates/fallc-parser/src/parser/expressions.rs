@@ -35,7 +35,11 @@ impl Parser {
     /// Assignment is handled outside the Pratt loop because its left side must
     /// be an lvalue, and its precedence is below every binary operator. It is
     /// right-associative, so `a = b = c` parses as `a = (b = c)`.
-    pub(super) fn parse_assignment(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<ExprId> {
+    pub(super) fn parse_assignment(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ExprId> {
         let lhs = self.parse_expr_bp(stream, ast, BindingPower::min())?;
 
         if let Some(punct) = stream.current_kind().punct()
@@ -164,10 +168,11 @@ impl Parser {
                 let inclusive = token.kind == TokenKind::Punct(Punctuation::DotDotEq);
                 stream.advance();
                 let low = lhs;
-                let high = match self.parse_expr_bp(stream, ast, BindingPower::new(RANGE_PRECEDENCE, 1)) {
-                    Some(id) => id,
-                    None => break,
-                };
+                let high =
+                    match self.parse_expr_bp(stream, ast, BindingPower::new(RANGE_PRECEDENCE, 1)) {
+                        Some(id) => id,
+                        None => break,
+                    };
                 if matches!(
                     stream.peek(0).kind,
                     TokenKind::Punct(Punctuation::DotDot | Punctuation::DotDotEq)
@@ -182,9 +187,7 @@ impl Parser {
             // Inside a template parameter header a `>` closes the header, and
             // is not a comparison: `template <n int = 4>` would otherwise read
             // `4 >` as a greater-than with nothing on the right.
-            if self.in_template_header > 0
-                && token.kind == TokenKind::Punct(Punctuation::Gt)
-            {
+            if self.in_template_header > 0 && token.kind == TokenKind::Punct(Punctuation::Gt) {
                 break;
             }
             let Some(info) = crate::precedence::infix(token.kind) else {
@@ -230,7 +233,9 @@ impl Parser {
             match stream.peek(index).kind {
                 TokenKind::Eof => return false,
                 TokenKind::Punct(
-                    Punctuation::OpenBrace | Punctuation::OpenParen | Punctuation::OpenBracket
+                    Punctuation::OpenBrace
+                    | Punctuation::OpenParen
+                    | Punctuation::OpenBracket
                     | Punctuation::DotBrace,
                 ) => depth += 1,
                 TokenKind::Punct(
@@ -257,11 +262,7 @@ impl Parser {
     /// however many there are. Nothing here decides the element type -- that
     /// comes from the position the literal is written in, exactly as it does
     /// for `.{ .. }`.
-    fn parse_array_literal(
-        &mut self,
-        stream: &mut TokenStream,
-        ast: &mut Ast,
-    ) -> Option<ExprId> {
+    fn parse_array_literal(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<ExprId> {
         let open = stream.advance().span;
         let mut elements = Vec::new();
         while !stream.at(TokenKind::Punct(Punctuation::CloseBrace)) {
@@ -286,10 +287,10 @@ impl Parser {
             None => return None,
         };
         let span = open.to(close.span);
-        Some(
-            ast.builder()
-                .alloc_expr(ExprKind::ArrayLiteral(fallc_ast::ArrayLiteral { elements }), span),
-        )
+        Some(ast.builder().alloc_expr(
+            ExprKind::ArrayLiteral(fallc_ast::ArrayLiteral { elements }),
+            span,
+        ))
     }
 
     /// Builds the value of `low .. high` or `low ..= high`.
@@ -490,6 +491,34 @@ impl Parser {
                 span,
             ));
         }
+        // `yield expr` and the bare `yield`. Which coroutine it belongs to is
+        // the checker's question; the parser only reads the operand, and the
+        // operand is optional: `yield;` gives the coroutine's `Yield` type to
+        // the resumer and takes nothing.
+        if stream.at(TokenKind::Keyword(Keyword::Yield)) {
+            let start = stream.advance().span;
+            let stops_here = stream.at(TokenKind::Punct(Punctuation::Semi))
+                || stream.at(TokenKind::Punct(Punctuation::CloseParen))
+                || stream.at(TokenKind::Punct(Punctuation::CloseBracket))
+                || stream.at(TokenKind::Punct(Punctuation::CloseBrace))
+                || stream.at(TokenKind::Punct(Punctuation::Comma))
+                || stream.at(TokenKind::Eof);
+            // A value stops at a comma, because `i += yield i, j` must not read
+            // the `,` as part of the yield.
+            let value = if stops_here {
+                None
+            } else {
+                Some(self.parse_expr_no_comma(stream, ast)?)
+            };
+            let end = match value {
+                Some(value) => ast.expr(value).span,
+                None => start,
+            };
+            return Some(ast.builder().alloc_expr(
+                ExprKind::Yield(fallc_ast::YieldExpr { value }),
+                start.to(end),
+            ));
+        }
         // `if (cond) { .. } else { .. }` standing where a value is wanted.
         // The same keyword starts the statement form; the position decides
         // which it is, and this entry point is only reached from a position
@@ -538,10 +567,7 @@ impl Parser {
         if stream.at(TokenKind::Punct(Punctuation::OpenBrace)) {
             let block = self.parse_block(stream, ast)?;
             let span = ast.block(block).span;
-            return Some(
-                ast.builder()
-                    .alloc_expr(ExprKind::Block(block), span),
-            );
+            return Some(ast.builder().alloc_expr(ExprKind::Block(block), span));
         }
         // `type(expr)` where an expression is expected: a *type*, which only a
         // position that wants one -- a trait query's argument, today -- can
@@ -565,10 +591,7 @@ impl Parser {
         // ambiguous with a variable called `sizeof` in any grammar that later
         // allows one, and the parentheses cost nothing. The result is a
         // constant, which is what makes it usable as an array length.
-        for (keyword, is_size) in [
-            (Keyword::Sizeof, true),
-            (Keyword::Alignof, false),
-        ] {
+        for (keyword, is_size) in [(Keyword::Sizeof, true), (Keyword::Alignof, false)] {
             if !stream.at(TokenKind::Keyword(keyword)) {
                 continue;
             }
@@ -578,7 +601,9 @@ impl Parser {
             // values that exists only while the instantiation is known, so
             // there is no layout to measure, only a length to count.
             if is_size
-                && stream.eat(TokenKind::Punct(Punctuation::DotDotDot)).is_some()
+                && stream
+                    .eat(TokenKind::Punct(Punctuation::DotDotDot))
+                    .is_some()
             {
                 self.expect_punct(stream, Punctuation::OpenParen, "`(`")?;
                 let name = stream.advance();
@@ -625,10 +650,10 @@ impl Parser {
             stream.advance();
             let inner = self.parse_expr_no_comma(stream, ast)?;
             let close = self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
-            return Some(ast.builder().alloc_expr(
-                ExprKind::ThrowQuery(inner),
-                start.to(close.span),
-            ));
+            return Some(
+                ast.builder()
+                    .alloc_expr(ExprKind::ThrowQuery(inner), start.to(close.span)),
+            );
         }
 
         // A prefix `++` or `--` needs an lvalue, so it takes a postfix
@@ -692,10 +717,7 @@ impl Parser {
         // `nullptr` is a keyword literal, like `true` and `false`.
         if stream.at(TokenKind::Keyword(Keyword::Nullptr)) {
             let token = stream.advance();
-            return Some(
-                ast.builder()
-                    .alloc_expr(ExprKind::NullPointer, token.span),
-            );
+            return Some(ast.builder().alloc_expr(ExprKind::NullPointer, token.span));
         }
 
         // `Point{ .. }` is a designated initialiser with its type written out,
@@ -823,10 +845,8 @@ impl Parser {
                 }) {
                     let (pattern, close_span) = pattern;
                     return Some(
-                        ast.builder().alloc_expr(
-                            ExprKind::CommaFold { pattern },
-                            open.to(close_span),
-                        ),
+                        ast.builder()
+                            .alloc_expr(ExprKind::CommaFold { pattern }, open.to(close_span)),
                     );
                 }
                 // A parenthesised expression. Needed so that `(x as u8) as i32`
@@ -925,15 +945,13 @@ impl Parser {
             } else {
                 if !named.is_empty() {
                     self.diagnostics.push(
-                        Diagnostic::error(
-                            "a positional argument cannot follow a named one",
-                        )
-                        .with_code(DiagnosticCode::parser(2))
-                        .with_span(stream.current_span())
-                        .with_note(
-                            "write every positional argument first, then `.name = value` \
+                        Diagnostic::error("a positional argument cannot follow a named one")
+                            .with_code(DiagnosticCode::parser(2))
+                            .with_span(stream.current_span())
+                            .with_note(
+                                "write every positional argument first, then `.name = value` \
                              for the ones named",
-                        ),
+                            ),
                     );
                 }
                 // A comma separates arguments, so it must not be read as the
@@ -986,7 +1004,11 @@ impl Parser {
         })
     }
 
-    pub(super) fn parse_call_argument(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<ExprId> {
+    pub(super) fn parse_call_argument(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ExprId> {
         // A requirement's argument is the parameter's type, so the type grammar
         // is tried first: `it.add(*int)` and `it.each([2]int)` state a pointer
         // and an array, which are not expressions at all.
@@ -1017,9 +1039,7 @@ impl Parser {
                 return written;
             }
         }
-        if stream.at(TokenKind::Ident)
-            && stream.peek_kind(1) == TokenKind::Punct(Punctuation::Lt)
-        {
+        if stream.at(TokenKind::Ident) && stream.peek_kind(1) == TokenKind::Punct(Punctuation::Lt) {
             let written = self.speculate(stream, |parser, stream| {
                 let start = stream.current_span();
                 let ty = parser.parse_type(stream, ast)?;
@@ -1051,7 +1071,11 @@ impl Parser {
     /// They all bind tighter than any binary operator, so `a + b as u8` is
     /// `a + (b as u8)` and `x++ + 1` is `(x++) + 1`, and a chain is read in
     /// source order: `x as u8 as i32` converts twice.
-    pub(super) fn parse_postfix(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<ExprId> {
+    pub(super) fn parse_postfix(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ExprId> {
         self.parse_postfix_inner(stream, ast, true)
     }
 
@@ -1213,18 +1237,16 @@ impl Parser {
                 self.parse_call_arguments(stream, ast, &mut args, &mut named)?;
                 let close = self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
                 let span = ast.expr(expr).span.to(close.span);
-                expr = ast
-                    .builder()
-                    .alloc_expr(
-                        ExprKind::Call(CallExpr {
-                            callee: expr,
-                            args,
-                            named,
-                            template_args: Vec::new(),
-                            explicit_template_arguments: false,
-                        }),
-                        span,
-                    );
+                expr = ast.builder().alloc_expr(
+                    ExprKind::Call(CallExpr {
+                        callee: expr,
+                        args,
+                        named,
+                        template_args: Vec::new(),
+                        explicit_template_arguments: false,
+                    }),
+                    span,
+                );
                 continue;
             }
             break;
@@ -1233,7 +1255,6 @@ impl Parser {
     }
 
     // ------------------------------------------------------------- recovery
-
 }
 
 impl Parser {
@@ -1258,10 +1279,9 @@ impl Parser {
         let (format, placeholders) = split_fstring(body);
         // The format string is a literal of this tree, so its span is the
         // literal's: a diagnostic about the format points at the whole thing.
-        let format_id = ast.builder().alloc_expr(
-            fallc_ast::ExprKind::StringLiteral(format),
-            span,
-        );
+        let format_id = ast
+            .builder()
+            .alloc_expr(fallc_ast::ExprKind::StringLiteral(format), span);
         // The call is `std.format(...)`: the standard library's format, so an
         // f-string means the same thing whatever the file imports. A program
         // that writes an f-string needs `import std;`, exactly as one that
@@ -1299,11 +1319,9 @@ impl Parser {
                 Some(expression) => args.push(expression),
                 None => {
                     self.push_diagnostic(
-                        fallc_diag::Diagnostic::error(
-                            "this placeholder is not an expression",
-                        )
-                        .with_code(fallc_diag::DiagnosticCode::parser(1))
-                        .with_span(span),
+                        fallc_diag::Diagnostic::error("this placeholder is not an expression")
+                            .with_code(fallc_diag::DiagnosticCode::parser(1))
+                            .with_span(span),
                     );
                 }
             }

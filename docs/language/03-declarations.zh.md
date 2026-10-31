@@ -22,7 +22,7 @@ fn / type / union / enum / interface / traits / NAME …
 常量、字段的声明之后（见第 9 节）。`mutable` 是字段修饰符，写在字段类型之后。
 
 2.3 声明与作用域中名字的可见顺序无关（见第 8 节前置声明与
-[09 作用域](09-scopes.zh.md)）。
+[09 作用域](10-scopes.zh.md)）。
 
 ## 绑定
 
@@ -97,7 +97,7 @@ fn main() int {
 5.3 模块级变量可以被赋值。
 
 5.4 未标记 `export` 的模块级变量只在其定义模块内可见；`export` 的规则见
-[08 模块](08-modules.zh.md#导出表)。
+[08 模块](09-modules.zh.md#导出表)。
 
 ### 外部变量与外部函数
 

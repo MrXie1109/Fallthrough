@@ -93,7 +93,10 @@ pub const WARNING_GROUPS: &[(&str, &str)] = &[
     ("unreachable", "a statement the program can never reach"),
     ("unused", "a binding that is never read"),
     ("unused-parameter", "a parameter that is never read"),
-    ("shadow", "a local that hides a name of the enclosing function"),
+    (
+        "shadow",
+        "a local that hides a name of the enclosing function",
+    ),
     (
         "constant-condition",
         "an `if`/`while` condition written as a literal",
@@ -105,10 +108,7 @@ pub const WARNING_GROUPS: &[(&str, &str)] = &[
     ("self-comparison", "a value compared with itself"),
     ("division-by-zero", "a divisor that is a constant zero"),
     ("use-after-move", "a value read after `std.move` emptied it"),
-    (
-        "deprecated",
-        "a declaration marked `@deprecated` is used",
-    ),
+    ("deprecated", "a declaration marked `@deprecated` is used"),
 ];
 
 /// Which warnings are reported, and whether they are errors.
@@ -411,7 +411,13 @@ impl Diagnostic {
     /// which say why the rule is the rule and what to write instead.
     #[must_use]
     pub fn render_with(&self, sources: &SourceMap, verbose: bool) -> String {
-        self.render_body(sources, Style { verbose, color: false })
+        self.render_body(
+            sources,
+            Style {
+                verbose,
+                color: false,
+            },
+        )
     }
 
     /// Renders this diagnostic with `style` applied.
@@ -836,10 +842,7 @@ mod tests {
         let rendered = diag.render(&sources);
         // Four digits need four columns, and every line of the gutter uses the
         // same width as the number does.
-        let bars: Vec<usize> = rendered
-            .lines()
-            .filter_map(|line| line.find('|'))
-            .collect();
+        let bars: Vec<usize> = rendered.lines().filter_map(|line| line.find('|')).collect();
         assert_eq!(bars.len(), 3, "{rendered}");
         assert!(bars.windows(2).all(|pair| pair[0] == pair[1]), "{rendered}");
     }

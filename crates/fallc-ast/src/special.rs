@@ -448,7 +448,10 @@ pub fn is_special(name: &str) -> bool {
         return true;
     }
     // `__i<op>__` and `__r<op>__`, for an operator whose base form is known.
-    let Some(inner) = name.strip_prefix("__").and_then(|rest| rest.strip_suffix("__")) else {
+    let Some(inner) = name
+        .strip_prefix("__")
+        .and_then(|rest| rest.strip_suffix("__"))
+    else {
         return false;
     };
     let Some(word) = inner.strip_prefix('i').or_else(|| inner.strip_prefix('r')) else {
@@ -532,7 +535,7 @@ mod tests {
             SpecialMethod::GetItem,
             SpecialMethod::Call,
             SpecialMethod::Bool,
-                                    SpecialMethod::As,
+            SpecialMethod::As,
             SpecialMethod::ImInit,
             SpecialMethod::ImAs,
         ];

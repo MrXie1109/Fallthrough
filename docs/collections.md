@@ -39,7 +39,7 @@ fn main() int {
 ```
 
 **Functions cannot**: after `import std;` write `std.out.print(s)`, not `print(s)`. Why is
-in [08 Modules](language/08-modules.md#short-names-type-names-and-value-names-are-not-the-same).
+in [09 Modules](language/09-modules.md#short-names-type-names-and-value-names-are-not-the-same).
 
 ### The other entry points
 
@@ -58,7 +58,7 @@ The names the language reference mentions that are neither `Array` nor `String` 
 | `std.fake` | `<T> () T` | only in compile-time queries (`except(std.fake<&T>().__drop__())`); calling it at run time aborts |
 | `util.__ft_moves` | `<T> () bool` | the compile-time question "can moving a `T` raise?", which `Array` asks to choose between moving and copying |
 | `std.Box<T>` | `__init__(&Box<T>)`, `__init__(&Box<T>, T)`, `get()`, `empty()`, `clone()` | one value on the heap, freed on destruction; **move** semantics, use `clone()` to copy |
-| `std.Exception` / `std.exception()` | `name()` and `what()`, each returning a `String` | the exception being handled, see [06 Exceptions](language/06-exceptions.md) |
+| `std.Exception` / `std.exception()` | `name()` and `what()`, each returning a `String` | the exception being handled, see [07 Exceptions](language/07-exceptions.md) |
 
 **Module names collide**: an imported name is looked up as a file on the search path by
 module name, so a module of your own called `math` collides with

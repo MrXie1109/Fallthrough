@@ -38,7 +38,7 @@ fn main() int {
 ```
 
 **函数不能**写短：`import std;` 之后要写 `std.out.print(s)`，不能写 `print(s)`。理由
-见 [08 模块](language/08-modules.zh.md#短名类型名字和值名字不一样)。
+见 [09 模块](language/09-modules.zh.md#短名类型名字和值名字不一样)。
 
 ### 其余入口
 
@@ -56,7 +56,7 @@ fn main() int {
 | `std.fake` | `<T> () T` | 只出现在编译期查询里（`except(std.fake<&T>().__drop__())`），运行期调用会 abort |
 | `util.__ft_moves` | `<T> () bool` | 编译期问题：移动 `T` 会不会抛；`Array` 用它决定搬还是拷 |
 | `std.Box<T>` | `__init__(&Box<T>)`、`__init__(&Box<T>, T)`、`get()`、`empty()`、`clone()` | 堆上一个值，析构时释放；**移动**语义，拷贝用 `clone()` |
-| `std.Exception` / `std.exception()` | `name()`、`what()` 各返回 `String` | 正在处理的异常，见 [06 异常](language/06-exceptions.zh.md) |
+| `std.Exception` / `std.exception()` | `name()`、`what()` 各返回 `String` | 正在处理的异常，见 [07 异常](language/07-exceptions.zh.md) |
 
 **模块名会撞车**：导入的名字按模块名在搜索路径里找文件，所以你自己写一个叫
 `math` 的模块会和 `standard/std/math.ftm` 撞名，症状通常是

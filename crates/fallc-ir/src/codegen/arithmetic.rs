@@ -60,7 +60,9 @@ impl<'ctx> Lowerer<'ctx> {
             {
                 let pointee = self
                     .pointer_pointee_of(ast, types, binary.lhs)
-                    .ok_or_else(|| CodegenError::waiting_for_spec("this pointer's pointee", span))?;
+                    .ok_or_else(|| {
+                        CodegenError::waiting_for_spec("this pointer's pointee", span)
+                    })?;
                 let index = self.widen_to_pointer_size(builder, offset)?;
                 let index = if op == BinaryOp::Sub {
                     builder
@@ -80,7 +82,9 @@ impl<'ctx> Lowerer<'ctx> {
                 // either pointer may be the earlier one.
                 let pointee = self
                     .pointer_pointee_of(ast, types, binary.lhs)
-                    .ok_or_else(|| CodegenError::waiting_for_spec("this pointer's pointee", span))?;
+                    .ok_or_else(|| {
+                        CodegenError::waiting_for_spec("this pointer's pointee", span)
+                    })?;
                 let element_ty = TypeMapper::new(self.backend.context())
                     .map(&pointee)
                     .ok_or_else(|| {
@@ -91,7 +95,10 @@ impl<'ctx> Lowerer<'ctx> {
                     })?;
                 let target_data = self.target_data()?;
                 let element_size = target_data.get_store_size(&element_ty);
-                let int_ty = self.backend.context().ptr_sized_int_type(&target_data, None);
+                let int_ty = self
+                    .backend
+                    .context()
+                    .ptr_sized_int_type(&target_data, None);
                 let left = builder
                     .build_ptr_to_int(left, int_ty, "lhs.addr")
                     .map_err(|error| CodegenError::Emit(error.to_string()))?;
@@ -113,7 +120,9 @@ impl<'ctx> Lowerer<'ctx> {
                 // `n + p`, the same operation as `p + n`.
                 let pointee = self
                     .pointer_pointee_of(ast, types, binary.rhs)
-                    .ok_or_else(|| CodegenError::waiting_for_spec("this pointer's pointee", span))?;
+                    .ok_or_else(|| {
+                        CodegenError::waiting_for_spec("this pointer's pointee", span)
+                    })?;
                 let index = self.widen_to_pointer_size(builder, offset)?;
                 let address = self.build_pointer_offset(builder, right, index, &pointee, span)?;
                 return Ok(Some(address.as_basic_value_enum()));
@@ -170,9 +179,7 @@ impl<'ctx> Lowerer<'ctx> {
                             BinaryOp::Rem => {
                                 emitted(builder.build_int_unsigned_rem(lhs, rhs, "rem"))?
                             }
-                            BinaryOp::Pow => {
-                                self.build_integer_power(builder, lhs, rhs, "pow")?
-                            }
+                            BinaryOp::Pow => self.build_integer_power(builder, lhs, rhs, "pow")?,
                             _ => unreachable!("only arithmetic reaches this arm"),
                         }
                     }
@@ -284,12 +291,7 @@ impl<'ctx> Lowerer<'ctx> {
                         .map_err(|error| CodegenError::Emit(error.to_string()))?
                         .into_int_value();
                     builder
-                        .build_select(
-                            is_greater,
-                            int_type.const_int(1, false),
-                            negative,
-                            "cmp",
-                        )
+                        .build_select(is_greater, int_type.const_int(1, false), negative, "cmp")
                         .map_err(|error| CodegenError::Emit(error.to_string()))?
                 }
                 // Floats compare the same way, with the float predicates.
@@ -444,42 +446,38 @@ impl<'ctx> Lowerer<'ctx> {
                     builder
                         .build_ptr_to_int(
                             lhs,
-                            self.backend
-                                .context()
-                                .ptr_sized_int_type(
-                                    &self
-                                        .backend
-                                        .target_machine(inkwell::OptimizationLevel::None)
-                                        .map_err(|error| error.to_diagnostic())
-                                        .map_err(|_| {
-                                            CodegenError::Emit(
-                                                "cannot create a target machine".to_owned(),
-                                            )
-                                        })?
-                                        .get_target_data(),
-                                    None,
-                                ),
+                            self.backend.context().ptr_sized_int_type(
+                                &self
+                                    .backend
+                                    .target_machine(inkwell::OptimizationLevel::None)
+                                    .map_err(|error| error.to_diagnostic())
+                                    .map_err(|_| {
+                                        CodegenError::Emit(
+                                            "cannot create a target machine".to_owned(),
+                                        )
+                                    })?
+                                    .get_target_data(),
+                                None,
+                            ),
                             "lhs.addr",
                         )
                         .map_err(|error| CodegenError::Emit(error.to_string()))?,
                     builder
                         .build_ptr_to_int(
                             rhs,
-                            self.backend
-                                .context()
-                                .ptr_sized_int_type(
-                                    &self
-                                        .backend
-                                        .target_machine(inkwell::OptimizationLevel::None)
-                                        .map_err(|error| error.to_diagnostic())
-                                        .map_err(|_| {
-                                            CodegenError::Emit(
-                                                "cannot create a target machine".to_owned(),
-                                            )
-                                        })?
-                                        .get_target_data(),
-                                    None,
-                                ),
+                            self.backend.context().ptr_sized_int_type(
+                                &self
+                                    .backend
+                                    .target_machine(inkwell::OptimizationLevel::None)
+                                    .map_err(|error| error.to_diagnostic())
+                                    .map_err(|_| {
+                                        CodegenError::Emit(
+                                            "cannot create a target machine".to_owned(),
+                                        )
+                                    })?
+                                    .get_target_data(),
+                                None,
+                            ),
                             "rhs.addr",
                         )
                         .map_err(|error| CodegenError::Emit(error.to_string()))?,
@@ -808,25 +806,17 @@ impl<'ctx> Lowerer<'ctx> {
         }
 
         builder.position_at_end(then_block);
-        let then_value = self.lower_branch(
-            ast,
-            types,
-            builder,
-            conditional.then_value,
-            span,
-        )?;
-        let then_end = builder.get_insert_block().expect("a block is being emitted");
+        let then_value = self.lower_branch(ast, types, builder, conditional.then_value, span)?;
+        let then_end = builder
+            .get_insert_block()
+            .expect("a block is being emitted");
         self.branch_to(builder, end_block)?;
 
         builder.position_at_end(else_block);
-        let else_value = self.lower_branch(
-            ast,
-            types,
-            builder,
-            conditional.else_value,
-            span,
-        )?;
-        let else_end = builder.get_insert_block().expect("a block is being emitted");
+        let else_value = self.lower_branch(ast, types, builder, conditional.else_value, span)?;
+        let else_end = builder
+            .get_insert_block()
+            .expect("a block is being emitted");
         self.branch_to(builder, end_block)?;
 
         builder.position_at_end(end_block);
@@ -900,13 +890,8 @@ impl<'ctx> Lowerer<'ctx> {
                 storage
             }
         };
-        let value = self.build_value_call(
-            builder,
-            function,
-            symbol,
-            vec![receiver.into()],
-            span,
-        )?;
+        let value =
+            self.build_value_call(builder, function, symbol, vec![receiver.into()], span)?;
         self.unwrap_throwing_value(ast, types, builder, span, value)
     }
 
@@ -973,8 +958,7 @@ impl<'ctx> Lowerer<'ctx> {
                     _ => false,
                 };
                 if names_storage
-                    && let Some(binding) =
-                        self.lower_lvalue(ast, types, builder, unary.operand)
+                    && let Some(binding) = self.lower_lvalue(ast, types, builder, unary.operand)
                 {
                     return Ok(Some(binding.storage.as_basic_value_enum()));
                 }
@@ -1073,5 +1057,4 @@ impl<'ctx> Lowerer<'ctx> {
 
         Ok(Some(result))
     }
-
 }

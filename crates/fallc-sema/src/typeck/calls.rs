@@ -69,10 +69,7 @@ impl TypeChecker {
         };
         // Only a value is called this way. A name that denotes a function has
         // already been through the overload search, and a type name constructs.
-        let def = resolutions
-            .defs
-            .iter()
-            .find(|def| def.name == *name)?;
+        let def = resolutions.defs.iter().find(|def| def.name == *name)?;
         if !matches!(
             def.kind,
             crate::resolve::DefKind::Local | crate::resolve::DefKind::Param
@@ -88,7 +85,9 @@ impl TypeChecker {
             Type::Function { .. } => callee_ty.unqualified().clone(),
             // A function name used as a value decays to a pointer to it, so a
             // pointer is only callable when it points at a function.
-            Type::Pointer { pointee, .. } if matches!(pointee.unqualified(), Type::Function { .. }) => {
+            Type::Pointer { pointee, .. }
+                if matches!(pointee.unqualified(), Type::Function { .. }) =>
+            {
                 pointee.unqualified().clone()
             }
             _ => return None,
@@ -229,14 +228,7 @@ impl TypeChecker {
                 && (self.type_templates.contains_key(&path)
                     || self.nominal_types.contains_key(&path))
             {
-                return self.type_of_constructor_call(
-                    ast,
-                    resolutions,
-                    types,
-                    &path,
-                    node,
-                    span,
-                );
+                return self.type_of_constructor_call(ast, resolutions, types, &path, node, span);
             }
             // `C.printf(..)` and `p.show()` are written identically, and only
             // name resolution can tell them apart: `C` is a module, `p` is a
@@ -287,7 +279,15 @@ impl TypeChecker {
             if let Some(callee_ty) = callee_ty
                 && let Some(function) = callee_ty.function_type().cloned()
             {
-                return self.check_indirect_call(ast, resolutions, types, node, span, &function, &callee_ty);
+                return self.check_indirect_call(
+                    ast,
+                    resolutions,
+                    types,
+                    node,
+                    span,
+                    &function,
+                    &callee_ty,
+                );
             }
             // Otherwise a value of a type that defines `__call__` is callable,
             // and the object is the receiver: the arguments are checked against
@@ -330,7 +330,6 @@ impl TypeChecker {
         node: &CallExpr,
         span: fallc_span::Span,
     ) -> Option<Type> {
-
         // A *template parameter* used as a constructor: inside a template body
         // `T(..)` is whatever the substitution says `T` is. Nothing in the
         // name namespace answers that -- `T` is not a declaration -- so without
@@ -431,11 +430,9 @@ impl TypeChecker {
                 // A template is not a candidate: it has no parameter types a
                 // call could fit, because its parameters name the very things
                 // being deduced.
-                def.signature
-                    .as_ref()
-                    .is_none_or(|signature| {
-                        signature.template_params.is_empty() && signature.pack.is_none()
-                    })
+                def.signature.as_ref().is_none_or(|signature| {
+                    signature.template_params.is_empty() && signature.pack.is_none()
+                })
             })
             .filter_map(|def| def.signature.clone())
             .collect();
@@ -459,9 +456,7 @@ impl TypeChecker {
             // function or a pointer to one: `p(1)` with `p *fn(int) int` is how
             // a function pointer is called, and there is no dereference to
             // write.
-            if let Some(called) =
-                self.type_of_indirect_call(ast, resolutions, types, node, span)
-            {
+            if let Some(called) = self.type_of_indirect_call(ast, resolutions, types, node, span) {
                 return Some(called);
             }
             // A name that is not a function may be a *type*, and calling one
@@ -477,9 +472,7 @@ impl TypeChecker {
             // defines `__call__`, so the callee is typed before giving up:
             // `c(5)` and `f(5)` are written identically and only the type says
             // which it is.
-            if let Some(result) =
-                self.type_of_call_method(ast, resolutions, types, node, span)
-            {
+            if let Some(result) = self.type_of_call_method(ast, resolutions, types, node, span) {
                 return Some(result);
             }
             // Nothing left to say. A name the resolver could not bind has
@@ -565,7 +558,8 @@ impl TypeChecker {
             // that is what code generation has to pass. The literal's own type
             // stays the default `int`, which is what it is on its own.
             if self.is_default_int_literal(ast, *arg) && expected_ty.is_integer() {
-                self.adopted_types.insert(ast.expr(*arg).span, expected_ty.clone());
+                self.adopted_types
+                    .insert(ast.expr(*arg).span, expected_ty.clone());
             }
             let previous = self.expected.replace(expected_ty.clone());
             let found = self.infer_expr(ast, resolutions, types, *arg);
@@ -694,12 +688,10 @@ impl TypeChecker {
                     (name, ty)
                 })
                 .collect();
-            self.default_expressions.entry(span).or_default().push((
-                index,
-                default,
-                module,
-                preceding,
-            ));
+            self.default_expressions
+                .entry(span)
+                .or_default()
+                .push((index, default, module, preceding));
             return true;
         }
         let parameter = signature
@@ -791,9 +783,9 @@ impl TypeChecker {
         // function's is: a receiver parameter, then one per argument. A type
         // with no fitting constructor has nothing to call, and the caller
         // reports the name as not a function.
-        let Some(symbol) = self.constructor_call_symbol(
-            &target, node, ast, resolutions, types, span,
-        ) else {
+        let Some(symbol) =
+            self.constructor_call_symbol(&target, node, ast, resolutions, types, span)
+        else {
             self.report_missing_constructor(&target, node, span);
             return None;
         };
@@ -820,10 +812,9 @@ impl TypeChecker {
         resolutions: &Resolutions,
     ) -> Option<String> {
         let receiver_name = target.nominal_name()?.to_owned();
-        let base = receiver_name.split_once('<').map_or(
-            receiver_name.as_str(),
-            |(base, _)| base,
-        );
+        let base = receiver_name
+            .split_once('<')
+            .map_or(receiver_name.as_str(), |(base, _)| base);
         let base = base.rsplit_once('.').map_or(base, |(_, last)| last);
         let member_substitution = self.member_substitution(target.nominal_name());
         for definition in self.constructor_definitions(resolutions, base) {
@@ -861,11 +852,7 @@ impl TypeChecker {
     ///
     /// Asking for `__init__` finds `__im_init__` as well -- declaring the
     /// implicit form declares the explicit one too -- so one lookup is enough.
-    fn constructor_definitions(
-        &self,
-        resolutions: &Resolutions,
-        base: &str,
-    ) -> Vec<crate::Def> {
+    fn constructor_definitions(&self, resolutions: &Resolutions, base: &str) -> Vec<crate::Def> {
         self.definitions_named(resolutions, &format!("__init__{base}"))
     }
 
@@ -917,10 +904,9 @@ impl TypeChecker {
         // the member is `std.Array<i32>` and the definition is `__init__Array`.
         // Both the arguments and the module qualification are the member's
         // rather than the family's, so both are stripped.
-        let base = receiver_name.split_once('<').map_or(
-            receiver_name.as_str(),
-            |(base, _)| base,
-        );
+        let base = receiver_name
+            .split_once('<')
+            .map_or(receiver_name.as_str(), |(base, _)| base);
         let base = base.rsplit_once('.').map_or(base, |(_, last)| last);
         let candidates: Vec<FunctionSignature> = self
             .constructor_definitions(resolutions, base)
@@ -1022,9 +1008,7 @@ impl TypeChecker {
                 // ordinary function's arguments follow; a constructor is a
                 // function.
                 let mut compatible = self.is_compatible(&found, wanted);
-                if !compatible
-                    && let Some(inner) = wanted.referent().or_else(|| wanted.pointee())
-                {
+                if !compatible && let Some(inner) = wanted.referent().or_else(|| wanted.pointee()) {
                     compatible = self.is_compatible(&found, inner);
                 }
                 if !compatible {
@@ -1047,16 +1031,13 @@ impl TypeChecker {
                             ..
                         }
                     );
-                let rvalue_parameter = signature
-                    .param_types
-                    .get(index)
-                    .is_some_and(|written| {
-                        matches!(
-                            written,
-                            fallc_ast::TypeSyntax::RvalueReference(_)
-                                | fallc_ast::TypeSyntax::ConstRvalueReference(_)
-                        )
-                    });
+                let rvalue_parameter = signature.param_types.get(index).is_some_and(|written| {
+                    matches!(
+                        written,
+                        fallc_ast::TypeSyntax::RvalueReference(_)
+                            | fallc_ast::TypeSyntax::ConstRvalueReference(_)
+                    )
+                });
                 if dying && rvalue_parameter {
                     score += 2;
                 }
@@ -1104,7 +1085,8 @@ impl TypeChecker {
         // value -- `Rc<int>(7)` did exactly that.
         for (argument, wanted) in &chosen.expectations {
             let span = ast.expr(*argument).span;
-            self.expected_types.insert(*argument, (span, wanted.clone()));
+            self.expected_types
+                .insert(*argument, (span, wanted.clone()));
             let previous = self.expected.replace(wanted.clone());
             let found = self.infer_expr(ast, resolutions, types, *argument);
             self.expected = previous;
@@ -1131,7 +1113,6 @@ impl TypeChecker {
         self.note_throwing_call(span, &chosen.signature, ast, None);
         Some(chosen.symbol)
     }
-
 
     /// Types a call to a function in an imported module: `C.printf(..)`.
     ///
@@ -1185,12 +1166,10 @@ impl TypeChecker {
             );
         } else {
             self.diagnostics.push(
-                Diagnostic::error(format!(
-                    "module `{module}` does not export `{member}`"
-                ))
-                .with_code(DiagnosticCode::sema(4))
-                .with_span(span)
-                .with_note("a module's declarations are private unless marked `export`"),
+                Diagnostic::error(format!("module `{module}` does not export `{member}`"))
+                    .with_code(DiagnosticCode::sema(4))
+                    .with_span(span)
+                    .with_note("a module's declarations are private unless marked `export`"),
             );
         }
         None
@@ -1328,6 +1307,17 @@ impl TypeChecker {
 
         let mut applicable: Vec<(usize, usize)> = Vec::new();
         for (index, candidate) in candidates.iter().enumerate() {
+            // `@enable_if` is `std::enable_if`: a candidate whose condition is
+            // false does not take part in this call at all. It is decided before
+            // the arguments are scored, exactly as substitution failure removes
+            // a C++ candidate, so two overloads that are otherwise identical are
+            // told apart by their conditions alone. Leaving it to the scorer
+            // made both of them applicable, and the first one won whichever
+            // condition it carried.
+            let enabled = self.signature_enabled(candidate, &None);
+            if !enabled {
+                continue;
+            }
             if let Some(score) =
                 self.candidate_score(candidate, &argument_types, &named_types, node, ast)
             {
@@ -1458,16 +1448,13 @@ impl TypeChecker {
             }
             if filled.get(index).copied().unwrap_or(false) {
                 self.diagnostics.push(
-                    Diagnostic::error(format!(
-                        "`{callee}` is given `{}` twice",
-                        argument.name
-                    ))
-                    .with_code(DiagnosticCode::sema(171))
-                    .with_span(argument.name_span)
-                    .with_note(
-                        "a parameter takes one argument; write it once, either by position \
+                    Diagnostic::error(format!("`{callee}` is given `{}` twice", argument.name))
+                        .with_code(DiagnosticCode::sema(171))
+                        .with_span(argument.name_span)
+                        .with_note(
+                            "a parameter takes one argument; write it once, either by position \
                          or by name",
-                    ),
+                        ),
                 );
                 return None;
             }
@@ -1484,11 +1471,7 @@ impl TypeChecker {
             if filled.get(index).copied().unwrap_or(false) {
                 continue;
             }
-            if signature
-                .defaults
-                .get(index)
-                .is_some_and(Option::is_some)
-            {
+            if signature.defaults.get(index).is_some_and(Option::is_some) {
                 continue;
             }
             let name = signature
@@ -1562,7 +1545,8 @@ impl TypeChecker {
             // `a.resize(4, 7)` matched no overload -- passing the width through
             // a variable of the right type worked, which is what gave it away.
             if self.is_default_int_literal(ast, argument) && expected_ty.is_integer() {
-                self.adopted_types.insert(ast.expr(argument).span, expected_ty.clone());
+                self.adopted_types
+                    .insert(ast.expr(argument).span, expected_ty.clone());
             }
             let previous = self.expected.replace(expected_ty.clone());
             let found = self.infer_expr(ast, resolutions, types, argument);
@@ -1571,13 +1555,7 @@ impl TypeChecker {
                 self.note_indirect_argument(argument, &found, &expected_ty, ast);
                 let was_parameter = self.in_parameter_position;
                 self.in_parameter_position = true;
-                if !self.adopt_literal_argument(
-                    resolutions,
-                    ast,
-                    argument,
-                    &expected_ty,
-                    &found,
-                ) {
+                if !self.adopt_literal_argument(resolutions, ast, argument, &expected_ty, &found) {
                     if super::methods::integer_promotes(&found, &expected_ty) {
                         self.adopted_types
                             .insert(ast.expr(argument).span, expected_ty.clone());
@@ -1889,7 +1867,6 @@ impl TypeChecker {
             ExprKind::IntLiteral(literal) if literal.suffix.is_none()
         )
     }
-
 }
 
 /// The dotted path an expression writes, when it is a chain of names and

@@ -132,7 +132,8 @@ fn a_triple_quoted_string_counts_its_decoded_bytes() {
 
 #[test]
 fn an_escaped_quote_does_not_close_a_triple_quoted_string() {
-    let source = "fn main() int {\n    s [6]const c8 = \"\"\"a\\\"\\\"\\\"b\"\"\";\n    return 0;\n}\n";
+    let source =
+        "fn main() int {\n    s [6]const c8 = \"\"\"a\\\"\\\"\\\"b\"\"\";\n    return 0;\n}\n";
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     // Three escaped quotes are three characters, so the body is `a"""b`.
     assert_eq!(outcome, Outcome::Success, "{diagnostics}");

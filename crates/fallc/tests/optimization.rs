@@ -11,7 +11,8 @@ use fallc::pipeline::{compile_text_in_mode_opt, compile_text_optimized};
 
 /// Compiles and returns the IR at a chosen optimisation level.
 fn ir_at(source: &str, opt: fallc_ir::OptLevel, mode: fallc_ir::BuildMode) -> String {
-    let (outcome, output) = compile_text_in_mode_opt("test.ft", source, &[EmitKind::Llvm], mode, opt);
+    let (outcome, output) =
+        compile_text_in_mode_opt("test.ft", source, &[EmitKind::Llvm], mode, opt);
     assert_eq!(outcome, Outcome::Success, "{output}");
     output
 }
@@ -21,7 +22,11 @@ const FOLDABLE: &str = "fn square(n int) int {\n    return n * n;\n}\nfn main() 
 
 #[test]
 fn no_optimisation_leaves_the_code_as_written() {
-    let output = ir_at(FOLDABLE, fallc_ir::OptLevel::None, fallc_ir::BuildMode::Debug);
+    let output = ir_at(
+        FOLDABLE,
+        fallc_ir::OptLevel::None,
+        fallc_ir::BuildMode::Debug,
+    );
     // The loop and the callee are both still there.
     assert!(output.contains("define i32 @square"), "{output}");
     assert!(output.contains("for.cond"), "{output}");
@@ -32,10 +37,17 @@ fn optimising_folds_the_whole_program() {
     // 0+1+4+9+..+81 is 285, and at `-O2` the loop, the call, and the addition
     // all disappear into that constant. A level that did nothing would leave
     // the loop in place.
-    let output = ir_at(FOLDABLE, fallc_ir::OptLevel::Default, fallc_ir::BuildMode::Debug);
+    let output = ir_at(
+        FOLDABLE,
+        fallc_ir::OptLevel::Default,
+        fallc_ir::BuildMode::Debug,
+    );
     assert!(output.contains("define noundef i32 @main()"), "{output}");
     assert!(output.contains("ret i32 285"), "{output}");
-    assert!(!output.contains("for.cond"), "the loop should be gone: {output}");
+    assert!(
+        !output.contains("for.cond"),
+        "the loop should be gone: {output}"
+    );
 }
 
 #[test]
@@ -96,7 +108,11 @@ fn a_debug_build_keeps_its_overflow_guard_at_any_optimisation_level() {
 fn a_release_build_has_no_overflow_guard() {
     // In release, overflow is undefined, so there is nothing to check.
     let source = "fn f(n int) int {\n    return n + 1;\n}\n";
-    let output = ir_at(source, fallc_ir::OptLevel::None, fallc_ir::BuildMode::Release);
+    let output = ir_at(
+        source,
+        fallc_ir::OptLevel::None,
+        fallc_ir::BuildMode::Release,
+    );
     assert!(!output.contains("with.overflow"), "{output}");
 }
 
@@ -114,7 +130,11 @@ fn the_optimised_ir_is_what_the_object_contains() {
     // `--emit=llvm` has to show the code that will be produced, not the code
     // before the passes ran. It once printed the pre-optimisation text, which
     // made `-O` look like it did nothing.
-    let unoptimised = ir_at(FOLDABLE, fallc_ir::OptLevel::None, fallc_ir::BuildMode::Debug);
+    let unoptimised = ir_at(
+        FOLDABLE,
+        fallc_ir::OptLevel::None,
+        fallc_ir::BuildMode::Debug,
+    );
     let optimised = compile_text_optimized(
         "test.ft",
         FOLDABLE,
@@ -131,13 +151,34 @@ fn the_optimised_ir_is_what_the_object_contains() {
 #[test]
 fn an_optimisation_level_parses_the_way_a_c_compiler_does() {
     // A bare `-O` is `-O2`, as it is for `cc` and `clang`.
-    assert_eq!(fallc_ir::OptLevel::parse(""), Some(fallc_ir::OptLevel::Default));
-    assert_eq!(fallc_ir::OptLevel::parse("0"), Some(fallc_ir::OptLevel::None));
-    assert_eq!(fallc_ir::OptLevel::parse("1"), Some(fallc_ir::OptLevel::Less));
-    assert_eq!(fallc_ir::OptLevel::parse("2"), Some(fallc_ir::OptLevel::Default));
-    assert_eq!(fallc_ir::OptLevel::parse("3"), Some(fallc_ir::OptLevel::Aggressive));
-    assert_eq!(fallc_ir::OptLevel::parse("s"), Some(fallc_ir::OptLevel::Size));
-    assert_eq!(fallc_ir::OptLevel::parse("z"), Some(fallc_ir::OptLevel::SizeMin));
+    assert_eq!(
+        fallc_ir::OptLevel::parse(""),
+        Some(fallc_ir::OptLevel::Default)
+    );
+    assert_eq!(
+        fallc_ir::OptLevel::parse("0"),
+        Some(fallc_ir::OptLevel::None)
+    );
+    assert_eq!(
+        fallc_ir::OptLevel::parse("1"),
+        Some(fallc_ir::OptLevel::Less)
+    );
+    assert_eq!(
+        fallc_ir::OptLevel::parse("2"),
+        Some(fallc_ir::OptLevel::Default)
+    );
+    assert_eq!(
+        fallc_ir::OptLevel::parse("3"),
+        Some(fallc_ir::OptLevel::Aggressive)
+    );
+    assert_eq!(
+        fallc_ir::OptLevel::parse("s"),
+        Some(fallc_ir::OptLevel::Size)
+    );
+    assert_eq!(
+        fallc_ir::OptLevel::parse("z"),
+        Some(fallc_ir::OptLevel::SizeMin)
+    );
     // Anything else is refused rather than silently ignored.
     assert_eq!(fallc_ir::OptLevel::parse("4"), None);
     assert_eq!(fallc_ir::OptLevel::parse("fast"), None);
@@ -152,7 +193,11 @@ fn the_module_names_the_machine_it_is_compiled_for() {
     // `_len` without the following read seeing it -- so the array indexed out
     // of bounds and the program segfaulted. `-O0` was correct, which is what
     // made it look like an optimisation bug rather than a layout one.
-    let output = ir_at("fn main() int {\n    return 0;\n}\n", fallc_ir::OptLevel::None, fallc_ir::BuildMode::Debug);
+    let output = ir_at(
+        "fn main() int {\n    return 0;\n}\n",
+        fallc_ir::OptLevel::None,
+        fallc_ir::BuildMode::Debug,
+    );
     assert!(
         output.contains("target datalayout ="),
         "the module has no data layout: {output}"

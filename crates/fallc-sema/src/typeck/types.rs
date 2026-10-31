@@ -43,14 +43,12 @@ impl TypeChecker {
                     return;
                 }
                 let declared = !node.parenthesized
-                    && matches!(&ast.expr(node.operand).kind, ExprKind::Name(_) | ExprKind::Field(_));
-                let found = self.type_of_expression(
-                    ast,
-                    resolutions,
-                    types,
-                    node.operand,
-                    declared,
-                );
+                    && matches!(
+                        &ast.expr(node.operand).kind,
+                        ExprKind::Name(_) | ExprKind::Field(_)
+                    );
+                let found =
+                    self.type_of_expression(ast, resolutions, types, node.operand, declared);
                 let resolved = found.unwrap_or_else(|| Type::unspecified("type(..)", node.span));
                 self.type_of_types.insert(node.span, resolved);
             }
@@ -194,7 +192,11 @@ impl TypeChecker {
     /// of the type, because it describes the value. A `const` on a binding is
     /// the binding's own immutability, recorded separately, so it resolves to
     /// the inner type.
-    pub(super) fn resolve_type_syntax(&mut self, ty: &fallc_ast::TypeSyntax, in_parameter: bool) -> Type {
+    pub(super) fn resolve_type_syntax(
+        &mut self,
+        ty: &fallc_ast::TypeSyntax,
+        in_parameter: bool,
+    ) -> Type {
         let resolved = self.resolve_type_syntax_inner(ty, in_parameter);
         // Every written type is remembered under its own span, because code
         // generation resolves written types too -- it builds a symbol's name and
@@ -216,12 +218,7 @@ impl TypeChecker {
     /// `&&` -- and `&& &&` stays an rvalue reference. This is what makes a
     /// forwarding parameter mean "whatever the caller passed": an lvalue deduces
     /// `T` as `&U`, and `T&&` then collapses to `&U`.
-    fn collapse_reference(
-        &self,
-        referent: Type,
-        referent_is_const: bool,
-        is_rvalue: bool,
-    ) -> Type {
+    fn collapse_reference(&self, referent: Type, referent_is_const: bool, is_rvalue: bool) -> Type {
         match referent {
             Type::Reference {
                 referent,
@@ -477,9 +474,9 @@ impl TypeChecker {
             // `volatile T` is part of the type: which accesses are real
             // accesses is a property of the storage, and it has to survive
             // being passed around.
-            TypeSyntax::Volatile(inner) => Type::Volatile(Box::new(
-                self.resolve_type_syntax(inner, in_parameter),
-            )),
+            TypeSyntax::Volatile(inner) => {
+                Type::Volatile(Box::new(self.resolve_type_syntax(inner, in_parameter)))
+            }
             TypeSyntax::UnsizedArray(inner) => {
                 if in_parameter {
                     // `[]T` in a parameter list is `*T`, by definition -- and
@@ -558,13 +555,10 @@ impl TypeChecker {
                     return Type::Nominal(nominal.clone());
                 }
                 self.diagnostics.push(
-                    Diagnostic::error(format!(
-                        "`{name}` has no type named `{}`",
-                        member.name
-                    ))
-                    .with_code(DiagnosticCode::sema(136))
-                    .with_span(member.span)
-                    .with_note("a nested type is declared inside the type that owns it"),
+                    Diagnostic::error(format!("`{name}` has no type named `{}`", member.name))
+                        .with_code(DiagnosticCode::sema(136))
+                        .with_span(member.span)
+                        .with_note("a nested type is declared inside the type that owns it"),
                 );
                 Type::unspecified(&member.name, member.span)
             }
@@ -612,7 +606,9 @@ impl TypeChecker {
             Some(ConstExpr::Named { .. })
         );
         if is_a_name {
-            return self.const_eval_int(len).and_then(|value| u64::try_from(value).ok());
+            return self
+                .const_eval_int(len)
+                .and_then(|value| u64::try_from(value).ok());
         }
         // A length this checker cannot see the shape of -- a module's own
         // template, whose expressions were indexed against another tree -- is
@@ -852,6 +848,9 @@ impl TypeChecker {
             | ExprKind::Sizeof(_)
             | ExprKind::Alignof(_)
             | ExprKind::SizeofPack(_) => true,
+            // A coroutine's suspension point is a run-time fact about the
+            // program, never a constant.
+            ExprKind::Yield(_) => false,
             // The sign of a literal is not a run-time operation.
             ExprKind::Unary(unary)
                 if matches!(unary.op, fallc_ast::UnaryOp::Neg | fallc_ast::UnaryOp::Plus) =>
@@ -895,9 +894,7 @@ impl TypeChecker {
             ConstExpr::Int(value) => Some(value),
             ConstExpr::Neg(inner) => self.const_eval_int(inner).map(|v| -v),
             ConstExpr::Not(inner) => self.const_eval_int(inner).map(|v| !v),
-            ConstExpr::LogicalNot(inner) => {
-                self.const_eval_int(inner).map(|v| i64::from(v == 0))
-            }
+            ConstExpr::LogicalNot(inner) => self.const_eval_int(inner).map(|v| i64::from(v == 0)),
             ConstExpr::Binary { op, lhs, rhs } => {
                 let lhs = self.const_eval_int(lhs)?;
                 let rhs = self.const_eval_int(rhs)?;
@@ -1097,10 +1094,7 @@ impl TypeChecker {
     /// The name is read from the program's own list of parameters, because a
     /// signature resolved before its instantiation exists has no other way to
     /// tell a pattern variable from a misspelt type.
-    pub(super) fn written_names_a_template_parameter(
-        &self,
-        ty: &fallc_ast::TypeSyntax,
-    ) -> bool {
+    pub(super) fn written_names_a_template_parameter(&self, ty: &fallc_ast::TypeSyntax) -> bool {
         use fallc_ast::TypeSyntax;
         match ty {
             TypeSyntax::Named(named) => self.template_parameter_names.contains(&named.path),
@@ -1136,10 +1130,7 @@ impl TypeChecker {
         }
     }
 
-    pub(super) fn written_mentions_a_value_parameter(
-        &self,
-        ty: &fallc_ast::TypeSyntax,
-    ) -> bool {
+    pub(super) fn written_mentions_a_value_parameter(&self, ty: &fallc_ast::TypeSyntax) -> bool {
         use fallc_ast::TypeSyntax;
         match ty {
             TypeSyntax::Array(array) => {
@@ -1177,7 +1168,9 @@ impl TypeChecker {
                 // path is not a key.
                 let family = self.type_templates.get(&named.path).or_else(|| {
                     let last = named.path.rsplit('.').next().unwrap_or(&named.path);
-                    self.type_templates.values().find(|family| family.name == last)
+                    self.type_templates
+                        .values()
+                        .find(|family| family.name == last)
                 });
                 let names_family_parameter = |argument: &TypeSyntax| {
                     let TypeSyntax::Named(inner) = argument else {
@@ -1196,9 +1189,7 @@ impl TypeChecker {
                     })
                 };
                 if named.arguments.iter().any(|argument| match argument {
-                    fallc_ast::TemplateArgumentSyntax::Type(inner) => {
-                        names_family_parameter(inner)
-                    }
+                    fallc_ast::TemplateArgumentSyntax::Type(inner) => names_family_parameter(inner),
                     fallc_ast::TemplateArgumentSyntax::Value(_) => false,
                     fallc_ast::TemplateArgumentSyntax::Named { .. } => false,
                 }) {
@@ -1212,9 +1203,7 @@ impl TypeChecker {
                     fallc_ast::TemplateArgumentSyntax::Named { .. } => false,
                 })
             }
-            TypeSyntax::Array(array) => {
-                self.mentions_template_parameter_syntax(&array.element)
-            }
+            TypeSyntax::Array(array) => self.mentions_template_parameter_syntax(&array.element),
             TypeSyntax::Function(function) => {
                 function
                     .parameters
@@ -1232,13 +1221,11 @@ impl TypeChecker {
             | TypeSyntax::ConstRvalueReference(inner)
             | TypeSyntax::Volatile(inner)
             | TypeSyntax::Const(inner) => self.mentions_template_parameter_syntax(inner),
-            TypeSyntax::Member(member) => {
-                self.mentions_template_parameter_syntax(&member.outer)
-            }
+            TypeSyntax::Member(member) => self.mentions_template_parameter_syntax(&member.outer),
             TypeSyntax::TypeOf(_)
-        | TypeSyntax::DecltypeAuto(_)
-        | TypeSyntax::Auto(_)
-        | TypeSyntax::Unresolved(_) => false,
+            | TypeSyntax::DecltypeAuto(_)
+            | TypeSyntax::Auto(_)
+            | TypeSyntax::Unresolved(_) => false,
         }
     }
 
@@ -1249,12 +1236,20 @@ impl TypeChecker {
     /// around it -- `&Array<T>` is a reference to one.
     pub(super) fn mentions_unspecified(&self, ty: &Type) -> bool {
         match ty {
-            Type::Unspecified(_) => true,
+            // `void` is the empty spelling of "no value", not a name waiting to
+            // be resolved: `Coroutine<void, void, void>` is a settled type, and
+            // treating it as unresolved skipped its member instantiation -- so
+            // a coroutine had no destructor and leaked its frame.
+            Type::Unspecified(unspecified) => !unspecified.text.is_empty(),
             Type::Pointer { pointee, .. }
-            | Type::Reference { referent: pointee, .. }
+            | Type::Reference {
+                referent: pointee, ..
+            }
             | Type::Volatile(pointee)
             | Type::Const(pointee)
-            | Type::Array { element: pointee, .. }
+            | Type::Array {
+                element: pointee, ..
+            }
             | Type::UnsizedArray(pointee) => self.mentions_unspecified(pointee),
             _ => false,
         }
@@ -1375,7 +1370,11 @@ impl TypeChecker {
     /// program runs, so a fold over them is too. That is what makes it usable
     /// where a constant is required, and what lets `constexpr fn sum()` be a
     /// single expression.
-    pub(super) fn type_of_fold(&mut self, node: &fallc_ast::FoldExpr, span: fallc_span::Span) -> Option<Type> {
+    pub(super) fn type_of_fold(
+        &mut self,
+        node: &fallc_ast::FoldExpr,
+        span: fallc_span::Span,
+    ) -> Option<Type> {
         let elements = self.pack_elements(&node.pack, "folded")?;
         // Every element is checked as a value before it is combined, so an
         // element that is not a constant is reported where it stands.
@@ -1466,10 +1465,9 @@ impl TypeChecker {
         let wanted = self.expected.clone();
         let address_wanted = wanted.as_ref().is_some_and(|ty| ty.is_indirection());
         let read_branch = |this: &mut Self, branch: fallc_ast::ExprId, ty: &Type| {
-            if !address_wanted
-                && let Some(referent) = ty.referent().cloned()
-            {
-                this.deref_reads.insert(ast.expr(branch).span, referent.clone());
+            if !address_wanted && let Some(referent) = ty.referent().cloned() {
+                this.deref_reads
+                    .insert(ast.expr(branch).span, referent.clone());
                 return referent;
             }
             ty.clone()
@@ -1515,5 +1513,4 @@ impl TypeChecker {
         };
         nominal.mutable_fields.iter().any(|name| name == field)
     }
-
 }

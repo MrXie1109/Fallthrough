@@ -26,7 +26,7 @@ field declaration (see section 9). `mutable` is a field modifier, written after 
 field's type.
 
 2.3 A declaration and the visibility order of names in a scope are independent (see
-section 8 on forward declarations and [09 Scopes](09-scopes.md)).
+section 8 on forward declarations and [09 Scopes](10-scopes.md)).
 
 ## Bindings
 
@@ -114,7 +114,7 @@ Without an initializer the value is zero.
 
 5.4 A module-level variable not marked `export` is visible only in the module that
 defines it; the rules for `export` are given in
-[08 Modules](08-modules.md#the-export-table).
+[08 Modules](09-modules.md#the-export-table).
 
 ### External variables and functions
 

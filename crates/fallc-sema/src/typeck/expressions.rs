@@ -62,17 +62,20 @@ impl TypeChecker {
             // `{1, 2, 3}.begin()` finds the methods of `[3]int`.
             fallc_ast::ExprKind::ArrayLiteral(literal) => {
                 let previous = self.expected.take();
-                let element_type = previous.as_ref().and_then(|wanted| {
-                    match wanted.unqualified() {
-                        Type::Array { element, .. } => Some((**element).clone()),
-                        _ => None,
-                    }
-                });
+                let element_type =
+                    previous
+                        .as_ref()
+                        .and_then(|wanted| match wanted.unqualified() {
+                            Type::Array { element, .. } => Some((**element).clone()),
+                            _ => None,
+                        });
                 let mut inferred = Vec::with_capacity(literal.elements.len());
                 for &element in &literal.elements {
-                    let slot = self.expected.replace(element_type.clone().unwrap_or_else(|| {
-                        fallc_sema_type_auto()
-                    }));
+                    let slot = self.expected.replace(
+                        element_type
+                            .clone()
+                            .unwrap_or_else(|| fallc_sema_type_auto()),
+                    );
                     inferred.push(self.infer_expr(ast, resolutions, types, element));
                     self.expected = slot;
                 }
@@ -134,7 +137,10 @@ impl TypeChecker {
                 let Some(else_block) = node.else_block else {
                     // No `else`: nothing is produced when the condition is
                     // false, so the whole has no value.
-                    return Some(Type::unspecified(String::new(), ast.expr(node.condition).span));
+                    return Some(Type::unspecified(
+                        String::new(),
+                        ast.expr(node.condition).span,
+                    ));
                 };
                 let else_ty = self.block_value_type(ast, resolutions, types, else_block);
                 match (then_ty, else_ty) {
@@ -415,9 +421,7 @@ impl TypeChecker {
                                 ))
                                 .with_code(DiagnosticCode::sema(43))
                                 .with_span(node_span(ast, expr))
-                                .with_note(
-                                    "a type is dereferenced by defining `__deref__`",
-                                ),
+                                .with_note("a type is dereferenced by defining `__deref__`"),
                             );
                             None
                         }
@@ -437,23 +441,24 @@ impl TypeChecker {
                     (_, Some(ty)) => {
                         // A type takes part in a unary operator by defining the
                         // method for it: `-v` is `__neg__`, `~v` is `__not__`.
-                        if let Some(method) =
-                            fallc_ast::special::SpecialMethod::for_unary(node.op)
-                            && let Some(symbol) = self.resolve_nullary_method(
-                                resolutions,
-                                &ty,
-                                method,
-                            )
+                        if let Some(method) = fallc_ast::special::SpecialMethod::for_unary(node.op)
+                            && let Some(symbol) =
+                                self.resolve_nullary_method(resolutions, &ty, method)
                         {
                             let found = resolutions
                                 .defs
                                 .iter()
                                 .filter(|def| {
-                                    def.name == format!("{}{}", method.name(), ty.nominal_name().unwrap_or(""))
+                                    def.name
+                                        == format!(
+                                            "{}{}",
+                                            method.name(),
+                                            ty.nominal_name().unwrap_or("")
+                                        )
                                 })
                                 .find_map(|def| def.signature.clone());
-                            let returns = found
-                                .map(|signature| self.signature_result_type(&signature));
+                            let returns =
+                                found.map(|signature| self.signature_result_type(&signature));
                             self.unary_methods.insert(node_span(ast, expr), symbol);
                             return returns;
                         }
@@ -505,16 +510,16 @@ impl TypeChecker {
                         // left `(c++).value()` with no type for its receiver.
                         Some(operand_ty)
                     } else {
-                    self.diagnostics.push(
-                        Diagnostic::error(format!(
-                            "`{}` cannot be applied to `{}`",
-                            node.op.spelling(),
-                            operand_ty.spelling()
-                        ))
-                        .with_code(DiagnosticCode::sema(31))
-                        .with_span(node_span(ast, expr)),
-                    );
-                    None
+                        self.diagnostics.push(
+                            Diagnostic::error(format!(
+                                "`{}` cannot be applied to `{}`",
+                                node.op.spelling(),
+                                operand_ty.spelling()
+                            ))
+                            .with_code(DiagnosticCode::sema(31))
+                            .with_span(node_span(ast, expr)),
+                        );
+                        None
                     }
                 } else {
                     Some(operand_ty)
@@ -532,8 +537,8 @@ impl TypeChecker {
                         path: node.type_name.clone(),
                         arguments: node.type_arguments.clone(),
                         span: node.type_span,
-                is_expansion: false,
-            }),
+                        is_expansion: false,
+                    }),
                     false,
                 );
                 if target.is_unspecified() {
@@ -633,8 +638,7 @@ impl TypeChecker {
                 // with a selector parameter naming the target type. That is
                 // asked first, because it is the type's own answer to "how do
                 // I become that", and a built-in rule cannot know it.
-                if let Some(method) = self.find_conversion_method(resolutions, &source, &target)
-                {
+                if let Some(method) = self.find_conversion_method(resolutions, &source, &target) {
                     // The method's return type is what the cast produces, which
                     // lets a conversion return something other than the type
                     // its selector named.
@@ -815,6 +819,9 @@ impl TypeChecker {
                 }
                 found
             }
+            fallc_ast::ExprKind::Yield(node) => {
+                self.type_of_yield(ast, resolutions, types, node, node_span(ast, expr))
+            }
             fallc_ast::ExprKind::Sizeof(ty) | fallc_ast::ExprKind::Alignof(ty) => {
                 let is_size = matches!(&node.kind, fallc_ast::ExprKind::Sizeof(_));
                 self.prepare_type_of(ty, ast, resolutions, types);
@@ -912,7 +919,9 @@ impl TypeChecker {
             self.diagnostics.push(
                 Diagnostic::error(format!(
                     "the character `{}` does not fit in `{}`; write it as `{needed}{}`",
-                    literal.text, ty.spelling(), literal.text
+                    literal.text,
+                    ty.spelling(),
+                    literal.text
                 ))
                 .with_code(DiagnosticCode::sema(51))
                 .with_span(self.const_span(expr)),
@@ -1035,21 +1044,18 @@ impl TypeChecker {
         for argument in &init.named {
             let Some(index) = fields.iter().position(|(name, _)| name == &argument.name) else {
                 self.diagnostics.push(
-                    Diagnostic::error(format!(
-                        "`{owner}` has no field named `{}`",
-                        argument.name
-                    ))
-                    .with_code(DiagnosticCode::sema(170))
-                    .with_span(argument.name_span)
-                    .with_note(format!(
-                        "its fields are {}",
-                        Self::parameter_list(
-                            &fields
-                                .iter()
-                                .map(|(name, _)| name.clone())
-                                .collect::<Vec<_>>()
-                        )
-                    )),
+                    Diagnostic::error(format!("`{owner}` has no field named `{}`", argument.name))
+                        .with_code(DiagnosticCode::sema(170))
+                        .with_span(argument.name_span)
+                        .with_note(format!(
+                            "its fields are {}",
+                            Self::parameter_list(
+                                &fields
+                                    .iter()
+                                    .map(|(name, _)| name.clone())
+                                    .collect::<Vec<_>>()
+                            )
+                        )),
                 );
                 return;
             };
@@ -1061,9 +1067,7 @@ impl TypeChecker {
                     ))
                     .with_code(DiagnosticCode::sema(171))
                     .with_span(argument.name_span)
-                    .with_note(
-                        "give each field one value, either by position or by name",
-                    ),
+                    .with_note("give each field one value, either by position or by name"),
                 );
                 return;
             }
@@ -1097,7 +1101,15 @@ impl TypeChecker {
         }
 
         for (element, (field_name, field_ty)) in init.elements.iter().zip(&fields) {
-            self.check_field_value(ast, resolutions, types, &owner, field_name, field_ty, *element);
+            self.check_field_value(
+                ast,
+                resolutions,
+                types,
+                &owner,
+                field_name,
+                field_ty,
+                *element,
+            );
         }
         for (index, argument) in named {
             let (field_name, field_ty) = &fields[index];
@@ -1145,21 +1157,20 @@ impl TypeChecker {
                 // and a bare name's type is not guaranteed to be in the table
                 // at this point: record it before asking.
                 types.insert(element, found.clone());
-                converted = self.try_implicit_conversion(
-                    resolutions, ast, types, element, field_ty,
-                );
+                converted =
+                    self.try_implicit_conversion(resolutions, ast, types, element, field_ty);
             }
             if !converted {
-            self.diagnostics.push(
-                Diagnostic::error(format!(
-                    "field `{field_name}` of `{owner}` is `{}`, but `{}` was given",
-                    field_ty.spelling(),
-                    found.spelling()
-                ))
-                .with_code(DiagnosticCode::sema(65))
-                .with_span(ast.expr(element).span)
-                .with_note("there are no implicit conversions; use `as`"),
-            );
+                self.diagnostics.push(
+                    Diagnostic::error(format!(
+                        "field `{field_name}` of `{owner}` is `{}`, but `{}` was given",
+                        field_ty.spelling(),
+                        found.spelling()
+                    ))
+                    .with_code(DiagnosticCode::sema(65))
+                    .with_span(ast.expr(element).span)
+                    .with_note("there are no implicit conversions; use `as`"),
+                );
             }
         }
     }
@@ -1201,13 +1212,12 @@ impl TypeChecker {
         // `p - q` is not an offset but a difference, and its right operand is a
         // pointer like its left.
         let offset_context = lhs.is_pointer()
-            && matches!(
-                node.op,
-                fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub
-            );
-        let previous = self
-            .expected
-            .replace(if offset_context { Type::USIZE } else { lhs.clone() });
+            && matches!(node.op, fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub);
+        let previous = self.expected.replace(if offset_context {
+            Type::USIZE
+        } else {
+            lhs.clone()
+        });
         let rhs = self.infer_expr(ast, resolutions, types, node.rhs);
         self.expected = previous;
         let rhs = rhs?;
@@ -1249,7 +1259,8 @@ impl TypeChecker {
                 // Recorded, because the expression's own type is still the
                 // reference: code generation loads the address and has to be
                 // told that this use wants the value behind it.
-                self.deref_reads.insert(ast.expr(expr).span, referent.clone());
+                self.deref_reads
+                    .insert(ast.expr(expr).span, referent.clone());
                 referent
             }
             None => ty,
@@ -1268,7 +1279,6 @@ impl TypeChecker {
         rhs: Type,
         span: fallc_span::Span,
     ) -> Option<Type> {
-
         if node.op.is_short_circuit() {
             // Both sides must be usable as conditions. The result is always
             // `bool`, and short-circuiting means the operands are tested, not
@@ -1294,14 +1304,17 @@ impl TypeChecker {
             && same_place(ast, node.lhs, node.rhs)
         {
             self.diagnostics.push(
-                Diagnostic::warning(format!("`{}` compares a value with itself", node.op.spelling()))
-                    .with_code(DiagnosticCode::sema(146))
-                    .with_warning("self-comparison")
-                    .with_span(span)
-                    .with_note(
-                        "both sides are the same place, so the answer is fixed: one of the two \
+                Diagnostic::warning(format!(
+                    "`{}` compares a value with itself",
+                    node.op.spelling()
+                ))
+                .with_code(DiagnosticCode::sema(146))
+                .with_warning("self-comparison")
+                .with_span(span)
+                .with_note(
+                    "both sides are the same place, so the answer is fixed: one of the two \
                          was meant to be a different value",
-                    ),
+                ),
             );
         }
 
@@ -1312,14 +1325,17 @@ impl TypeChecker {
             && self.const_eval_int(node.rhs) == Some(0)
         {
             self.diagnostics.push(
-                Diagnostic::warning(format!("`{}` divides by a constant zero", node.op.spelling()))
-                    .with_code(DiagnosticCode::sema(147))
-                    .with_warning("division-by-zero")
-                    .with_span(span)
-                    .with_note(
-                        "the division cannot have a value: a debug build stops the program \
+                Diagnostic::warning(format!(
+                    "`{}` divides by a constant zero",
+                    node.op.spelling()
+                ))
+                .with_code(DiagnosticCode::sema(147))
+                .with_warning("division-by-zero")
+                .with_span(span)
+                .with_note(
+                    "the division cannot have a value: a debug build stops the program \
                          here, and a release build leaves the result undefined",
-                    ),
+                ),
             );
         }
 
@@ -1332,10 +1348,8 @@ impl TypeChecker {
         // operation -- and the difference of two pointers is an `isize`,
         // because it may be negative. Nothing here is checked, exactly as
         // indexing a pointer is not.
-        if matches!(
-            node.op,
-            fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub
-        ) && (lhs.is_pointer() || rhs.is_pointer())
+        if matches!(node.op, fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub)
+            && (lhs.is_pointer() || rhs.is_pointer())
         {
             if lhs.is_pointer() {
                 if rhs.is_pointer() {
@@ -1366,9 +1380,7 @@ impl TypeChecker {
                         Diagnostic::error("`+` cannot add two pointers".to_owned())
                             .with_code(DiagnosticCode::sema(32))
                             .with_span(span)
-                            .with_note(
-                                "two pointers have a distance, written `p - q`, and no sum",
-                            ),
+                            .with_note("two pointers have a distance, written `p - q`, and no sum"),
                     );
                     return None;
                 }
@@ -1388,10 +1400,7 @@ impl TypeChecker {
                     );
                     return None;
                 }
-            } else if node.op == fallc_ast::BinaryOp::Add
-                && rhs.is_pointer()
-                && lhs.is_integer()
-            {
+            } else if node.op == fallc_ast::BinaryOp::Add && rhs.is_pointer() && lhs.is_integer() {
                 // `1 + p` is the same operation as `p + 1`. The left literal
                 // was inferred before the right, so it is recorded as the
                 // `usize` the offset needs -- the type it adopts in every other
@@ -1457,7 +1466,10 @@ impl TypeChecker {
             // the *values* happened to compare equal.
             if lhs.is_pointer()
                 && rhs.is_pointer()
-                && lhs.pointee().zip(rhs.pointee()).is_some_and(|(a, b)| a == b)
+                && lhs
+                    .pointee()
+                    .zip(rhs.pointee())
+                    .is_some_and(|(a, b)| a == b)
             {
                 return Some(Type::BOOL);
             }
@@ -1524,10 +1536,8 @@ impl TypeChecker {
         // defined by the iterator (`r - q` is an `isize`), and both operands
         // have the same type, so nothing about them says the answer is that
         // type.
-        if matches!(
-            node.op,
-            fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub
-        ) && !lhs.is_numeric()
+        if matches!(node.op, fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub)
+            && !lhs.is_numeric()
             && let Some(result) =
                 self.type_of_operator_method(ast, resolutions, types, node, &lhs, &rhs, span)
         {
@@ -1538,9 +1548,9 @@ impl TypeChecker {
             // Neither operand is a number, so the operation is whatever the
             // operands' types define it to be. This is the only way a
             // user-defined type takes part in `+`.
-            if let Some(result) = self.type_of_operator_method(
-                ast, resolutions, types, node, &lhs, &rhs, span,
-            ) {
+            if let Some(result) =
+                self.type_of_operator_method(ast, resolutions, types, node, &lhs, &rhs, span)
+            {
                 return Some(result);
             }
             self.diagnostics.push(
@@ -1610,8 +1620,7 @@ impl TypeChecker {
             ) {
                 continue;
             }
-            let Some(method) =
-                fallc_ast::special::SpecialMethod::for_binary(node.op, reflected)
+            let Some(method) = fallc_ast::special::SpecialMethod::for_binary(node.op, reflected)
             else {
                 continue;
             };
@@ -1685,7 +1694,15 @@ impl TypeChecker {
             // recognised as one and allowed to adopt the parameter's type.
             let argument_expr = if reflected { node.lhs } else { node.rhs };
             if let Some(result) = self.resolve_operator_method(
-                ast, resolutions, types, name, receiver, argument, argument_expr, span, reflected,
+                ast,
+                resolutions,
+                types,
+                name,
+                receiver,
+                argument,
+                argument_expr,
+                span,
+                reflected,
             ) {
                 return Some(result);
             }
@@ -1774,8 +1791,7 @@ impl TypeChecker {
         // compared equal to a reference. Once a `T` correctly satisfies a `&T`,
         // the first half is false and the address was never recorded, so
         // `a == b` passed a `String` where `*const String` was declared.
-        let by_address = !argument.is_indirection()
-            && self.operand_fits(argument, &parameter_type);
+        let by_address = !argument.is_indirection() && self.operand_fits(argument, &parameter_type);
         // An unsuffixed integer literal takes the parameter's type, which is
         // how `s * 3` reaches `__mul__(.., usize)`: the literal is an `int`
         // until something tells it otherwise, and the parameter is that
@@ -1799,7 +1815,9 @@ impl TypeChecker {
                     ast.expr(argument_expr).span,
                 )
             });
-        if !self.is_compatible(argument, &parameter_type) && !by_address && !literal_fits
+        if !self.is_compatible(argument, &parameter_type)
+            && !by_address
+            && !literal_fits
             && !constructed
         {
             return None;
@@ -2053,12 +2071,7 @@ impl TypeChecker {
         source: &Type,
         target: &Type,
     ) -> Option<ConversionMethod> {
-        let method = self.find_conversion_method_named(
-            resolutions,
-            source,
-            target,
-            "__im_as__",
-        )?;
+        let method = self.find_conversion_method_named(resolutions, source, target, "__im_as__")?;
         if !self.is_compatible(&method.returns, target) {
             return None;
         }
@@ -2080,8 +2093,7 @@ impl TypeChecker {
         let Some(source) = types.get(expr).cloned() else {
             return false;
         };
-        let Some(method) = self.find_implicit_conversion(resolutions, &source, target)
-        else {
+        let Some(method) = self.find_implicit_conversion(resolutions, &source, target) else {
             return false;
         };
         self.note_throwing_call(ast.expr(expr).span, &method.signature, ast, None);
@@ -2173,7 +2185,6 @@ impl TypeChecker {
             ast,
         )
     }
-
 }
 
 impl TypeChecker {
@@ -2218,10 +2229,7 @@ impl TypeChecker {
         let name = query.name.as_str();
         let known = matches!(
             name,
-            "__builtin_defined"
-                | "__builtin_compilable"
-                | "meta.defined"
-                | "meta.compilable"
+            "__builtin_defined" | "__builtin_compilable" | "meta.defined" | "meta.compilable"
         );
         if !known {
             self.diagnostics.push(
@@ -2274,5 +2282,100 @@ impl TypeChecker {
         }
         // A build fact the platform supplies.
         matches!(argument, "linux" | "windows" | "macos" | "unix")
+    }
+}
+
+impl TypeChecker {
+    /// Types `yield expr` and the bare `yield`.
+    ///
+    /// # The rule
+    ///
+    /// Inside a `@coroutine` function the declared return type is
+    /// `std.Coroutine<Send, Yield, Return>`, and those three types are the
+    /// whole contract: `yield v` hands a `Yield` to whoever resumed the
+    /// coroutine, and the value it *produces* is the `Send` that resumer sends
+    /// next. So the expression is checked against `Yield`, and its type is
+    /// `Send`.
+    ///
+    /// A bare `yield` gives nothing, which only a coroutine whose `Yield` is
+    /// `void` can write: there is no value to hand over.
+    ///
+    /// Outside a coroutine there is no suspension point and nothing to hand a
+    /// value to, and a wrong answer there would compile and silently shape the
+    /// function.
+    ///
+    /// - `ast`: the tree the expression is in
+    /// - `resolutions`: what the names in it resolve to
+    /// - `types`: the type of every expression, filled in here
+    /// - `node`: the `yield` itself
+    /// - `span`: where it is written
+    pub(super) fn type_of_yield(
+        &mut self,
+        ast: &Ast,
+        resolutions: &Resolutions,
+        types: &mut TypeTable,
+        node: &fallc_ast::YieldExpr,
+        span: fallc_span::Span,
+    ) -> Option<Type> {
+        let Some(shape) = self.coroutines.last().cloned() else {
+            self.diagnostics.push(
+                Diagnostic::error("`yield` outside a `@coroutine` function")
+                    .with_code(DiagnosticCode::sema(195))
+                    .with_span(span)
+                    .with_note(
+                        "a coroutine is a function marked `@coroutine` whose return type is \
+                         `std.Coroutine<Send, Yield, Return>`; only its body has a suspension \
+                         point",
+                    ),
+            );
+            return None;
+        };
+        match node.value {
+            Some(value) => {
+                // The operand is checked against the coroutine's `Yield` type,
+                // and nothing else: whatever expectation the surrounding
+                // expression had is not its business.
+                let previous = self.expected.replace(shape.yield_ty.clone());
+                // `yield` is an initialisation position exactly as `return` is:
+                // a value that is not already the `Yield` type may be built by
+                // the type's own `__init__`, and the checker records which
+                // constructor answers so code generation calls it.
+                let constructed =
+                    if shape.yield_ty.is_indirection() || shape.yield_ty.is_unspecified() {
+                        None
+                    } else {
+                        self.init_overload_for(&shape.yield_ty, value, ast, resolutions, types)
+                    };
+                if constructed.is_none() {
+                    let _ = self.check_expr(ast, resolutions, types, value, &shape.yield_ty);
+                }
+                self.expected = previous;
+                // The operand's type is the coroutine's `Yield`, whatever else
+                // asked about the expression: `yield 20` in `b int = yield 20`
+                // is checked once for the binding and once here, and a second
+                // pass that recorded the *binding's* type would give code
+                // generation `bool` for a value the frame holds as an `int`.
+                types.insert(value, shape.yield_ty.clone());
+            }
+            None => {
+                if !shape.yield_ty.is_void() {
+                    self.diagnostics.push(
+                        Diagnostic::error(format!(
+                            "`yield` with no value, but `{}` yields `{}`",
+                            shape.name,
+                            shape.yield_ty.spelling()
+                        ))
+                        .with_code(DiagnosticCode::sema(196))
+                        .with_span(span)
+                        .with_note(
+                            "a bare `yield` is only for a coroutine whose `Yield` type is \
+                             `void`; give the value the resumer should receive",
+                        ),
+                    );
+                    return None;
+                }
+            }
+        }
+        Some(shape.send)
     }
 }

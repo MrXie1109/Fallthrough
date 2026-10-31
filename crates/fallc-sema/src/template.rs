@@ -211,7 +211,8 @@ impl Substitution {
     /// type means binding those variables to it. A name already bound is
     /// shadowed, which is what makes the inner question win.
     pub fn bind_type(&mut self, name: impl Into<String>, ty: Type) {
-        self.bindings.insert(name.into(), TemplateArgument::Type(ty));
+        self.bindings
+            .insert(name.into(), TemplateArgument::Type(ty));
     }
 
     /// Binds a name to an argument of whatever kind it is.
@@ -301,27 +302,27 @@ impl Substitution {
             // The parts of a function type are substituted like any other
             // written type: `fn(T) T` inside a template means the argument's
             // type on both sides.
-            TypeSyntax::Function(function) => {
-                TypeSyntax::Function(fallc_ast::FunctionTypeSyntax {
-                    abi: function.abi.clone(),
-                    parameters: function
-                        .parameters
-                        .iter()
-                        .map(|parameter| self.substitute_written_type(parameter))
-                        .collect(),
-                    variadic: function.variadic,
-                    throws: function.throws,
-                    returns: Box::new(self.substitute_written_type(&function.returns)),
-                    span: function.span,
-                })
-            }
+            TypeSyntax::Function(function) => TypeSyntax::Function(fallc_ast::FunctionTypeSyntax {
+                abi: function.abi.clone(),
+                parameters: function
+                    .parameters
+                    .iter()
+                    .map(|parameter| self.substitute_written_type(parameter))
+                    .collect(),
+                variadic: function.variadic,
+                throws: function.throws,
+                returns: Box::new(self.substitute_written_type(&function.returns)),
+                span: function.span,
+            }),
             // `type(auto)` has no part to substitute: its type comes from the
             // initialiser, which the instantiation's own checker sees.
             TypeSyntax::DecltypeAuto(_) => ty.clone(),
             TypeSyntax::UnsizedArray(inner) => {
                 TypeSyntax::UnsizedArray(Box::new(self.substitute_written_type(inner)))
             }
-            TypeSyntax::Pointer(inner) => TypeSyntax::Pointer(Box::new(self.substitute_written_type(inner))),
+            TypeSyntax::Pointer(inner) => {
+                TypeSyntax::Pointer(Box::new(self.substitute_written_type(inner)))
+            }
             TypeSyntax::PointerToConst(inner) => {
                 TypeSyntax::PointerToConst(Box::new(self.substitute_written_type(inner)))
             }
@@ -343,7 +344,9 @@ impl Substitution {
             TypeSyntax::Volatile(inner) => {
                 TypeSyntax::Volatile(Box::new(self.substitute_written_type(inner)))
             }
-            TypeSyntax::Const(inner) => TypeSyntax::Const(Box::new(self.substitute_written_type(inner))),
+            TypeSyntax::Const(inner) => {
+                TypeSyntax::Const(Box::new(self.substitute_written_type(inner)))
+            }
             // `type(expr)` names no parameter, so substituting into it changes
             // nothing.
             TypeSyntax::Member(member) => TypeSyntax::Member(fallc_ast::TypeMember {
@@ -351,9 +354,7 @@ impl Substitution {
                 name: member.name.clone(),
                 span: member.span,
             }),
-            TypeSyntax::TypeOf(_) | TypeSyntax::Auto(_) | TypeSyntax::Unresolved(_) => {
-                ty.clone()
-            }
+            TypeSyntax::TypeOf(_) | TypeSyntax::Auto(_) | TypeSyntax::Unresolved(_) => ty.clone(),
         }
     }
 }
@@ -391,10 +392,7 @@ mod tests {
         let params = vec![pack("Args")];
         let many = Substitution::new(
             &params,
-            &Arguments(vec![
-                TemplateArgument::Int(1),
-                TemplateArgument::Int(2),
-            ]),
+            &Arguments(vec![TemplateArgument::Int(1), TemplateArgument::Int(2)]),
         )
         .expect("a pack accepts any number");
         assert_eq!(
@@ -405,8 +403,7 @@ mod tests {
             ]))
         );
 
-        let none = Substitution::new(&params, &Arguments(Vec::new()))
-            .expect("a pack accepts none");
+        let none = Substitution::new(&params, &Arguments(Vec::new())).expect("a pack accepts none");
         assert_eq!(none.get("Args"), Some(&TemplateArgument::Pack(Vec::new())));
     }
 

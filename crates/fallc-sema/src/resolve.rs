@@ -508,7 +508,9 @@ impl ExternalModule {
         }
         // A module-level variable and a trait are published the same way.
         for (name, value) in &other.globals {
-            self.globals.entry(name.clone()).or_insert_with(|| value.clone());
+            self.globals
+                .entry(name.clone())
+                .or_insert_with(|| value.clone());
         }
         for name in &other.traits {
             self.traits.insert(name.clone());
@@ -516,7 +518,9 @@ impl ExternalModule {
         // An enum and an interface are published the same way: a name at every
         // step of the chain, or it is not exported.
         for (name, value) in &other.enums {
-            self.enums.entry(name.clone()).or_insert_with(|| value.clone());
+            self.enums
+                .entry(name.clone())
+                .or_insert_with(|| value.clone());
         }
         for (name, value) in &other.interfaces {
             self.interfaces
@@ -730,7 +734,7 @@ fn builtin_type_syntax(ty: crate::builtins::BuiltinType, span: Span) -> fallc_as
         crate::builtins::BuiltinType::Void => TypeSyntax::Named(fallc_ast::NamedType {
             path: String::new(),
             arguments: Vec::new(),
-                is_expansion: false,
+            is_expansion: false,
             span,
         }),
         // A builtin that takes characters takes a pointer to them. Written as
@@ -743,17 +747,17 @@ fn builtin_type_syntax(ty: crate::builtins::BuiltinType, span: Span) -> fallc_as
         crate::builtins::BuiltinType::Integer => TypeSyntax::Named(fallc_ast::NamedType {
             path: "int".to_owned(),
             arguments: Vec::new(),
-                is_expansion: false,
+            is_expansion: false,
             span,
         }),
-        crate::builtins::BuiltinType::Bytes => TypeSyntax::PointerToConst(Box::new(
-            TypeSyntax::Named(fallc_ast::NamedType {
+        crate::builtins::BuiltinType::Bytes => {
+            TypeSyntax::PointerToConst(Box::new(TypeSyntax::Named(fallc_ast::NamedType {
                 path: "c8".to_owned(),
                 arguments: Vec::new(),
                 is_expansion: false,
                 span,
-            }),
-        )),
+            })))
+        }
         // `any` and `Text` are not types the argument or the result is checked
         // against: `str` and `repr` accept every value and are lowered by the
         // compiler according to what they were given. Their signatures exist
@@ -1145,8 +1149,8 @@ impl Resolver {
         // missing.
         for name in [
             "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "int", "uint",
-            "isize", "usize", "byte", "bool", "char", "c8", "c16", "c32", "float", "double",
-            "f32", "f64", "void",
+            "isize", "usize", "byte", "bool", "char", "c8", "c16", "c32", "float", "double", "f32",
+            "f64", "void",
         ] {
             resolver.known_types.insert(name.to_owned());
         }
@@ -1316,10 +1320,7 @@ impl Resolver {
                 // attributes are in hand: a default implementation is replaced
                 // by any other definition of the name, so which candidates a
                 // call may see depends on it.
-                if item
-                    .attrs
-                    .iter()
-                    .any(|attr| attr.name == "overridable")
+                if item.attrs.iter().any(|attr| attr.name == "overridable")
                     && let Some(definition) = self.resolutions.defs.get_mut(def.0 as usize)
                 {
                     definition.is_overridable = true;
@@ -1512,17 +1513,15 @@ impl Resolver {
             ItemKind::Interface(_) => {}
             // The initialiser is resolved before the name is bound -- the same
             // rule a local follows -- and every initialiser form is walked.
-            ItemKind::Variable(variable) => {
-                match &variable.init {
-                    Some(fallc_ast::Initializer::Expr(expr)) => self.resolve_expr(ast, *expr),
-                    Some(fallc_ast::Initializer::Designated(init)) => {
-                        for &element in &init.elements {
-                            self.resolve_expr(ast, element);
-                        }
+            ItemKind::Variable(variable) => match &variable.init {
+                Some(fallc_ast::Initializer::Expr(expr)) => self.resolve_expr(ast, *expr),
+                Some(fallc_ast::Initializer::Designated(init)) => {
+                    for &element in &init.elements {
+                        self.resolve_expr(ast, element);
                     }
-                    None => {}
                 }
-            }
+                None => {}
+            },
             // An enumerator's value is an expression -- `GREEN = 2 * 3` -- and
             // a *later* member may name an earlier one, so they are resolved in
             // order within one scope.
@@ -1891,10 +1890,7 @@ impl Resolver {
                 for clause in &node.except_clauses {
                     self.scoped_block(ast, clause.block);
                 }
-                for block in [node.else_block, node.finally_block]
-                    .into_iter()
-                    .flatten()
-                {
+                for block in [node.else_block, node.finally_block].into_iter().flatten() {
                     self.scoped_block(ast, block);
                 }
             }
@@ -1931,7 +1927,10 @@ impl Resolver {
             // nothing, which is not an error here.
             ExprKind::SizeofPack(reference) => {
                 if let Some(definition) = self.lookup(&reference.pack)
-                    && self.resolutions.def(definition).is_some_and(|def| def.kind == DefKind::Param)
+                    && self
+                        .resolutions
+                        .def(definition)
+                        .is_some_and(|def| def.kind == DefKind::Param)
                 {
                     self.resolutions.bind(reference.pack_span, definition);
                 }
@@ -1956,6 +1955,13 @@ impl Resolver {
                 }
             }
             ExprKind::Propagate(node) => self.resolve_expr(ast, node.value),
+            // `yield` is an expression whose operand is resolved like any other.
+            // A bare `yield` has none.
+            ExprKind::Yield(node) => {
+                if let Some(value) = node.value {
+                    self.resolve_expr(ast, value);
+                }
+            }
             ExprKind::Abort(node) => self.resolve_expr(ast, node.value),
             ExprKind::Builtin(_) => {}
             ExprKind::IfValue(node) => {
@@ -2217,7 +2223,7 @@ impl Resolver {
                 imported_as: None,
                 imported_via: None,
                 is_builtin: false,
-            is_overridable: false,
+                is_overridable: false,
             });
             if let Some(scope) = self.scopes.last_mut() {
                 scope.names.insert("_".to_owned(), vec![id]);
@@ -2351,7 +2357,10 @@ impl Resolver {
                 );
                 return;
             }
-            scope = self.scopes.get(id.0 as usize).and_then(|scope| scope.parent);
+            scope = self
+                .scopes
+                .get(id.0 as usize)
+                .and_then(|scope| scope.parent);
         }
     }
 
@@ -2564,8 +2573,7 @@ impl Resolver {
                     self.resolutions.bind(span, existing);
                     return Some(existing);
                 }
-                self.constants_by_name
-                    .insert(local.to_owned(), value);
+                self.constants_by_name.insert(local.to_owned(), value);
                 let def = self.define(local.to_owned(), DefKind::Const, span, span, None);
                 self.resolutions.bind(span, def);
                 return Some(def);
@@ -2644,15 +2652,12 @@ impl Resolver {
         // library function ambiguous.
         let mut first = None;
         for signature in signatures {
-            if let Some(index) = self
-                .resolutions
-                .defs
-                .iter()
-                .position(|entry| {
-                    entry.name == local && entry.signature.as_ref() == Some(&signature)
-                })
-            {
-                first.get_or_insert(DefId(u32::try_from(index).expect("def count exceeds u32::MAX")));
+            if let Some(index) = self.resolutions.defs.iter().position(|entry| {
+                entry.name == local && entry.signature.as_ref() == Some(&signature)
+            }) {
+                first.get_or_insert(DefId(
+                    u32::try_from(index).expect("def count exceeds u32::MAX"),
+                ));
                 continue;
             }
             let def = self.define(local.to_owned(), DefKind::Function, span, span, None);
@@ -2816,10 +2821,7 @@ mod tests {
 }
 
 /// Whether a written type names one of `names`.
-fn type_mentions(
-    ty: &fallc_ast::TypeSyntax,
-    names: &std::collections::HashSet<String>,
-) -> bool {
+fn type_mentions(ty: &fallc_ast::TypeSyntax, names: &std::collections::HashSet<String>) -> bool {
     use fallc_ast::{TemplateArgumentSyntax, TypeSyntax};
     match ty {
         TypeSyntax::Named(named) => {

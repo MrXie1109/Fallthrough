@@ -467,10 +467,12 @@ impl TypeChecker {
                 // exactly as it does in an initialiser: `s.find("ll")` is the
                 // String constructor's job. The conversion is recorded when the
                 // call is decided; here only the fit is asked.
-                if matches!(&ast.expr(*argument).kind, fallc_ast::ExprKind::StringLiteral(_))
-                    && self
-                        .literal_constructor(resolutions, ast, &expected, *argument)
-                        .is_some()
+                if matches!(
+                    &ast.expr(*argument).kind,
+                    fallc_ast::ExprKind::StringLiteral(_)
+                ) && self
+                    .literal_constructor(resolutions, ast, &expected, *argument)
+                    .is_some()
                 {
                     continue;
                 }
@@ -510,8 +512,7 @@ impl TypeChecker {
         };
         // The *structures* must also match, so that only the naming differs:
         // a pointer to one and a value of the other are still different.
-        last(a) == last(b)
-            && std::mem::discriminant(left) == std::mem::discriminant(right)
+        last(a) == last(b) && std::mem::discriminant(left) == std::mem::discriminant(right)
     }
 
     /// Returns every definition whose name is `name` or ends in `.{name}`.
@@ -715,6 +716,31 @@ impl TypeChecker {
         self.expected = previous_expected;
         let receiver_ty = receiver_ty?;
 
+        // A coroutine's `resume` and `result` are the compiler's, not the
+        // library's. The frame's layout and the machine's states are known only
+        // to the compiler that built them, so the two members are answered here
+        // from the coroutine's own three types rather than looked up among
+        // declared overloads. What they are is then a property of the type
+        // rather than of a spelling: `Send` decides whether `resume` takes an
+        // argument, `Yield` decides what it answers, and neither depends on an
+        // `@enable_if` that would have told two otherwise identical
+        // declarations apart.
+        let probe_shape = crate::typeck::CoroutineShape::of(&receiver_ty);
+        if let Some(coroutine) = probe_shape
+            && let Some(answer) = self.coroutine_member(
+                &coroutine,
+                &receiver_ty,
+                &field.field,
+                node,
+                ast,
+                resolutions,
+                types,
+                span,
+            )
+        {
+            return Some(answer);
+        }
+
         // A call on an interface value is virtual: the interface says which
         // methods exist, and the table inside the value says which concrete
         // function runs.
@@ -726,7 +752,14 @@ impl TypeChecker {
         // reference was not.
         if let Some((base, arguments)) = self.interface_of(Self::behind_references(&receiver_ty)) {
             return self.type_of_interface_call(
-                ast, resolutions, types, field, node, span, &base, &arguments,
+                ast,
+                resolutions,
+                types,
+                field,
+                node,
+                span,
+                &base,
+                &arguments,
             );
         }
 
@@ -810,10 +843,7 @@ impl TypeChecker {
                                 .unwrap_or(&receiver_ty)
                                 .nominal_name()
                                 .map(short_name);
-                            return match (
-                                Self::written_nominal_name(written),
-                                receiver_name,
-                            ) {
+                            return match (Self::written_nominal_name(written), receiver_name) {
                                 (Some(path), Some(name)) => short_name(&path) == name,
                                 // Nothing to compare the name with: a receiver
                                 // written against a family's parameters is one
@@ -830,9 +860,11 @@ impl TypeChecker {
                                 // name is what has to be looked at, because
                                 // every undeclared name in a signature is one
                                 // of these and nothing else is.
-                                _ => self.mentions_template_parameter_syntax(written)
-                                    || self.written_mentions_a_value_parameter(written)
-                                    || self.written_names_a_template_parameter(written),
+                                _ => {
+                                    self.mentions_template_parameter_syntax(written)
+                                        || self.written_mentions_a_value_parameter(written)
+                                        || self.written_names_a_template_parameter(written)
+                                }
                             };
                         }
                         let expected = self.resolve_type_syntax(written, true);
@@ -874,9 +906,12 @@ impl TypeChecker {
             .partition(|signature| self.signature_enabled(signature, &member_substitution));
         let candidates = enabled;
         if candidates.is_empty()
-            && let Some(signature) = disabled
-                .iter()
-                .find(|signature| signature.param_names.first().is_some_and(|name| name == "this"))
+            && let Some(signature) = disabled.iter().find(|signature| {
+                signature
+                    .param_names
+                    .first()
+                    .is_some_and(|name| name == "this")
+            })
         {
             self.diagnostics.push(
                 Diagnostic::error(format!(
@@ -904,7 +939,11 @@ impl TypeChecker {
             })
             .cloned()
             .collect();
-        let mut candidates = if members.is_empty() { candidates } else { members };
+        let mut candidates = if members.is_empty() {
+            candidates
+        } else {
+            members
+        };
         // Nothing takes the call on the receiver as it stands, so `.` reaches
         // through an indirection, exactly as `->` does: `it.length()` on an
         // iterator is `it->length()`, which is the sugar this rule exists for.
@@ -919,7 +958,10 @@ impl TypeChecker {
         // "Fits" includes "is a pattern": a receiver written `this &const T`
         // belongs to every type, so the instantiation decides afterwards.
         let any_fits = candidates.iter().any(|signature| {
-            signature.param_names.first().is_some_and(|name| name == "this")
+            signature
+                .param_names
+                .first()
+                .is_some_and(|name| name == "this")
                 && signature.param_types.first().is_some_and(|written| {
                     if self.written_names_a_template_parameter(written) {
                         return true;
@@ -980,7 +1022,7 @@ impl TypeChecker {
                 self.in_place_operations.insert(span, operation);
                 return None;
             }
-                        let mut diagnostic = Diagnostic::error(format!(
+            let mut diagnostic = Diagnostic::error(format!(
                 "`{}` has no method `{}`",
                 receiver_ty.spelling(),
                 field.field
@@ -1000,10 +1042,7 @@ impl TypeChecker {
             return None;
         };
         // A member function's first parameter is the receiver.
-        let is_member = first
-            .param_names
-            .first()
-            .is_some_and(|name| name == "this");
+        let is_member = first.param_names.first().is_some_and(|name| name == "this");
         if !is_member {
             self.diagnostics.push(
                 Diagnostic::error(format!(
@@ -1214,7 +1253,7 @@ impl TypeChecker {
                 if let Some(call) =
                     self.special_method_call(resolutions, receiver_ty, method.name(), 1)
                 {
-            self.indirect_receivers.insert(span, call.symbol);
+                    self.indirect_receivers.insert(span, call.symbol);
                     break;
                 }
             }
@@ -1227,7 +1266,8 @@ impl TypeChecker {
         // still unspecified anywhere inside is a parameter that has no binding
         // yet, which is exactly the case a pattern describes.
         let bound_by_pattern = self.mentions_unspecified(&expected);
-        if !through_indirection && !bound_by_pattern && !self.receiver_fits(receiver_ty, &expected) {
+        if !through_indirection && !bound_by_pattern && !self.receiver_fits(receiver_ty, &expected)
+        {
             self.diagnostics.push(
                 Diagnostic::error(format!(
                     "`{}` expects `this` to be `{}`, but `{}` was given",
@@ -1549,9 +1589,7 @@ impl TypeChecker {
         // address is what the context wants -- the rule `*p` follows, and for
         // the same reason: whether to read is a fact about the use, and only
         // the checker is looking at it.
-        if !wanted_address
-            && let Some(referent) = returns.referent().cloned()
-        {
+        if !wanted_address && let Some(referent) = returns.referent().cloned() {
             self.deref_reads.insert(span, referent.clone());
             return Some(referent);
         }
@@ -1853,7 +1891,11 @@ impl TypeChecker {
     /// An overloaded name has as many types as it has overloads, and only the
     /// expectation says which one is meant: `p *fn(int) int = &f;` names
     /// `f(int)` and not `f(double)`.
-    pub(super) fn function_name_type(&mut self, resolutions: &Resolutions, name: &str) -> Option<Type> {
+    pub(super) fn function_name_type(
+        &mut self,
+        resolutions: &Resolutions,
+        name: &str,
+    ) -> Option<Type> {
         let mut candidates = Vec::new();
         for def in resolutions
             .defs
@@ -1873,7 +1915,9 @@ impl TypeChecker {
                     Type::Pointer { pointee, .. } => pointee.unqualified().clone(),
                     other => other.clone(),
                 };
-                candidates.into_iter().find(|candidate| *candidate == target)
+                candidates
+                    .into_iter()
+                    .find(|candidate| *candidate == target)
             }
         }
     }
@@ -1916,7 +1960,13 @@ impl TypeChecker {
     /// wants the address, anything else the value -- and the record is what
     /// tells code generation, which would otherwise store the address in an
     /// `int` slot.
-    pub(super) fn note_reference_read(&mut self, ast: &Ast, expr: ExprId, found: &Type, expected: &Type) {
+    pub(super) fn note_reference_read(
+        &mut self,
+        ast: &Ast,
+        expr: ExprId,
+        found: &Type,
+        expected: &Type,
+    ) {
         if expected.is_indirection() {
             // An address is wanted, so a read recorded while the expression was
             // inferred would be wrong: `r &T = *p;` and `f(&x, ...)` store or
@@ -2044,8 +2094,14 @@ impl TypeChecker {
         // changes. The other direction is refused -- a read-only array may not
         // become writable.
         if let (
-            Type::Array { element: found_element, len: found_len },
-            Type::Array { element: expected_element, len: expected_len },
+            Type::Array {
+                element: found_element,
+                len: found_len,
+            },
+            Type::Array {
+                element: expected_element,
+                len: expected_len,
+            },
         ) = (found.unqualified(), expected.unqualified())
             && found_len == expected_len
             && matches!(**expected_element, Type::Const(_))
@@ -2250,7 +2306,11 @@ impl TypeChecker {
         None
     }
 
-    fn dereferenced_receiver(&mut self, receiver: &Type, resolutions: &Resolutions) -> Option<Type> {
+    fn dereferenced_receiver(
+        &mut self,
+        receiver: &Type,
+        resolutions: &Resolutions,
+    ) -> Option<Type> {
         for method in [
             fallc_ast::special::SpecialMethod::Deref,
             fallc_ast::special::SpecialMethod::Pointer,
@@ -2357,5 +2417,139 @@ pub(crate) fn integer_promotes(found: &Type, expected: &Type) -> bool {
         // one would make negative values wrap, which is exactly what an
         // implicit conversion must never do.
         !to.is_unsigned() && from_bits <= to_bits
+    }
+}
+
+impl TypeChecker {
+    /// Answers `resume` or `result` on a coroutine, without the library.
+    ///
+    /// The frame's layout and the machine's states are the compiler's, so these
+    /// two members are the compiler's too. Their shape is read off the
+    /// coroutine's own three types, and nothing about it depends on a spelling
+    /// in a library that two otherwise identical declarations would have had to
+    /// share:
+    ///
+    /// - `Send` decides whether `resume` takes an argument;
+    /// - `Yield` decides what `resume` answers -- `?Yield` when there is a value,
+    ///   `void` when the `yield` hands nothing over;
+    /// - `Return` is what `result` answers, and it is always `except`.
+    ///
+    /// A call is recorded against the span exactly as any other member's is, so
+    /// the two stages agree about which coroutine it belongs to.
+    fn coroutine_member(
+        &mut self,
+        coroutine: &CoroutineShape,
+        receiver_ty: &Type,
+        member: &str,
+        node: &CallExpr,
+        ast: &Ast,
+        resolutions: &Resolutions,
+        types: &mut TypeTable,
+        span: fallc_span::Span,
+    ) -> Option<Type> {
+        if member != "resume" && member != "result" {
+            return None;
+        }
+        let send_is_void = coroutine.send.is_void();
+        let yield_is_void = coroutine.yield_ty.is_void();
+        // What the call may be written with, and what it answers.
+        // What a `resume` answers is `?Yield`, named as the library's family
+        // member so that it is the same type a program writes and the same one
+        // whose fields `Optional` declares. A `Yield` of `void` has no optional
+        // to answer with: the call returns nothing.
+        // `?Yield` degrades to `bool` when `Yield` is `void`: `void` has no
+        // representation, so `?void` cannot be written, and what is left of
+        // "was there a value" is the bit itself. `true` is `Some(())` -- the
+        // coroutine suspended again -- and `false` is `none`, that it finished.
+        let answered = if yield_is_void {
+            Type::BOOL
+        } else {
+            let written = fallc_ast::TypeSyntax::Named(fallc_ast::NamedType {
+                path: "Optional".to_owned(),
+                arguments: vec![fallc_ast::TemplateArgumentSyntax::Type(
+                    fallc_ast::TypeSyntax::Named(fallc_ast::NamedType {
+                        path: coroutine.yield_ty.spelling(),
+                        arguments: Vec::new(),
+                        is_expansion: false,
+                        span: fallc_span::Span::SYNTHETIC,
+                    }),
+                )],
+                is_expansion: false,
+                span: fallc_span::Span::SYNTHETIC,
+            });
+            self.resolve_nested(&written)
+        };
+        let (takes_argument, answers) = match (member, send_is_void) {
+            // A coroutine that takes a value in is resumed with it; one that
+            // takes nothing in is resumed without.
+            ("resume", false) => (true, answered),
+            ("resume", true) => (false, answered),
+            // `result` is a method of the coroutine, not of a value it holds.
+            ("result", _) => (false, coroutine.return_ty.clone()),
+            _ => return None,
+        };
+        // A call whose argument count is already wrong is reported in the
+        // language's own terms: `resume()` on a coroutine that takes a value in
+        // is a call missing its argument, and `resume(v)` on one that takes
+        // nothing is a call with one too many.
+        let expected_count = usize::from(takes_argument);
+        if node.args.len() != expected_count {
+            self.diagnostics.push(
+                Diagnostic::error(format!(
+                    "`{member}` of this coroutine takes {expected_count} argument(s), but {} \
+                     were given",
+                    node.args.len()
+                ))
+                .with_code(DiagnosticCode::sema(36))
+                .with_span(span)
+                .with_note(if takes_argument {
+                    "this coroutine takes a value in, so `resume` is written with it"
+                } else {
+                    "this coroutine takes nothing in, so `resume` is written without one"
+                }),
+            );
+            return None;
+        }
+        // The signature code generation builds the function from: the receiver
+        // first, then the value a `resume` hands in. A method's receiver is
+        // always the object, so it is spelled as the reference every member
+        // call takes.
+        let mut params = vec![Type::Reference {
+            referent: Box::new(crate::Type::unspecified(
+                receiver_ty.spelling(),
+                fallc_span::Span::SYNTHETIC,
+            )),
+            referent_is_const: false,
+            is_rvalue: false,
+        }];
+        if takes_argument {
+            // The value handed in is checked against `Send` exactly as any
+            // argument is checked against its parameter.
+            let argument = node.args[0];
+            let previous = self.expected.replace(coroutine.send.clone());
+            let _ = self.check_expr(ast, resolutions, types, argument, &coroutine.send);
+            self.expected = previous;
+            params.push(coroutine.send.clone());
+        }
+        // The symbol a coroutine's member is emitted under, built from the
+        // coroutine's own type so that every call of the same coroutine -- from
+        // any module -- names the same one.
+        let receiver = crate::types::mangle_type(receiver_ty);
+        let mut mangled = vec![receiver];
+        if takes_argument && member == "resume" {
+            mangled.push(crate::types::mangle_type(&coroutine.send));
+        }
+        let symbol = fallc_ast::special::symbol_for(member, &mangled);
+        self.method_calls.insert(span, symbol.clone());
+        // What the call takes and answers, for code generation: neither member
+        // is declared anywhere, so a signature cannot be looked up by symbol.
+        self.coroutine_calls
+            .insert(span, (params.clone(), answers.clone()));
+        // `result` may raise; `resume` never does.
+        if member == "result" {
+            self.throwing_calls.insert(span);
+        }
+        types.insert(node.callee, answers.clone());
+        Some(answers)
     }
 }

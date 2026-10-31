@@ -80,10 +80,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("read");
-    assert_eq!(
-        scratch.run("read", source),
-        "5 5 1\nada\n6 1\n0\n"
-    );
+    assert_eq!(scratch.run("read", source), "5 5 1\nada\n6 1\n0\n");
 }
 
 #[test]

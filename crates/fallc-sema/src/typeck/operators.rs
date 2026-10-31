@@ -258,23 +258,22 @@ impl TypeChecker {
         // Without a method the compiler renders the value itself and the result
         // is text, which is the standard string.
         self.text_calls.insert(span, None);
-        self.standard_string_type()
-            .or_else(|| {
-                // A program that never imported the string module has no
-                // string type, so `str(x)` cannot produce one. That is a real
-                // error rather than an unanswered question: the fix is to
-                // import it, and the diagnostic says so.
-                self.diagnostics.push(
-                    Diagnostic::error(format!(
-                        "`{name}` produces text, which needs `std.String`, but the string \
+        self.standard_string_type().or_else(|| {
+            // A program that never imported the string module has no
+            // string type, so `str(x)` cannot produce one. That is a real
+            // error rather than an unanswered question: the fix is to
+            // import it, and the diagnostic says so.
+            self.diagnostics.push(
+                Diagnostic::error(format!(
+                    "`{name}` produces text, which needs `std.String`, but the string \
                          module is not imported"
-                    ))
-                    .with_code(DiagnosticCode::sema(65))
-                    .with_span(span)
-                    .with_note("add `import std;` or `import std.string;`"),
-                );
-                None
-            })
+                ))
+                .with_code(DiagnosticCode::sema(65))
+                .with_span(span)
+                .with_note("add `import std;` or `import std.string;`"),
+            );
+            None
+        })
     }
 
     /// Whether the compiler can write a value of this type down itself.
@@ -309,9 +308,7 @@ impl TypeChecker {
     pub(super) fn standard_string_type(&self) -> Option<Type> {
         self.nominal_types
             .values()
-            .find(|nominal| {
-                nominal.name.rsplit('.').next().unwrap_or(&nominal.name) == "String"
-            })
+            .find(|nominal| nominal.name.rsplit('.').next().unwrap_or(&nominal.name) == "String")
             .map(|nominal| Type::Nominal(nominal.clone()))
     }
 
@@ -342,7 +339,9 @@ impl TypeChecker {
         // number it is.
         if let fallc_ast::ExprKind::Name(name) = &ast.expr(node.object).kind
             && matches!(
-                self.substitution.as_ref().and_then(|substitution| substitution.get(name)),
+                self.substitution
+                    .as_ref()
+                    .and_then(|substitution| substitution.get(name)),
                 Some(crate::template::TemplateArgument::Pack(_))
             )
         {
@@ -433,13 +432,12 @@ impl TypeChecker {
         }
 
         self.diagnostics.push(
-            Diagnostic::error(format!(
-                "`{}` cannot be indexed",
-                object.spelling()
-            ))
-            .with_code(DiagnosticCode::sema(66))
-            .with_span(span)
-            .with_note("an array and a pointer are indexed directly; a type needs `__getitem__`"),
+            Diagnostic::error(format!("`{}` cannot be indexed", object.spelling()))
+                .with_code(DiagnosticCode::sema(66))
+                .with_span(span)
+                .with_note(
+                    "an array and a pointer are indexed directly; a type needs `__getitem__`",
+                ),
         );
         None
     }
@@ -550,8 +548,8 @@ impl TypeChecker {
             // `ages[String("Alan")]` writeable. Without this the subscript was
             // reported as the wrong type even though the same value fits the
             // same parameter in `ages.find(String("Alan"))`.
-            let indirect_fits = !literal_fits
-                && self.operand_fits_indirect(index, &parameter_type).is_some();
+            let indirect_fits =
+                !literal_fits && self.operand_fits_indirect(index, &parameter_type).is_some();
             if !self.is_compatible(index, &parameter_type) && !literal_fits && !indirect_fits {
                 // Remembered, so that a type *with* `__getitem__` is not
                 // reported as one that cannot be indexed at all.
@@ -601,12 +599,7 @@ impl TypeChecker {
             // A method of a templated type is emitted only when some member
             // uses it, exactly as a constructor is.
             if let Some(substitution) = &member_substitution {
-                self.record_method_instantiation(
-                    &signature,
-                    substitution,
-                    &symbol,
-                    object,
-                );
+                self.record_method_instantiation(&signature, substitution, &symbol, object);
             }
             self.index_methods.insert(span, symbol);
             self.note_throwing_call(span, &signature, ast, None);
@@ -691,9 +684,7 @@ impl TypeChecker {
                 .is_some_and(|referent| referent == target);
         let candidates: Vec<FunctionSignature> = candidates
             .into_iter()
-            .filter(|candidate| {
-                same_type || candidate.written_name.starts_with("__im_init__")
-            })
+            .filter(|candidate| same_type || candidate.written_name.starts_with("__im_init__"))
             .collect();
         if candidates.is_empty() {
             return None;
@@ -711,7 +702,9 @@ impl TypeChecker {
         // that was just made for this binding -- and for the copy constructor
         // of a family like `Array<T>` that meant the receiver and the source
         // were both the new storage, so nothing was copied at all.
-        if self.constructor_calls.contains_key(&ast.expr(argument).span)
+        if self
+            .constructor_calls
+            .contains_key(&ast.expr(argument).span)
             && argument_ty == *target
         {
             return None;
@@ -779,16 +772,13 @@ impl TypeChecker {
         if dying {
             // Stable: among equals the declaration order still decides.
             candidates.sort_by_key(|signature| {
-                let is_rvalue = signature
-                    .param_types
-                    .get(1)
-                    .is_some_and(|written| {
-                        matches!(
-                            written,
-                            fallc_ast::TypeSyntax::RvalueReference(_)
-                                | fallc_ast::TypeSyntax::ConstRvalueReference(_)
-                        )
-                    });
+                let is_rvalue = signature.param_types.get(1).is_some_and(|written| {
+                    matches!(
+                        written,
+                        fallc_ast::TypeSyntax::RvalueReference(_)
+                            | fallc_ast::TypeSyntax::ConstRvalueReference(_)
+                    )
+                });
                 // `true` (an rvalue parameter) sorts first.
                 !is_rvalue
             });
@@ -845,7 +835,9 @@ impl TypeChecker {
             // A parameter that is still a bare template parameter is deduced
             // from the argument, exactly as a free template's is: `v T` with an
             // `int` given means `T` is `int`.
-            if parameter_type.is_unspecified() || parameter_type == Type::unspecified("", parameter.span()) {
+            if parameter_type.is_unspecified()
+                || parameter_type == Type::unspecified("", parameter.span())
+            {
                 parameter_type = argument_ty.clone();
             }
             // `is_compatible` accepts the array decay a string literal needs:
@@ -885,7 +877,8 @@ impl TypeChecker {
             // than trying to store the initialiser as-is. The constructor is
             // called at the initialiser's span, so that is where raising is
             // reported and where the duty to protect it is judged.
-            self.init_calls.insert(ast.expr(argument).span, symbol.clone());
+            self.init_calls
+                .insert(ast.expr(argument).span, symbol.clone());
             self.note_throwing_call(ast.expr(argument).span, signature, ast, None);
             // The initialiser stands where the constructor's second parameter
             // is, so an indirect one takes its address exactly as an ordinary
@@ -948,9 +941,11 @@ impl TypeChecker {
                 node.op,
                 Some(fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub)
             );
-        let previous = self
-            .expected
-            .replace(if offset_compound { Type::USIZE } else { target_ty.clone() });
+        let previous = self.expected.replace(if offset_compound {
+            Type::USIZE
+        } else {
+            target_ty.clone()
+        });
         let value = self.infer_expr(ast, resolutions, types, node.value);
         self.expected = previous;
         let value_ty = value?;
@@ -981,10 +976,7 @@ impl TypeChecker {
             // move it. The pointer keeps its qualifiers; only the address
             // changes.
             if target_ty.is_pointer() {
-                if matches!(
-                    op,
-                    fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub
-                ) {
+                if matches!(op, fallc_ast::BinaryOp::Add | fallc_ast::BinaryOp::Sub) {
                     if value_ty == Type::USIZE {
                         return Some(target_ty);
                     }
@@ -1011,7 +1003,9 @@ impl TypeChecker {
                     ))
                     .with_code(DiagnosticCode::sema(33))
                     .with_span(span)
-                    .with_note("a pointer may be offset with `+=` and `-=` and moved with `++` and `--`"),
+                    .with_note(
+                        "a pointer may be offset with `+=` and `-=` and moved with `++` and `--`",
+                    ),
                 );
                 return None;
             }
@@ -1112,17 +1106,15 @@ impl TypeChecker {
         //
         // The method is recorded like every other resolved call, so code
         // generation emits it rather than storing the value.
-        if let Some(symbol) =
-            self.resolve_assign_method(
-                resolutions,
-                &assigned_ty,
-                &value_ty,
-                node.value,
-                ast,
-                types,
-                span,
-            )
-        {
+        if let Some(symbol) = self.resolve_assign_method(
+            resolutions,
+            &assigned_ty,
+            &value_ty,
+            node.value,
+            ast,
+            types,
+            span,
+        ) {
             self.assign_methods.insert(span, symbol);
             // The method reads the value through the address it is given, so
             // the value must not also be read through here: two loads leave the
@@ -1266,12 +1258,10 @@ impl TypeChecker {
                 // then read a length out of the slot. `types` is the checker's
                 // own record of what the expression is.
                 let expression = ast.expr(value_expr);
-                let already_an_address = types
-                    .get(value_expr)
-                    .is_some_and(|ty| ty.is_indirection());
+                let already_an_address =
+                    types.get(value_expr).is_some_and(|ty| ty.is_indirection());
                 if !already_an_address {
-                    self.by_address_arguments
-                        .insert(expression.span);
+                    self.by_address_arguments.insert(expression.span);
                 }
             } else {
                 self.note_indirect_argument(value_expr, value, &parameter_type, ast);
@@ -1291,7 +1281,7 @@ impl TypeChecker {
             if let Some(substitution) = &member_substitution {
                 self.record_method_instantiation(&signature, substitution, &symbol, target);
             }
-                        return Some(symbol);
+            return Some(symbol);
         }
         None
     }
@@ -1356,7 +1346,9 @@ impl TypeChecker {
                         ast.expr(value_expr).span,
                     )
                 });
-            if !self.is_compatible(value, &parameter_type) && !by_address && !literal_fits
+            if !self.is_compatible(value, &parameter_type)
+                && !by_address
+                && !literal_fits
                 && !constructed
             {
                 continue;
@@ -1370,7 +1362,8 @@ impl TypeChecker {
             //
             // A constructed literal counts: the parameter is a pointer to the
             // constructed type, so what is passed is the temporary's address.
-            self.in_place_by_address.insert(span, by_address || constructed);
+            self.in_place_by_address
+                .insert(span, by_address || constructed);
             let symbol = call.symbol.clone();
             let returns = call.returns.clone();
             self.in_place_methods.insert(span, symbol.clone());
@@ -1400,8 +1393,8 @@ impl TypeChecker {
         let method = fallc_ast::special::SpecialMethod::for_binary(op, false)?;
         let call = self.special_method_call(resolutions, lhs, method.name(), 2)?;
         let parameter_type = call.param_types.get(1)?.clone();
-        let by_address = !self.is_compatible(rhs, &parameter_type)
-            && self.operand_fits(rhs, &parameter_type);
+        let by_address =
+            !self.is_compatible(rhs, &parameter_type) && self.operand_fits(rhs, &parameter_type);
         if !self.is_compatible(rhs, &parameter_type) && !by_address {
             return None;
         }
@@ -1474,7 +1467,8 @@ impl TypeChecker {
                 // does not modify its receiver". The field says so itself,
                 // which is what makes a cache or a reference count possible in
                 // a type whose other fields are constant.
-                if object_ty.pointee_is_const() && !self.field_is_mutable(&object_ty, &field.field) {
+                if object_ty.pointee_is_const() && !self.field_is_mutable(&object_ty, &field.field)
+                {
                     self.diagnostics.push(
                         Diagnostic::error(format!(
                             "cannot assign to `{}` through a pointer to const",
@@ -1533,13 +1527,15 @@ impl TypeChecker {
                     // it. A compound assignment reads the value first, and the
                     // reader is a value, so that read is recorded -- the same
                     // record `*p` makes for `*p + 1`.
-                    self.deref_reads.insert(ast.expr(target).span, referent.clone());
+                    self.deref_reads
+                        .insert(ast.expr(target).span, referent.clone());
                     return Some(referent);
                 }
                 // A pointer to const may not be written through.
-                let object_ty = types.get(index.object).cloned().unwrap_or_else(|| {
-                    Type::unspecified("", ast.expr(index.object).span)
-                });
+                let object_ty = types
+                    .get(index.object)
+                    .cloned()
+                    .unwrap_or_else(|| Type::unspecified("", ast.expr(index.object).span));
                 // An array marked `const` is an object that may not change, so
                 // an element of it may not be written either -- however many
                 // index and field steps the path takes, `a[1] = 4` modifies
@@ -1588,13 +1584,11 @@ impl TypeChecker {
                 // but `self.expected` is empty here, so the reference was
                 // stripped before this arm ever saw it and `a.last_mut() = 99`
                 // was refused as "a call returns a value, not a place".
-                let previous = self
-                    .expected
-                    .replace(Type::Pointer {
-                        pointee: Box::new(Type::unspecified("", ast.expr(target).span)),
-                        pointee_is_const: false,
-                        pointer_is_const: false,
-                    });
+                let previous = self.expected.replace(Type::Pointer {
+                    pointee: Box::new(Type::unspecified("", ast.expr(target).span)),
+                    pointee_is_const: false,
+                    pointer_is_const: false,
+                });
                 let value = self.infer_expr(ast, resolutions, types, target);
                 self.expected = previous;
                 let value = value?;
@@ -1622,7 +1616,8 @@ impl TypeChecker {
                 }
                 // A compound assignment reads the value first, and that read is
                 // recorded exactly as it is for `a[i]`.
-                self.deref_reads.insert(ast.expr(target).span, referent.clone());
+                self.deref_reads
+                    .insert(ast.expr(target).span, referent.clone());
                 Some(referent)
             }
             _ => {
@@ -1827,10 +1822,12 @@ impl TypeChecker {
     ) -> Option<Type> {
         self.substitution = member_substitution.clone();
         let pack = signature.pack;
-        let pack_written = pack.and_then(|index| signature.param_types.get(index)).cloned();
-        let element_parameter = pack_written
-            .as_ref()
-            .and_then(|written| super::templates::pack_element_parameter(written, &signature.template_params));
+        let pack_written = pack
+            .and_then(|index| signature.param_types.get(index))
+            .cloned();
+        let element_parameter = pack_written.as_ref().and_then(|written| {
+            super::templates::pack_element_parameter(written, &signature.template_params)
+        });
         let mut combined = member_substitution.clone().unwrap_or_default();
         let mut deduced_packs: std::collections::HashMap<String, Vec<Type>> =
             std::collections::HashMap::new();
@@ -1885,8 +1882,7 @@ impl TypeChecker {
                 continue;
             }
             let is_type_parameter = signature.template_params.iter().any(|parameter| {
-                parameter.name == named.path
-                    && parameter.kind == fallc_ast::TemplateParamKind::Type
+                parameter.name == named.path && parameter.kind == fallc_ast::TemplateParamKind::Type
             });
             // A name the receiver's member already bound is the family's, and
             // the receiver is what decides it: `Less<int>`'s `E` is `int`
@@ -2015,8 +2011,6 @@ impl TypeChecker {
         Some(returns)
     }
 
-
-
     /// Checks that an expression denotes storage, without requiring it to be
     /// writable.
     ///
@@ -2056,9 +2050,9 @@ impl TypeChecker {
                 let through_const = object_ty.is_some_and(Type::pointee_is_const);
                 through_const || self.storage_is_const(ast, types, field.object)
             }
-            ExprKind::Unary(unary) if unary.op == UnaryOp::Deref => types
-                .get(unary.operand)
-                .is_some_and(Type::pointee_is_const),
+            ExprKind::Unary(unary) if unary.op == UnaryOp::Deref => {
+                types.get(unary.operand).is_some_and(Type::pointee_is_const)
+            }
             ExprKind::Index(index) => {
                 let object_ty = types.get(index.object);
                 object_ty.is_some_and(Type::pointee_is_const)
@@ -2142,16 +2136,17 @@ impl TypeChecker {
             if self.type_templates.contains_key(&qualified)
                 || self.nominal_types.contains_key(&qualified)
             {
-                return self.resolve_type_syntax(
-                    &fallc_ast::TypeSyntax::Named(fallc_ast::NamedType {
-                        path: qualified,
-                        arguments: Vec::new(),
-                        is_expansion: false,
-                        span,
-                    }),
-                    false,
-                )
-                .into();
+                return self
+                    .resolve_type_syntax(
+                        &fallc_ast::TypeSyntax::Named(fallc_ast::NamedType {
+                            path: qualified,
+                            arguments: Vec::new(),
+                            is_expansion: false,
+                            span,
+                        }),
+                        false,
+                    )
+                    .into();
             }
         }
         // `Color.RED` is an enumerator, not a field of a value: the object half
@@ -2354,5 +2349,4 @@ impl TypeChecker {
             }
         }
     }
-
 }

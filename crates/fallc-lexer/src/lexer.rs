@@ -685,10 +685,7 @@ impl Lexer {
                 cursor.bump();
                 cursor.bump();
                 if !self.consume_multiline_body(cursor) {
-                    self.report_unterminated(
-                        self.literal_span(cursor, start),
-                        "multi-line string",
-                    );
+                    self.report_unterminated(self.literal_span(cursor, start), "multi-line string");
                 }
                 Some(TokenKind::String)
             }

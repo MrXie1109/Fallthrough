@@ -12,6 +12,7 @@
 
 export from std.error import *;
 export from std.optional import *;
+export from std.coroutine import *;
 export from std.util import *;
 export from std.string import *;
 export from std.array import *;

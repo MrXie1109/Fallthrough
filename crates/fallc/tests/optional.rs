@@ -77,10 +77,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("basic");
-    assert_eq!(
-        scratch.run("basic", source),
-        "1 3\n0 9\nif yes\nelse no\n"
-    );
+    assert_eq!(scratch.run("basic", source), "1 3\n0 9\nif yes\nelse no\n");
 }
 
 #[test]
@@ -151,8 +148,5 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("string");
-    assert_eq!(
-        scratch.run("string", source),
-        "hello hello\n0 hello\n0\n"
-    );
+    assert_eq!(scratch.run("string", source), "hello hello\n0 hello\n0\n");
 }

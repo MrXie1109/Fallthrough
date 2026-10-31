@@ -140,7 +140,6 @@ fn body_after<'a>(ir: &'a str, marker: &str) -> &'a str {
     &rest[..end]
 }
 
-
 /// The body of the code the program itself wrote.
 ///
 /// A program whose modules bring a `__setup__` block -- `std` has one, because
@@ -391,7 +390,10 @@ fn assigning_from_a_name_copies_an_array() {
     let scratch = Scratch::new("copy-array");
     let output = scratch.run("copy_assign_array", COPY_ASSIGN_ARRAY);
     assert!(output.contains("distinct 1"), "{output}");
-    assert!(output.contains("a len 2"), "the source was emptied: {output}");
+    assert!(
+        output.contains("a len 2"),
+        "the source was emptied: {output}"
+    );
     assert!(output.contains("b len 2"), "{output}");
     assert!(output.contains("a first 1"), "{output}");
     assert!(
@@ -800,7 +802,10 @@ fn main() int {
         address(&output, "reused"),
         "the receiver's old buffer was not released:\n{output}"
     );
-    assert!(output.contains("text new text that is long enough to allocate"), "{output}");
+    assert!(
+        output.contains("text new text that is long enough to allocate"),
+        "{output}"
+    );
 }
 
 #[test]

@@ -289,9 +289,7 @@ impl Parser {
                     // bracket after it. Deciding here read `m[i][j] = 5;` as the
                     // binding `m` of type `[i][j]` and then reported the missing
                     // element type at the `=`.
-                    if stream.peek_kind(offset + 1)
-                        == TokenKind::Punct(Punctuation::OpenBracket)
-                    {
+                    if stream.peek_kind(offset + 1) == TokenKind::Punct(Punctuation::OpenBracket) {
                         offset += 1;
                         continue;
                     }
@@ -327,7 +325,11 @@ impl Parser {
     /// The two `auto` forms that cannot be deduced (`name auto;` and
     /// `name auto = .{ .. };`) are parsed successfully and rejected later, so
     /// the diagnostic can say why. See [`fallc_ast::BindStmt`].
-    pub(super) fn parse_bind(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<StmtKind> {
+    pub(super) fn parse_bind(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<StmtKind> {
         self.parse_bind_inner(stream, ast, true)
     }
 
@@ -396,9 +398,7 @@ impl Parser {
         // storage class a reader would expect.
         let is_static = is_static || is_thread_local;
 
-        let is_uninitialized = suffix_attrs
-            .iter()
-            .any(|attr| attr.name == "uninitialized");
+        let is_uninitialized = suffix_attrs.iter().any(|attr| attr.name == "uninitialized");
         if is_uninitialized && stream.at(TokenKind::Punct(Punctuation::Eq)) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -485,15 +485,13 @@ impl Parser {
                 } else {
                     if !named.is_empty() {
                         self.diagnostics.push(
-                            Diagnostic::error(
-                                "a positional element cannot follow a named one",
-                            )
-                            .with_code(DiagnosticCode::parser(2))
-                            .with_span(stream.current_span())
-                            .with_note(
-                                "write every positional element first, then `.field = value` \
+                            Diagnostic::error("a positional element cannot follow a named one")
+                                .with_code(DiagnosticCode::parser(2))
+                                .with_span(stream.current_span())
+                                .with_note(
+                                    "write every positional element first, then `.field = value` \
                                  for the ones named",
-                            ),
+                                ),
                         );
                     }
                     elements.push(self.parse_expr_no_comma(stream, ast)?);
@@ -604,10 +602,7 @@ impl Parser {
             // A placeholder: the probe replaces it with a constant, and no
             // value is read from it.
             let span = open.to(close);
-            ast.builder().alloc_expr(
-                ExprKind::BoolLiteral(true),
-                span,
-            )
+            ast.builder().alloc_expr(ExprKind::BoolLiteral(true), span)
         } else {
             self.parse_paren_condition(stream, ast)?
         };
@@ -616,8 +611,8 @@ impl Parser {
         // branch not taken is not checked. `@constexpr` is only meaningful on
         // an `if`; `@likely`/`@unlikely` are accepted on every branch.
         let condition_attrs = self.parse_branch_attributes(stream, ast, true)?;
-        let is_constexpr = is_constexpr
-            || condition_attrs.iter().any(|attr| attr.name == "constexpr");
+        let is_constexpr =
+            is_constexpr || condition_attrs.iter().any(|attr| attr.name == "constexpr");
         let then_block = self.parse_block(stream, ast)?;
 
         let mut else_attrs = Vec::new();
@@ -650,7 +645,11 @@ impl Parser {
     }
 
     /// Parses `while (cond) block (else block)?`.
-    pub(super) fn parse_while(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<StmtKind> {
+    pub(super) fn parse_while(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<StmtKind> {
         stream.advance(); // `while`
         let condition = self.parse_paren_condition(stream, ast)?;
         let body = self.parse_block(stream, ast)?;
@@ -668,7 +667,11 @@ impl Parser {
     /// The two forms share a prefix and a suffix, and differ only after the
     /// first item. The decision is made after parsing the binding, by looking
     /// for `:` (range form) or `;` (C-style).
-    pub(super) fn parse_for(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<StmtKind> {
+    pub(super) fn parse_for(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<StmtKind> {
         let start = stream.advance().span; // `for`
         self.expect_punct(stream, Punctuation::OpenParen, "`(`")?;
 
@@ -740,16 +743,13 @@ impl Parser {
                 let start = stream.current_span();
                 let expr = self.parse_expr(stream, ast)?;
                 let span = start.to(ast.expr(expr).span);
-                Some(
-                    ast.builder()
-                        .alloc_stmt(
-                            StmtKind::Expr(ExprStmt {
-                                expr,
-                                yields_value: false,
-                            }),
-                            span,
-                        ),
-                )
+                Some(ast.builder().alloc_stmt(
+                    StmtKind::Expr(ExprStmt {
+                        expr,
+                        yields_value: false,
+                    }),
+                    span,
+                ))
             };
             self.expect_punct(stream, Punctuation::Semi, "`;`")?;
 
@@ -865,7 +865,9 @@ impl Parser {
             let bind_span = span();
             let name_span = span();
             let auto_span = span();
-            let name = ast.builder().alloc_expr(ExprKind::Name(n("$range")), name_span);
+            let name = ast
+                .builder()
+                .alloc_expr(ExprKind::Name(n("$range")), name_span);
             statements.push(ast.builder().alloc_stmt(
                 StmtKind::Bind(BindStmt {
                     name: n("$range"),
@@ -943,7 +945,9 @@ impl Parser {
             let lhs_span = span();
             let lhs = ast.builder().alloc_expr(ExprKind::Name(n("$it")), lhs_span);
             let rhs_span = span();
-            let rhs = ast.builder().alloc_expr(ExprKind::Name(n("$end")), rhs_span);
+            let rhs = ast
+                .builder()
+                .alloc_expr(ExprKind::Name(n("$end")), rhs_span);
             let binary_span = span();
             ast.builder().alloc_expr(
                 ExprKind::Binary(BinaryExpr {
@@ -958,7 +962,9 @@ impl Parser {
         // advanced, and the value of `$it++` is of no use to anyone.
         let update = {
             let operand_span = span();
-            let operand = ast.builder().alloc_expr(ExprKind::Name(n("$it")), operand_span);
+            let operand = ast
+                .builder()
+                .alloc_expr(ExprKind::Name(n("$it")), operand_span);
             let incdec_span = span();
             ast.builder().alloc_expr(
                 ExprKind::IncDec(IncDecExpr {
@@ -973,7 +979,9 @@ impl Parser {
         // its initialiser.
         let loop_variable = {
             let operand_span = span();
-            let operand = ast.builder().alloc_expr(ExprKind::Name(n("$it")), operand_span);
+            let operand = ast
+                .builder()
+                .alloc_expr(ExprKind::Name(n("$it")), operand_span);
             let deref_span = span();
             let element = ast.builder().alloc_expr(
                 ExprKind::Unary(UnaryExpr {
@@ -1052,7 +1060,11 @@ impl Parser {
     /// Arms may appear in any order, and `default` may appear anywhere. A case
     /// body is a statement list that ends at the next `case`, `default`, or the
     /// closing brace.
-    pub(super) fn parse_switch(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<StmtKind> {
+    pub(super) fn parse_switch(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<StmtKind> {
         stream.advance(); // `switch`
         let scrutinee = self.parse_paren_condition(stream, ast)?;
         self.expect_punct(stream, Punctuation::OpenBrace, "`{`")?;
@@ -1116,7 +1128,11 @@ impl Parser {
     }
 
     /// Parses `raise "type": "what";` or the bare `raise;`.
-    pub(super) fn parse_raise(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<StmtKind> {
+    pub(super) fn parse_raise(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<StmtKind> {
         stream.advance(); // `raise`
         let node = if stream.at(TokenKind::Punct(Punctuation::Semi)) {
             RaiseStmt {
@@ -1147,7 +1163,11 @@ impl Parser {
     ///
     /// Every clause but the `try` body is optional, and they must appear in
     /// that order.
-    pub(super) fn parse_try(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<StmtKind> {
+    pub(super) fn parse_try(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<StmtKind> {
         stream.advance(); // `try`
         let body = self.parse_block(stream, ast)?;
 
@@ -1201,7 +1221,11 @@ impl Parser {
     }
 
     /// Parses `( expr )`, as used by `if`, `while`, `for`, and `switch`.
-    pub(super) fn parse_paren_condition(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<ExprId> {
+    pub(super) fn parse_paren_condition(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ExprId> {
         self.expect_punct(stream, Punctuation::OpenParen, "`(`")?;
         let condition = self.parse_expr(stream, ast)?;
         self.expect_punct(stream, Punctuation::CloseParen, "`)`")?;
@@ -1223,5 +1247,4 @@ impl Parser {
     }
 
     // ---------------------------------------------------------- expressions
-
 }

@@ -327,8 +327,7 @@ mod tests {
     fn exponentiation_binds_tighter_than_multiplication() {
         // `2 * 3 ** 2` must be `2 * 9`, so `**` needs the higher power.
         let star = infix(TokenKind::Punct(Punctuation::Star)).expect("`*` is an operator");
-        let starstar =
-            infix(TokenKind::Punct(Punctuation::StarStar)).expect("`**` is an operator");
+        let starstar = infix(TokenKind::Punct(Punctuation::StarStar)).expect("`**` is an operator");
         assert!(
             starstar.power.left > star.power.left,
             "`**` must bind tighter than `*`"
@@ -338,8 +337,7 @@ mod tests {
     #[test]
     fn exponentiation_is_right_associative() {
         // `2 ** 3 ** 2` is `2 ** 9`, not `8 ** 2`.
-        let starstar =
-            infix(TokenKind::Punct(Punctuation::StarStar)).expect("`**` is an operator");
+        let starstar = infix(TokenKind::Punct(Punctuation::StarStar)).expect("`**` is an operator");
         assert_eq!(starstar.assoc, Assoc::Right);
         assert!(starstar.power.right <= starstar.power.left);
     }

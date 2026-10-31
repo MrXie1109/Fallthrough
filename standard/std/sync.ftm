@@ -596,3 +596,71 @@ export fn wait(this &Barrier) void {
     }
     this._mutex.unlock();
 }
+
+// A flag one thread sets and others wait on.
+//
+// This is Python's `asyncio.Event`: `set` raises the flag and wakes everyone
+// waiting, `clear` lowers it again, and `wait` returns at once while the flag is
+// up. It stays up until something clears it -- it does not reset itself when a
+// waiter takes it -- so one event may release any number of waiters, in any
+// order, and a waiter that arrives after `set` does not block at all.
+//
+//     ready Event;
+//     // one side:
+//     ready.set();
+//     // another:
+//     ready.wait();
+//
+// A waiter that must not miss the event waits under a lock it shares with the
+// setter, or checks a condition that the event stands for: `wait` says the flag
+// was raised at some point, not that it was raised after the call began.
+export type Event {
+    // Guards `_set`.
+    _mutex Mutex;
+    // Wakes the waiters of `set`.
+    _raised CondVar;
+    // Whether the flag is up.
+    _set bool;
+}
+
+// Creates a lowered event: `wait` blocks until something sets it.
+export fn __init__(this &Event) void {
+    (&this._mutex)->__init__();
+    (&this._raised)->__init__();
+    this._set = false;
+}
+
+// Raises the flag, waking every waiter.
+export fn set(this &Event) void {
+    this._mutex.lock();
+    this._set = true;
+    this._mutex.unlock();
+    this._raised.notify_all();
+}
+
+// Lowers the flag.
+//
+// A waiter already inside `wait` stays there: lowering takes nothing back from
+// a wake that has been sent.
+export fn clear(this &Event) void {
+    this._mutex.lock();
+    this._set = false;
+    this._mutex.unlock();
+}
+
+// Whether the flag is up.
+export fn is_set(this &const Event) bool {
+    return this._set;
+}
+
+// Waits until the flag is up, and returns at once when it already is.
+//
+// The flag is read under the mutex and the wait happens on the same mutex, so a
+// `set` that races this call is either seen before the wait or wakes it.
+export fn wait(this &Event) void {
+    this._mutex.lock();
+    while (!this._set) {
+        this._raised.wait(&this._mutex);
+    }
+    this._mutex.unlock();
+}

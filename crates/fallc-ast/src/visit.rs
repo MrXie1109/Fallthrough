@@ -253,10 +253,7 @@ pub fn walk_stmt_kind<V: Visitor + ?Sized>(ast: &Ast, kind: &StmtKind, visitor: 
                 }
                 walk_block(ast, clause.block, visitor);
             }
-            for block in [node.else_block, node.finally_block]
-                .into_iter()
-                .flatten()
-            {
+            for block in [node.else_block, node.finally_block].into_iter().flatten() {
                 walk_block(ast, block, visitor);
             }
         }
@@ -333,6 +330,13 @@ pub fn walk_expr_kind<V: Visitor + ?Sized>(ast: &Ast, kind: &ExprKind, visitor: 
         // checker resolves where the type is used.
         ExprKind::TypeLiteral(_) => {}
         ExprKind::SizeofPack(_) => {}
+        // `yield expr`: the value yielded is an ordinary expression, and a bare
+        // `yield` has none.
+        ExprKind::Yield(node) => {
+            if let Some(value) = node.value {
+                walk_expr(ast, value, visitor);
+            }
+        }
         ExprKind::Conditional(node) => {
             walk_expr(ast, node.condition, visitor);
             walk_expr(ast, node.then_value, visitor);

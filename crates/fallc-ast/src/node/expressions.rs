@@ -744,8 +744,26 @@ pub enum ExprKind {
     /// so it is also the way to compute a value through a few temporary steps:
     /// `v int = { t int = 3; t * 2 };`.
     Block(BlockId),
+    /// `yield expr` — suspend the coroutine and hand `expr` to whoever resumed
+    /// it; the value of the expression is the next `Send` that resume brings.
+    ///
+    /// Only a `@coroutine` function has anything to suspend, so the checker
+    /// refuses it anywhere else. It is an expression rather than a statement
+    /// because reading the next value is what `yield` is for:
+    /// `i += yield i;` suspends with `i` and continues with what came back.
+    ///
+    /// `yield` with nothing after it gives the coroutine's `Yield` type, and
+    /// the checker only accepts it there when that type is `void`.
+    Yield(YieldExpr),
     /// An expression the parser could not recognise.
     Unresolved(Unresolved),
+}
+
+/// `yield expr`, or the bare `yield` that gives `void`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct YieldExpr {
+    /// What goes to the resumer, or `None` for `yield;`.
+    pub value: Option<ExprId>,
 }
 
 /// A `lambda` expression: an anonymous function written where a value is
@@ -822,4 +840,3 @@ pub struct ConditionalExpr {
     /// The value when it does not.
     pub else_value: ExprId,
 }
-

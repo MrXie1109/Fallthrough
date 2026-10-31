@@ -29,7 +29,7 @@ have several templates (different contexts give a more specific reason).
 
 An `error` means the program does not conform to this standard and an implementation
 **must** reject it; a `warning` means it may compile but the intent **should** be
-reviewed (see [10 Diagnostics](10-diagnostics.md)).
+reviewed (see [10 Diagnostics](11-diagnostics.md)).
 
 | Code | Severity | Message template |
 | ---- | -------- | ---------------- |
@@ -261,6 +261,6 @@ reviewed (see [10 Diagnostics](10-diagnostics.md)).
 ## A.4 Warning groups
 
 The mapping between warning codes and the command-line group switches is in
-[10 Diagnostics §5](10-diagnostics.md#warning-groups). A group may contain several
+[10 Diagnostics §5](11-diagnostics.md#warning-groups). A group may contain several
 codes; a code belongs to one group (S0083 is the only code that can appear both as an
 error -- an unhandled raising call site -- and as a warning -- a `??` that does nothing).

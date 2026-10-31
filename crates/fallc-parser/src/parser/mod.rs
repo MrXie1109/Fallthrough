@@ -24,16 +24,15 @@
 //! backtracking freely where lookahead is awkward.
 
 use fallc_ast::{
-    ArrayType, AssignExpr, Ast, Attr, BinaryExpr, BinaryOp, BindStmt, BindingType,
-    BlockId,
-    CallExpr, CastExpr, CommaExpr, ConditionalExpr, ConstItem, ConstantMember, DesignatedInit, ElseBranch, ExprId,
-    ExprKind, ExprStmt, FieldDecl, FieldExpr, ForCStmt,
-    FunctionItem, IfStmt, ImportItem, ImportedMembers, ImportedName, IncDecExpr, IncDecOp,
-    IndexExpr, Initializer, ItemId, ItemKind, LinkItem, LinkKind, LinkLocation, LoopStmt, NamedArgument,
-    EnumDecl, EnumMember, FoldExpr, FoldKind, NamedType, PackRef, Param, RaiseStmt, ReturnStmt, StmtId, StmtKind, SwitchArm,
-    StaticAssert, SwitchStmt, TemplateArgumentSyntax, TemplateParam, TemplateParamKind, TryStmt,
-    TypeDecl,
-    TypeDeclKind, TypeOfType, TypeSyntax, TypedInitExpr, UnaryExpr, UnaryOp,
+    ArrayType, AssignExpr, Ast, Attr, BinaryExpr, BinaryOp, BindStmt, BindingType, BlockId,
+    CallExpr, CastExpr, CommaExpr, ConditionalExpr, ConstItem, ConstantMember, DesignatedInit,
+    ElseBranch, EnumDecl, EnumMember, ExprId, ExprKind, ExprStmt, FieldDecl, FieldExpr, FoldExpr,
+    FoldKind, ForCStmt, FunctionItem, IfStmt, ImportItem, ImportedMembers, ImportedName,
+    IncDecExpr, IncDecOp, IndexExpr, Initializer, ItemId, ItemKind, LinkItem, LinkKind,
+    LinkLocation, LoopStmt, NamedArgument, NamedType, PackRef, Param, RaiseStmt, ReturnStmt,
+    StaticAssert, StmtId, StmtKind, SwitchArm, SwitchStmt, TemplateArgumentSyntax, TemplateParam,
+    TemplateParamKind, TryStmt, TypeDecl, TypeDeclKind, TypeOfType, TypeSyntax, TypedInitExpr,
+    UnaryExpr, UnaryOp,
 };
 use fallc_diag::{Diagnostic, DiagnosticBag, DiagnosticCode};
 use fallc_lexer::{Keyword, Punctuation};
@@ -123,13 +122,11 @@ pub struct Parser {
     in_template_header: u32,
 }
 
-
-mod items;
-mod functions;
-mod statements;
 mod expressions;
+mod functions;
+mod items;
 mod recovery;
-
+mod statements;
 
 /// Returns the bit width a character literal's prefix names, if any.
 ///
@@ -153,11 +150,20 @@ fn char_literal_width(text: &str) -> Option<u32> {
 /// compare against, not an expression to lower.
 fn integer_literal_value(digits: &str) -> Option<i64> {
     let digits = digits.replace('_', "");
-    let (radix, body) = if let Some(rest) = digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")) {
+    let (radix, body) = if let Some(rest) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
         (16, rest)
-    } else if let Some(rest) = digits.strip_prefix("0o").or_else(|| digits.strip_prefix("0O")) {
+    } else if let Some(rest) = digits
+        .strip_prefix("0o")
+        .or_else(|| digits.strip_prefix("0O"))
+    {
         (8, rest)
-    } else if let Some(rest) = digits.strip_prefix("0b").or_else(|| digits.strip_prefix("0B")) {
+    } else if let Some(rest) = digits
+        .strip_prefix("0b")
+        .or_else(|| digits.strip_prefix("0B"))
+    {
         (2, rest)
     } else {
         (10, digits.as_str())

@@ -76,7 +76,8 @@ impl Scratch {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).into_owned()
-    }}
+    }
+}
 
 impl Drop for Scratch {
     fn drop(&mut self) {

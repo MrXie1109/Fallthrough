@@ -171,27 +171,19 @@ impl TypeChecker {
         // The call's own arguments are paired with the parameters they fill at
         // the same time, because whether one is passed by address is a fact
         // about the call site either way.
-        let (arguments, written) =
-            if node.template_args.is_empty() && !node.explicit_template_arguments {
-                self.deduce_template_arguments(ast, resolutions, types, &signature, node, span)?
-            } else {
-                let arguments = self.written_template_arguments(
-                    ast,
-                    resolutions,
-                    types,
-                    &signature,
-                    node,
-                    span,
-                )?;
-                let written = self.match_named_arguments(&signature, node, 0, name, span)?;
-                (arguments, written)
-            };
+        let (arguments, written) = if node.template_args.is_empty()
+            && !node.explicit_template_arguments
+        {
+            self.deduce_template_arguments(ast, resolutions, types, &signature, node, span)?
+        } else {
+            let arguments =
+                self.written_template_arguments(ast, resolutions, types, &signature, node, span)?;
+            let written = self.match_named_arguments(&signature, node, 0, name, span)?;
+            (arguments, written)
+        };
         // Whatever the caller left out comes from the parameter's default.
-        let arguments = self.complete_template_arguments(
-            &signature.template_params,
-            arguments,
-            span,
-        )?;
+        let arguments =
+            self.complete_template_arguments(&signature.template_params, arguments, span)?;
         let substitution =
             crate::template::Substitution::new(&signature.template_params, &arguments)?;
 
@@ -200,13 +192,8 @@ impl TypeChecker {
         // the body will be.
         if attrs.iter().any(|attr| attr.name == "enable_if") {
             let previous = self.substitution.replace(substitution.clone());
-            let allowed = self.enable_if(
-                definition_tree,
-                definition_resolutions,
-                types,
-                &attrs,
-                span,
-            );
+            let allowed =
+                self.enable_if(definition_tree, definition_resolutions, types, &attrs, span);
             self.substitution = previous;
             if allowed == Some(false) {
                 self.diagnostics.push(
@@ -379,10 +366,7 @@ impl TypeChecker {
         signature: &FunctionSignature,
         node: &CallExpr,
         span: fallc_span::Span,
-    ) -> Option<(
-        crate::template::Arguments,
-        Vec<(usize, fallc_ast::ExprId)>,
-    )> {
+    ) -> Option<(crate::template::Arguments, Vec<(usize, fallc_ast::ExprId)>)> {
         // A parameter with a default may be left out, so the count is a range:
         // at least the required ones, at most all of them. A parameter *pack*
         // takes the rest, however many there are, so with one there is no upper
@@ -424,8 +408,7 @@ impl TypeChecker {
         let arguments_written =
             self.match_named_arguments(signature, node, 0, &signature.written_name, span)?;
 
-        let mut deduced: std::collections::HashMap<String, Type> =
-            std::collections::HashMap::new();
+        let mut deduced: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
         // Values a parameter's *length* supplied, kept apart from the types:
         // `[N]T` against `[3]int` decides `N` as well as `T`.
         let mut deduced_values: std::collections::HashMap<String, i64> =
@@ -457,9 +440,7 @@ impl TypeChecker {
             let Some(found) = found else {
                 continue;
             };
-            if is_element
-                && let Some(name) = element_parameter
-            {
+            if is_element && let Some(name) = element_parameter {
                 deduced_packs
                     .entry(name.to_owned())
                     .or_default()
@@ -494,10 +475,8 @@ impl TypeChecker {
             // The body is filed under the symbol the signature mangles to, not
             // under the written name: `begin` is `begin_R1A0_KX1_T`, because a
             // template with a different parameter list is a different body.
-            let symbol = crate::typeck::template_symbol_of(
-                &signature.bound_as,
-                &signature.param_types,
-            );
+            let symbol =
+                crate::typeck::template_symbol_of(&signature.bound_as, &signature.param_types);
             let declaration_tree = self
                 .template_body_for(&symbol)
                 .or_else(|| self.template_body_for(&signature.bound_as))
@@ -559,10 +538,7 @@ impl TypeChecker {
             );
             return None;
         }
-        Some((
-            crate::template::Arguments(arguments),
-            arguments_written,
-        ))
+        Some((crate::template::Arguments(arguments), arguments_written))
     }
 
     /// Fills in the template arguments a caller left out.
@@ -589,13 +565,12 @@ impl TypeChecker {
             let param = &params[index];
             let Some(default) = param.default.clone() else {
                 self.diagnostics.push(
-                    Diagnostic::error(format!(
-                        "template parameter `{}` has no value",
-                        param.name
-                    ))
-                    .with_code(DiagnosticCode::sema(72))
-                    .with_span(span)
-                    .with_note("write it out, or give it a default: `template <{} type = ...>`"),
+                    Diagnostic::error(format!("template parameter `{}` has no value", param.name))
+                        .with_code(DiagnosticCode::sema(72))
+                        .with_span(span)
+                        .with_note(
+                            "write it out, or give it a default: `template <{} type = ...>`",
+                        ),
                 );
                 return None;
             };
@@ -605,11 +580,9 @@ impl TypeChecker {
                 &crate::template::Arguments(collected.clone()),
             )?;
             let argument = match default {
-                TemplateDefault::Type(written) => {
-                    crate::template::TemplateArgument::Type(
-                        self.resolve_template_type(&written, &so_far),
-                    )
-                }
+                TemplateDefault::Type(written) => crate::template::TemplateArgument::Type(
+                    self.resolve_template_type(&written, &so_far),
+                ),
                 TemplateDefault::Value(expr) => {
                     // The default is a constant expression, which may mention
                     // the parameters so far -- `sizeof(T)` and `n * 3` are the
@@ -680,10 +653,9 @@ impl TypeChecker {
         use fallc_ast::TypeSyntax;
         match parameter {
             TypeSyntax::Named(named) => {
-                let names_a_parameter = params
-                    .iter()
-                    .any(|param| param.name == named.path
-                        && param.kind == fallc_ast::TemplateParamKind::Type);
+                let names_a_parameter = params.iter().any(|param| {
+                    param.name == named.path && param.kind == fallc_ast::TemplateParamKind::Type
+                });
                 if names_a_parameter {
                     deduced
                         .entry(named.path.clone())
@@ -709,7 +681,9 @@ impl TypeChecker {
                 // The same family, spelled either way: `Crate` in the module
                 // that declares it, `std.Crate` elsewhere.
                 let last = |name: &str| {
-                    name.rsplit_once('.').map_or(name, |(_, last)| last).to_owned()
+                    name.rsplit_once('.')
+                        .map_or(name, |(_, last)| last)
+                        .to_owned()
                 };
                 if last(family) != last(&named.path) {
                     return;
@@ -746,7 +720,10 @@ impl TypeChecker {
             | TypeSyntax::ConstRvalueReference(inner)
             | TypeSyntax::Volatile(inner)
             | TypeSyntax::Const(inner) => {
-                let pointee = argument.pointee().cloned().unwrap_or_else(|| argument.clone());
+                let pointee = argument
+                    .pointee()
+                    .cloned()
+                    .unwrap_or_else(|| argument.clone());
                 let pointee = pointee.unqualified().clone();
                 self.deduce_from_type(ast, inner, &pointee, params, deduced, values);
             }
@@ -951,9 +928,10 @@ impl TypeChecker {
         // Whether the *written* parameters mention a type parameter is what
         // decides it: the resolved ones never do, because substitution has
         // already replaced them.
-        let distinguished = signature.param_types.iter().any(|written| {
-            mentions_type_parameter_syntax(written, &signature.template_params)
-        });
+        let distinguished = signature
+            .param_types
+            .iter()
+            .any(|written| mentions_type_parameter_syntax(written, &signature.template_params));
         // A *value* parameter never appears in the mangled type of a
         // parameter, so two instantiations that differ only in one would share
         // a symbol -- `scaled<int, 3>` and `scaled<int, 4>` both mangling to
@@ -997,10 +975,8 @@ impl TypeChecker {
         // rather than only afterwards.
         for param in &signature.template_params {
             if matches!(param.kind, fallc_ast::TemplateParamKind::Value(_)) {
-                self.template_value_types.insert(
-                    param.name.clone(),
-                    Type::INT,
-                );
+                self.template_value_types
+                    .insert(param.name.clone(), Type::INT);
             }
         }
         for param in &signature.template_params {
@@ -1099,8 +1075,12 @@ impl TypeChecker {
                 _ => None,
             }
         });
-        let returned_value = returned
-            .and_then(|expr| instantiation_records.constant_values.get(&ast.expr(expr).span).copied());
+        let returned_value = returned.and_then(|expr| {
+            instantiation_records
+                .constant_values
+                .get(&ast.expr(expr).span)
+                .copied()
+        });
         if let Some(value) = returned_value {
             self.constant_values.insert(span, value);
         }
@@ -1132,12 +1112,7 @@ impl TypeChecker {
                 // `values ...int` must reject a word of text.
                 let was_parameter = self.in_parameter_position;
                 self.in_parameter_position = true;
-                self.types_must_match(
-                    expected,
-                    &found,
-                    caller_ast.expr(argument).span,
-                    "argument",
-                );
+                self.types_must_match(expected, &found, caller_ast.expr(argument).span, "argument");
                 self.in_parameter_position = was_parameter;
             }
         }
@@ -1154,7 +1129,8 @@ impl TypeChecker {
         // call's is: only the checker knows which function the call selected.
         self.call_symbols.insert(span, symbol.clone());
         self.instantiations.insert(key.to_owned(), symbol.clone());
-        self.instantiated_returns.insert(key.to_owned(), returns.clone());
+        self.instantiated_returns
+            .insert(key.to_owned(), returns.clone());
         self.instantiation_list.push(Instantiation {
             key: key.to_owned(),
             symbol: symbol.clone(),
@@ -1198,10 +1174,7 @@ impl TypeChecker {
         // `[N]` is an expression id in it. Resolving them against whichever
         // tree the call happens to be written in read another node, so the
         // expected type came out wrong and the instantiation was rolled back.
-        let symbol = crate::typeck::template_symbol_of(
-            &signature.bound_as,
-            &signature.param_types,
-        );
+        let symbol = crate::typeck::template_symbol_of(&signature.bound_as, &signature.param_types);
         let declaration = self
             .template_body_for(&symbol)
             .or_else(|| self.template_body_for(&signature.bound_as))
@@ -1226,11 +1199,10 @@ impl TypeChecker {
         // A signature whose own parameters are not all bound is a pack being
         // expanded, not a candidate whose arguments can be judged here.
         if signature.pack.is_some()
-            || signature
-                .template_params
-                .iter()
-                .any(|param| substitution.type_of(&param.name).is_none()
-                    && substitution.value_of(&param.name).is_none())
+            || signature.template_params.iter().any(|param| {
+                substitution.type_of(&param.name).is_none()
+                    && substitution.value_of(&param.name).is_none()
+            })
         {
             return true;
         }
@@ -1263,56 +1235,56 @@ impl TypeChecker {
         true
     }
 
-/// The template parameter a forwarding reference deduces, if this is one.
-///
-/// `&&T`, with `T` a type parameter, is the shape: an lvalue argument binds it
-/// as `T = &U` and an rvalue as `T = U`.
-fn universal_reference_parameter<'a>(
-    parameter: &fallc_ast::TypeSyntax,
-    params: &'a [fallc_ast::TemplateParam],
-) -> Option<&'a str> {
-    use fallc_ast::TypeSyntax;
-    let inner = match parameter {
-        TypeSyntax::RvalueReference(inner) | TypeSyntax::ConstRvalueReference(inner) => inner,
-        _ => return None,
-    };
-    let TypeSyntax::Named(named) = inner.as_ref() else {
-        return None;
-    };
-    if !named.arguments.is_empty() {
-        return None;
+    /// The template parameter a forwarding reference deduces, if this is one.
+    ///
+    /// `&&T`, with `T` a type parameter, is the shape: an lvalue argument binds it
+    /// as `T = &U` and an rvalue as `T = U`.
+    fn universal_reference_parameter<'a>(
+        parameter: &fallc_ast::TypeSyntax,
+        params: &'a [fallc_ast::TemplateParam],
+    ) -> Option<&'a str> {
+        use fallc_ast::TypeSyntax;
+        let inner = match parameter {
+            TypeSyntax::RvalueReference(inner) | TypeSyntax::ConstRvalueReference(inner) => inner,
+            _ => return None,
+        };
+        let TypeSyntax::Named(named) = inner.as_ref() else {
+            return None;
+        };
+        if !named.arguments.is_empty() {
+            return None;
+        }
+        params
+            .iter()
+            .find(|param| {
+                param.name == named.path && param.kind == fallc_ast::TemplateParamKind::Type
+            })
+            .map(|param| param.name.as_str())
     }
-    params
-        .iter()
-        .find(|param| {
-            param.name == named.path && param.kind == fallc_ast::TemplateParamKind::Type
-        })
-        .map(|param| param.name.as_str())
-}
 
-/// Whether an expression names a place rather than producing a value.
-///
-/// Names, fields, indexed elements and dereferences are places: passing one to
-/// a forwarding reference is passing an lvalue. A literal, a call and an
-/// arithmetic expression are values.
-pub(super) fn value_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId, ty: &Type) -> bool {
-    // A reference says which category it stands for: `&&U` is a value about to
-    // disappear, `&U` is one that will still be there. Only when the type is not
-    // a reference does the shape of the expression decide.
-    match ty {
-        Type::Reference { is_rvalue, .. } => !is_rvalue,
-        _ => Self::expression_is_lvalue(ast, expression),
+    /// Whether an expression names a place rather than producing a value.
+    ///
+    /// Names, fields, indexed elements and dereferences are places: passing one to
+    /// a forwarding reference is passing an lvalue. A literal, a call and an
+    /// arithmetic expression are values.
+    pub(super) fn value_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId, ty: &Type) -> bool {
+        // A reference says which category it stands for: `&&U` is a value about to
+        // disappear, `&U` is one that will still be there. Only when the type is not
+        // a reference does the shape of the expression decide.
+        match ty {
+            Type::Reference { is_rvalue, .. } => !is_rvalue,
+            _ => Self::expression_is_lvalue(ast, expression),
+        }
     }
-}
 
-pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> bool {
-    use fallc_ast::ExprKind;
-    match &ast.expr(expression).kind {
-        ExprKind::Name(_) | ExprKind::Field(_) | ExprKind::Index(_) => true,
-        ExprKind::Unary(unary) if unary.op == fallc_ast::UnaryOp::Deref => true,
-        _ => false,
+    pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> bool {
+        use fallc_ast::ExprKind;
+        match &ast.expr(expression).kind {
+            ExprKind::Name(_) | ExprKind::Field(_) | ExprKind::Index(_) => true,
+            ExprKind::Unary(unary) if unary.op == fallc_ast::UnaryOp::Deref => true,
+            _ => false,
+        }
     }
-}
 
     /// Resolves a written type with the current substitution applied.
     ///
@@ -1352,13 +1324,10 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
             let arguments = self.expand_written_type_arguments(&named.arguments, substitution);
             let previous = self.substitution.replace(substitution.clone());
             let template = self.type_templates.get(&named.path).cloned();
-            let resolved = template.and_then(|template| {
-                self.build_type_member(&template, arguments, named.span)
-            });
+            let resolved = template
+                .and_then(|template| self.build_type_member(&template, arguments, named.span));
             self.substitution = previous;
-            return resolved.unwrap_or_else(|| {
-                Type::unspecified(named.path.clone(), named.span)
-            });
+            return resolved.unwrap_or_else(|| Type::unspecified(named.path.clone(), named.span));
         }
         // A parameter *inside* another type -- the `T` in `&const T` -- is
         // replaced as the written type is resolved, by the substitution the
@@ -1424,7 +1393,10 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         let mut arguments = Vec::with_capacity(given);
         for (written, param) in node.template_args.iter().zip(params).take(fixed) {
             match (written, &param.kind) {
-                (fallc_ast::TemplateArgumentSyntax::Type(ty), fallc_ast::TemplateParamKind::Type) => {
+                (
+                    fallc_ast::TemplateArgumentSyntax::Type(ty),
+                    fallc_ast::TemplateParamKind::Type,
+                ) => {
                     let resolved = self.resolve_written_type(ty);
                     arguments.push(crate::template::TemplateArgument::Type(resolved));
                 }
@@ -1472,7 +1444,10 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         // `count<int, f64, char>()` reach a single `Args ...type` parameter.
         if has_pack {
             let mut elements = Vec::with_capacity(given - fixed);
-            for (written, param) in node.template_args[fixed..].iter().zip(std::iter::repeat(&params[fixed])) {
+            for (written, param) in node.template_args[fixed..]
+                .iter()
+                .zip(std::iter::repeat(&params[fixed]))
+            {
                 match (written, &param.kind) {
                     (
                         fallc_ast::TemplateArgumentSyntax::Type(ty),
@@ -1567,7 +1542,12 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         // Folding whatever happens to work would make a template's *identity*
         // depend on an optimisation -- `f<g()>` would be one instantiation
         // under one compiler and unbuildable under another.
-        if !self.require_constant(expr, ast.expr(expr).span, &format!("template argument `{}`", param.name), 74) {
+        if !self.require_constant(
+            expr,
+            ast.expr(expr).span,
+            &format!("template argument `{}`", param.name),
+            74,
+        ) {
             return None;
         }
 
@@ -1577,16 +1557,13 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
             Some(value) => Some(crate::template::TemplateArgument::Int(value)),
             None => {
                 self.diagnostics.push(
-                    Diagnostic::error(format!(
-                        "the value for `{}` is not a constant",
-                        param.name
-                    ))
-                    .with_code(DiagnosticCode::sema(74))
-                    .with_span(ast.expr(expr).span)
-                    .with_note(
-                        "a template argument is known before the program runs: an integer or \
+                    Diagnostic::error(format!("the value for `{}` is not a constant", param.name))
+                        .with_code(DiagnosticCode::sema(74))
+                        .with_span(ast.expr(expr).span)
+                        .with_note(
+                            "a template argument is known before the program runs: an integer or \
                          a character sequence is, and a variable is not",
-                    ),
+                        ),
                 );
                 let _ = span;
                 None
@@ -1612,9 +1589,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
     /// Written once because it was written eight times, and every copy had to
     /// be taught about templates separately.
     pub(super) fn special_method_qualified(receiver: &str, method: &str) -> String {
-        let base = receiver
-            .split_once('<')
-            .map_or(receiver, |(base, _)| base);
+        let base = receiver.split_once('<').map_or(receiver, |(base, _)| base);
         let base = base.rsplit_once('.').map_or(base, |(_, last)| last);
         format!("{method}{base}")
     }
@@ -1636,8 +1611,16 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         // `const` it does not write is supplied by the `&const` around it.
         // Comparing the written types exactly would make `[4]const c8` and the
         // resolved `[4]c8` two different receivers.
-        if let (Type::Array { element: a, len: la }, Type::Array { element: b, len: lb }) =
-            (receiver.unqualified(), expected.unqualified())
+        if let (
+            Type::Array {
+                element: a,
+                len: la,
+            },
+            Type::Array {
+                element: b,
+                len: lb,
+            },
+        ) = (receiver.unqualified(), expected.unqualified())
             && la == lb
             && a.unqualified() == b.unqualified()
         {
@@ -1781,9 +1764,10 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
             return true;
         }
         self.type_templates.values().any(|template| {
-            template.template_params.iter().any(|param| {
-                param.name == name && param.kind == fallc_ast::TemplateParamKind::Type
-            })
+            template
+                .template_params
+                .iter()
+                .any(|param| param.name == name && param.kind == fallc_ast::TemplateParamKind::Type)
         })
     }
 
@@ -1880,7 +1864,8 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                 .collect(),
         );
         let _ = argument;
-        self.instantiations.insert(symbol.to_owned(), symbol.to_owned());
+        self.instantiations
+            .insert(symbol.to_owned(), symbol.to_owned());
         // The body is checked like any instantiation's, so that the records its
         // lowering needs -- which field is written, which call is made -- exist.
         // Recording the symbol alone left the body's expressions with no types
@@ -2036,7 +2021,10 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
     /// The written arguments are read against the declaration's own parameters,
     /// which is the only thing that says whether a written `int` is a type or a
     /// value, and any pack expansion among them is spliced first.
-    pub(super) fn instantiate_type_template(&mut self, named: &fallc_ast::NamedType) -> Option<Type> {
+    pub(super) fn instantiate_type_template(
+        &mut self,
+        named: &fallc_ast::NamedType,
+    ) -> Option<Type> {
         if !self.type_templates.contains_key(&named.path) {
             return None;
         }
@@ -2055,9 +2043,16 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
             .skip(given)
             .take(fixed.saturating_sub(given))
             .all(|param| param.default.is_some());
-        if if has_pack { given < fixed } else { given != fixed && !(given < fixed && defaulted_tail) }
-        {
-            let expected = if has_pack { format!("at least {fixed}") } else { fixed.to_string() };
+        if if has_pack {
+            given < fixed
+        } else {
+            given != fixed && !(given < fixed && defaulted_tail)
+        } {
+            let expected = if has_pack {
+                format!("at least {fixed}")
+            } else {
+                fixed.to_string()
+            };
             self.diagnostics.push(
                 Diagnostic::error(format!(
                     "`{}` takes {expected} template argument(s), but {given} were given",
@@ -2091,23 +2086,17 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                         // constant the name stands for -- `Device<OpenMode.READ>`
                         // is the member, whose number is what the member is built
                         // with.
-                        (
-                            fallc_ast::TemplateArgumentSyntax::Named { path, span },
-                            true,
-                        ) => crate::template::TemplateArgument::Type(
-                            self.resolve_written_type(&fallc_ast::TypeSyntax::Named(
-                                fallc_ast::NamedType {
+                        (fallc_ast::TemplateArgumentSyntax::Named { path, span }, true) => {
+                            crate::template::TemplateArgument::Type(self.resolve_written_type(
+                                &fallc_ast::TypeSyntax::Named(fallc_ast::NamedType {
                                     path: path.clone(),
                                     arguments: Vec::new(),
                                     is_expansion: false,
                                     span: *span,
-                                },
-                            )),
-                        ),
-                        (
-                            fallc_ast::TemplateArgumentSyntax::Named { path, span },
-                            false,
-                        ) => {
+                                }),
+                            ))
+                        }
+                        (fallc_ast::TemplateArgumentSyntax::Named { path, span }, false) => {
                             let Some(value) = self.constants_by_name.get(path.as_str()).copied()
                             else {
                                 self.diagnostics.push(
@@ -2145,7 +2134,12 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                         // `Device<Mode>` inside a method of the family: `Mode`
                         // is the enclosing template's *value* parameter, and what
                         // it stands for is the argument the member was built with.
-                        (fallc_ast::TemplateArgumentSyntax::Type(fallc_ast::TypeSyntax::Named(written)), false) => {
+                        (
+                            fallc_ast::TemplateArgumentSyntax::Type(fallc_ast::TypeSyntax::Named(
+                                written,
+                            )),
+                            false,
+                        ) => {
                             let bound = self
                                 .substitution
                                 .as_ref()
@@ -2159,7 +2153,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                                     argument
                                 }
                                 _ => {
-                                                                        self.diagnostics.push(
+                                    self.diagnostics.push(
                                         Diagnostic::error(format!(
                                             "template parameter `{}` is a value, but a type was \
                                              given",
@@ -2173,7 +2167,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                             }
                         }
                         (_, false) => {
-                                                        self.diagnostics.push(
+                            self.diagnostics.push(
                                 Diagnostic::error(format!(
                                     "template parameter `{}` is a value, but a type was given",
                                     param.name
@@ -2407,7 +2401,11 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
     ) -> Option<i64> {
         if let Some(chosen) = self.choose_specialisation(family, arguments, span) {
             if let Some(declaration) = chosen.declaration {
-                return self.declaration_member_constant(&declaration, member, &chosen.substitution);
+                return self.declaration_member_constant(
+                    &declaration,
+                    member,
+                    &chosen.substitution,
+                );
             }
             if let Some(resolved) = chosen.resolved {
                 return resolved
@@ -2505,12 +2503,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         let fields: Vec<(String, Type)> = member
             .fields
             .iter()
-            .map(|(name, ty)| {
-                (
-                    name.clone(),
-                    substitute_type_params(ty, substitution),
-                )
-            })
+            .map(|(name, ty)| (name.clone(), substitute_type_params(ty, substitution)))
             .collect();
         let nominal = crate::types::NominalType {
             // The family and the arguments that made this member, so that a
@@ -2610,8 +2603,10 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         // name its methods are written against: in a file that imported the
         // umbrella the member is `std.Array<i32>`, and `Array` is what the
         // module that declared it calls the family.
-        self.type_template_arguments
-            .insert(member_name.clone(), (template.name.clone(), arguments.clone()));
+        self.type_template_arguments.insert(
+            member_name.clone(),
+            (template.name.clone(), arguments.clone()),
+        );
         if let Some(existing) = self.nominal_types.get(&member_name).cloned() {
             // The member being built right now, reached through one of its own
             // pointer fields: there is nothing to compare yet, and nothing to
@@ -2630,9 +2625,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                     .iter()
                     .zip(&template.fields)
                     .all(|((name, _), field)| name == &field.name);
-            if !same_fields
-                && let Some(environment) = self.type_environments.last().cloned()
-            {
+            if !same_fields && let Some(environment) = self.type_environments.last().cloned() {
                 let module = environment.module.clone();
                 self.report_environment_conflict(&member_name, &module, span);
             }
@@ -2669,16 +2662,11 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                 mutable_fields.push(field.name.clone());
             }
         }
-        let mut field_alignments =
-            self.collect_field_alignments(None, &fields, &template.fields);
+        let mut field_alignments = self.collect_field_alignments(None, &fields, &template.fields);
         // A member of an imported family has no `alignas` to evaluate -- the
         // declaration arrived without one -- so the measured alignment is added
         // here, where the member is built.
-        if let Some(imported) = self
-            .imported_field_alignments
-            .get(&template.name)
-            .cloned()
-        {
+        if let Some(imported) = self.imported_field_alignments.get(&template.name).cloned() {
             for (field, align) in imported {
                 if !field_alignments.iter().any(|(name, _)| *name == field) {
                     field_alignments.push((field, align));
@@ -2699,7 +2687,8 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
             is_incomplete: false,
             union_storage: None,
         };
-        self.nominal_types.insert(member_name.clone(), nominal.clone());
+        self.nominal_types
+            .insert(member_name.clone(), nominal.clone());
         // The nested types belong to the *member*, so they are resolved under
         // its arguments and filed under its name.
         let previous = self.substitution.replace(substitution.clone());
@@ -2758,12 +2747,12 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
             {
                 continue;
             }
-            let Some(template) = self
+            let template_found = self
                 .type_templates
                 .get(&family)
                 .or_else(|| self.type_templates.values().find(|t| t.name == family))
-                .cloned()
-            else {
+                .cloned();
+            let Some(template) = template_found else {
                 continue;
             };
             let Some(substitution) =
@@ -2786,9 +2775,11 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
                 .definitions_named(resolutions, &qualified)
                 .into_iter()
                 .filter(|def| !local_family || def.imported_via.is_none())
-                .find(|def| def.signature.as_ref().is_some_and(|signature| {
-                    signature.param_types.len() == 1
-                }))
+                .find(|def| {
+                    def.signature
+                        .as_ref()
+                        .is_some_and(|signature| signature.param_types.len() == 1)
+                })
             else {
                 continue;
             };
@@ -3277,7 +3268,10 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
     }
 
     /// Puts back a set of records and returns the ones made since.
-    pub(super) fn restore_records(&mut self, previous: InstantiationRecords) -> InstantiationRecords {
+    pub(super) fn restore_records(
+        &mut self,
+        previous: InstantiationRecords,
+    ) -> InstantiationRecords {
         let made = self.take_records();
         self.deref_reads = previous.deref_reads;
         self.by_address_arguments = previous.by_address_arguments;
@@ -3311,9 +3305,7 @@ pub(super) fn expression_is_lvalue(ast: &Ast, expression: fallc_ast::ExprId) -> 
         self.in_place_operations = previous.in_place_operations;
         made
     }
-
 }
-
 
 /// Binds a specialisation's pattern to a member's argument.
 ///
@@ -3470,7 +3462,6 @@ fn covers(
     }
 }
 
-
 /// Whether every position of `general`'s pattern accepts `specific`'s.
 fn covers_patterns(
     general: &[Type],
@@ -3484,7 +3475,6 @@ fn covers_patterns(
             .zip(specific)
             .all(|(left, right)| covers(left, general_params, right, specific_params))
 }
-
 
 /// One specialised member, as it came from another module.
 ///
@@ -3521,10 +3511,7 @@ struct MatchedSpecialisation {
 }
 
 /// Replaces an imported specialisation's parameters with what the pattern bound.
-fn substitute_type_params(
-    ty: &Type,
-    substitution: &crate::template::Substitution,
-) -> Type {
+fn substitute_type_params(ty: &Type, substitution: &crate::template::Substitution) -> Type {
     match ty.unqualified() {
         Type::Unspecified(spec) => match substitution.get(&spec.text) {
             Some(crate::template::TemplateArgument::Type(bound)) => bound.clone(),

@@ -124,8 +124,7 @@ fn a_default_may_be_omitted() {
     // The call is reached with an argument the compiler cannot fold, so what
     // the test pins is the call site: the default is supplied there, which
     // shows as the second argument of the call.
-    let source =
-        "fn f(a int, b int = 7) int {\n    return a + b;\n}\nfn g(n int) int {\n    return f(n);\n}\n";
+    let source = "fn f(a int, b int = 7) int {\n    return a + b;\n}\nfn g(n int) int {\n    return f(n);\n}\n";
     let output = ir_of(source);
     assert!(output.contains("call i32 @f_"), "{output}");
     assert!(output.contains(", i32 7)"), "{output}");
@@ -136,8 +135,7 @@ fn a_default_may_be_overridden() {
     // `a` is a parameter, so the call is emitted. What this test is about is
     // that the *written* second argument is used rather than the default, which
     // shows in the arguments the call carries.
-    let source =
-        "fn f(a int, b int = 7) int {\n    return b;\n}\nfn g(a int) int {\n    return f(a, 9);\n}\n";
+    let source = "fn f(a int, b int = 7) int {\n    return b;\n}\nfn g(a int) int {\n    return f(a, 9);\n}\n";
     let output = ir_of(source);
     assert!(output.contains("call i32 @f_"), "{output}");
     assert!(output.contains(", i32 9)"), "{output}");

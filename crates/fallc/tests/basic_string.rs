@@ -99,10 +99,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("wide");
-    assert_eq!(
-        scratch.run("wide", source),
-        "2 72 105\n3 33\n1 0\n"
-    );
+    assert_eq!(scratch.run("wide", source), "2 72 105\n3 33\n1 0\n");
 }
 
 #[test]
@@ -120,8 +117,5 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("moves");
-    assert_eq!(
-        scratch.run("moves", source),
-        "3 4 abcd\n4 abcd\n"
-    );
+    assert_eq!(scratch.run("moves", source), "3 4 abcd\n4 abcd\n");
 }

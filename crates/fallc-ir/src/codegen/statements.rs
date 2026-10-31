@@ -69,8 +69,7 @@ impl<'ctx> Lowerer<'ctx> {
         builder: &Builder<'static>,
         depth: usize,
     ) -> Result<(), CodegenError> {
-        let defers: Vec<Vec<BlockId>> =
-            self.defer_scopes.iter().skip(depth).cloned().collect();
+        let defers: Vec<Vec<BlockId>> = self.defer_scopes.iter().skip(depth).cloned().collect();
         let scopes: Vec<Vec<DropEntry<'static>>> =
             self.drop_scopes.iter().skip(depth).cloned().collect();
         for (scope, defers) in scopes.iter().rev().zip(defers.iter().rev()) {
@@ -177,10 +176,19 @@ impl<'ctx> Lowerer<'ctx> {
             // `resolved_function` declares an imported destructor if this
             // module has not been given one yet, which is the usual case: the
             // type comes from a module emitted after this one.
-            let function = self.resolved_function(symbol, "a destructor", fallc_span::Span::SYNTHETIC)?;
+            let function =
+                self.resolved_function(symbol, "a destructor", fallc_span::Span::SYNTHETIC)?;
             builder
                 .build_call(function, &[entry.storage.into()], "drop")
                 .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            // A type that declares `__drop__` decides what its destructor does,
+            // and that includes its fields: `Optional<T>` releases the value it
+            // holds, and `String` releases its buffer. Destroying the fields as
+            // well freed the same buffer twice, which read as
+            // `munmap_chunk(): invalid pointer` -- and the field-destroying pass
+            // is only for a type that has no destructor of its own but whose
+            // fields do.
+            return Ok(());
         }
         self.emit_field_drops(builder, entry.storage, &entry.ty)
     }
@@ -274,19 +282,13 @@ impl<'ctx> Lowerer<'ctx> {
             StmtKind::ForC(node) => self.lower_for_c(ast, types, bindings, builder, node),
             StmtKind::Switch(node) => self.lower_switch(ast, types, bindings, builder, node),
             StmtKind::Break => self.lower_break(ast, types, bindings, builder, stmt),
-            StmtKind::Continue => {
-                self.lower_continue(ast, types, bindings, builder, stmt)
-            }
+            StmtKind::Continue => self.lower_continue(ast, types, bindings, builder, stmt),
             StmtKind::Fallthrough => Err(CodegenError::waiting_for_spec(
                 "`fallthrough` outside a `switch` arm",
                 ast.stmt(stmt).span,
             )),
-            StmtKind::Try(node) => {
-                self.lower_try(ast, types, bindings, builder, node)
-            }
-            StmtKind::Raise(node) => {
-                self.lower_raise(ast, types, bindings, builder, node)
-            }
+            StmtKind::Try(node) => self.lower_try(ast, types, bindings, builder, node),
+            StmtKind::Raise(node) => self.lower_raise(ast, types, bindings, builder, node),
 
             StmtKind::Unresolved(_) => Err(CodegenError::waiting_for_spec(
                 "this statement",
@@ -389,9 +391,7 @@ impl<'ctx> Lowerer<'ctx> {
         let ty = types
             .get(condition)
             .cloned()
-            .ok_or_else(|| {
-                CodegenError::waiting_for_spec("this condition's type", span)
-            })?;
+            .ok_or_else(|| CodegenError::waiting_for_spec("this condition's type", span))?;
         if !ty.is_truth_testable() {
             return Err(CodegenError::waiting_for_spec(
                 format!(
@@ -1043,6 +1043,61 @@ impl<'ctx> Lowerer<'ctx> {
             CodegenError::waiting_for_spec("a binding of this type", node.name_span)
         })?;
 
+        // A coroutine binding whose initialiser suspends takes the order the
+        // suspension requires: the value is produced first, and the slot's
+        // address is taken afterwards, where the store happens. Taking it first
+        // put the `getelementptr` before a `yield` and left it dominating a
+        // store it does not reach.
+        if self.coroutine.is_some()
+            && let Some(fallc_ast::Initializer::Expr(expr)) = &node.init
+            && super::coroutines::contains_yield(ast, *expr)
+        {
+            let field = self.coroutine_slot(node.name_span).map(|(field, _)| field);
+            let value = self
+                .lower_expr(ast, types, builder, *expr)?
+                .ok_or_else(|| {
+                    CodegenError::waiting_for_spec("this initialiser", node.name_span)
+                })?;
+            let storage = match field {
+                Some(field) => {
+                    self.note_coroutine_slot_name(&node.name, field);
+                    self.coroutine_slot_pointer(builder, field, &node.name)?
+                }
+                None => {
+                    let entry = self
+                        .current_function
+                        .and_then(|function| function.get_first_basic_block())
+                        .ok_or_else(|| {
+                            CodegenError::Emit(
+                                "internal error: no function is being lowered".to_owned(),
+                            )
+                        })?;
+                    self.create_entry_alloca(builder, entry, &node.name, llvm_ty)
+                }
+            };
+            // A value that owns something is constructed into its slot: the
+            // expression's own value is still owned by whatever produced it.
+            if (self.type_needs_drop(&ty) || self.drop_symbol_for(&ty).is_some())
+                && let Some(constructor) = self.parameter_copy_constructor(&ty)
+            {
+                let source = builder
+                    .build_alloca(llvm_ty, "init.source")
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                builder
+                    .build_store(source, value)
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+                builder
+                    .build_call(constructor, &[storage.into(), source.into()], "init.copy")
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            } else {
+                builder
+                    .build_store(storage, value)
+                    .map_err(|error| CodegenError::Emit(error.to_string()))?;
+            }
+            self.register_binding(&node.name, &ty, storage, llvm_ty);
+            return Ok(());
+        }
+
         // A `static` local is one object for the whole run, not one per call.
         // Its initialiser is therefore part of the program image, which is why
         // the checker requires it to be constant. The object is an internal
@@ -1057,20 +1112,14 @@ impl<'ctx> Lowerer<'ctx> {
                             fallc_ast::Initializer::Expr(expr) => ast.expr(*expr).span,
                             fallc_ast::Initializer::Designated(designated) => designated.span,
                         };
-                        self.report_waiting_for_spec(
-                            span,
-                            "a `static` initialiser of this form",
-                        );
+                        self.report_waiting_for_spec(span, "a `static` initialiser of this form");
                         llvm_ty.const_zero()
                     }
                 },
             };
             let symbol = format!("__ft_static.{}.{}", self.static_count, node.name);
             self.static_count += 1;
-            let global = self
-                .backend
-                .module()
-                .add_global(llvm_ty, None, &symbol);
+            let global = self.backend.module().add_global(llvm_ty, None, &symbol);
             global.set_initializer(&constant);
             global.set_constant(false);
             global.set_thread_local(node.is_thread_local);
@@ -1099,7 +1148,16 @@ impl<'ctx> Lowerer<'ctx> {
                 CodegenError::Emit("internal error: no function is being lowered".to_owned())
             })?;
 
-        let alloca = self.create_entry_alloca(builder, entry, &node.name, llvm_ty);
+        // A binding inside a `@coroutine` body lives in the coroutine's frame,
+        // not in an `alloca`: it has to survive a suspension, and an `alloca`
+        // does not outlive the activation of the body that suspended.
+        let alloca = match self.coroutine_slot(node.name_span) {
+            Some((field, _)) => {
+                self.note_coroutine_slot_name(&node.name, field);
+                self.coroutine_slot_pointer(builder, field, &node.name)?
+            }
+            None => self.create_entry_alloca(builder, entry, &node.name, llvm_ty),
+        };
         self.apply_alloca_alignment(&node.name_span, alloca);
         // `@uninitialized` says the storage is deliberately untouched: no
         // empty constructor, no zero fill. Reading it before a write is the
@@ -1190,7 +1248,9 @@ impl<'ctx> Lowerer<'ctx> {
                             .find(|(_, signature)| signature.symbol == symbol)
                             .map(|(qualified, _)| qualified.clone());
                         match qualified {
-                            Some(qualified) => self.declare_external(&symbol, &qualified, node.name_span)?,
+                            Some(qualified) => {
+                                self.declare_external(&symbol, &qualified, node.name_span)?
+                            }
                             None => {
                                 return Err(CodegenError::Emit(format!(
                                     "internal error: `{symbol}` was resolved as a constructor \
@@ -1207,13 +1267,7 @@ impl<'ctx> Lowerer<'ctx> {
                 // A constructor that may raise returns the exception instead of
                 // finishing, so the call is unwrapped before the binding is
                 // registered: a failed construction leaves nothing to name.
-                let _ = self.unwrap_throwing(
-                    ast,
-                    types,
-                    builder,
-                    ast.expr(*expr).span,
-                    call,
-                )?;
+                let _ = self.unwrap_throwing(ast, types, builder, ast.expr(*expr).span, call)?;
                 self.register_binding(&node.name, &ty, alloca, llvm_ty);
                 return Ok(());
             }
@@ -1222,13 +1276,8 @@ impl<'ctx> Lowerer<'ctx> {
             // temporary, and a place -- `a [N][N]double = b;` -- has storage of
             // its own. There is no aggregate value to store.
             Some(Initializer::Expr(expr)) if self.aggregate_is_by_address(&ty) => {
-                let source = self.lower_aggregate_source(
-                    ast,
-                    types,
-                    builder,
-                    *expr,
-                    ast.expr(*expr).span,
-                )?;
+                let source =
+                    self.lower_aggregate_source(ast, types, builder, *expr, ast.expr(*expr).span)?;
                 let size = llvm_ty.size_of().ok_or_else(|| {
                     CodegenError::waiting_for_spec("an aggregate of unknown size", node.name_span)
                 })?;
@@ -1293,14 +1342,14 @@ impl<'ctx> Lowerer<'ctx> {
                         Vec::with_capacity(ordered.len() + 1);
                     args.push(receiver.into());
                     for &element in &ordered {
-                        let value = self
-                            .lower_expr(ast, types, builder, element)?
-                            .ok_or_else(|| {
-                                CodegenError::waiting_for_spec(
-                                    "this initialiser element",
-                                    designated.span,
-                                )
-                            })?;
+                        let value =
+                            self.lower_expr(ast, types, builder, element)?
+                                .ok_or_else(|| {
+                                    CodegenError::waiting_for_spec(
+                                        "this initialiser element",
+                                        designated.span,
+                                    )
+                                })?;
                         let value = self.convert_adopted(
                             ast,
                             types,
@@ -1322,13 +1371,8 @@ impl<'ctx> Lowerer<'ctx> {
                     let call_site = builder
                         .build_call(callee, &args, "")
                         .map_err(|error| CodegenError::Emit(error.to_string()))?;
-                    let _ = self.unwrap_throwing(
-                        ast,
-                        types,
-                        builder,
-                        designated.span,
-                        call_site,
-                    )?;
+                    let _ =
+                        self.unwrap_throwing(ast, types, builder, designated.span, call_site)?;
                     // The constructor wrote the fields, so the binding is
                     // initialised and nothing more is stored.
                     self.register_binding(&node.name, &ty, alloca, llvm_ty);
@@ -1346,9 +1390,7 @@ impl<'ctx> Lowerer<'ctx> {
                         if index as u64 >= *len {
                             break;
                         }
-                        let Some(lowered) =
-                            self.lower_expr(ast, types, builder, value)?
-                        else {
+                        let Some(lowered) = self.lower_expr(ast, types, builder, value)? else {
                             continue;
                         };
                         let subscript = self
@@ -1382,14 +1424,14 @@ impl<'ctx> Lowerer<'ctx> {
 
                 let mut values = Vec::with_capacity(ordered.len());
                 for &element in &ordered {
-                    let value = self
-                        .lower_expr(ast, types, builder, element)?
-                        .ok_or_else(|| {
-                            CodegenError::waiting_for_spec(
-                                "this initialiser element",
-                                designated.span,
-                            )
-                        })?;
+                    let value =
+                        self.lower_expr(ast, types, builder, element)?
+                            .ok_or_else(|| {
+                                CodegenError::waiting_for_spec(
+                                    "this initialiser element",
+                                    designated.span,
+                                )
+                            })?;
                     let value = self.convert_adopted(
                         ast,
                         types,
@@ -1577,5 +1619,4 @@ impl<'ctx> Lowerer<'ctx> {
         }
         candidate
     }
-
 }

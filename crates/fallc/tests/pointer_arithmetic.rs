@@ -70,12 +70,7 @@ impl Scratch {
     fn check_verbose(&self, _label: &str, source: &str) -> (Outcome, String) {
         let mut warnings = fallc_diag::WarningPolicy::new();
         warnings.set_verbose(true);
-        fallc::pipeline::compile_text_with_warnings(
-            "test.ft",
-            source,
-            &[EmitKind::Llvm],
-            &warnings,
-        )
+        fallc::pipeline::compile_text_with_warnings("test.ft", source, &[EmitKind::Llvm], &warnings)
     }
 }
 
@@ -271,7 +266,8 @@ fn an_offset_of_another_integer_type_is_refused() {
 
 #[test]
 fn adding_two_pointers_is_refused() {
-    let source = "fn f(a [2]int) int {\n    p *int = &a[0];\n    q *int = p + p;\n    return q[0];\n}\n";
+    let source =
+        "fn f(a [2]int) int {\n    p *int = &a[0];\n    q *int = p + p;\n    return q[0];\n}\n";
     let scratch = Scratch::new("add-pointers");
     let (outcome, output) = scratch.check("add-pointers", source);
     assert_eq!(outcome, Outcome::Failure, "{output}");

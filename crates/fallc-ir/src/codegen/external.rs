@@ -137,7 +137,10 @@ impl<'ctx> Lowerer<'ctx> {
         // through a pointer to one is the same call the declaration's own call
         // sites make.
         if throws {
-            return Some(self.throwing_result_type(returned)?.fn_type(&listed, variadic));
+            return Some(
+                self.throwing_result_type(returned)?
+                    .fn_type(&listed, variadic),
+            );
         }
         // A function that returns nothing still has a function type, and its
         // return type is `void`.
@@ -150,8 +153,10 @@ impl<'ctx> Lowerer<'ctx> {
     pub(super) fn external_global(
         &mut self,
         qualified: &str,
-    ) -> Option<(inkwell::values::GlobalValue<'static>, inkwell::types::BasicTypeEnum<'static>)>
-    {
+    ) -> Option<(
+        inkwell::values::GlobalValue<'static>,
+        inkwell::types::BasicTypeEnum<'static>,
+    )> {
         let (ty, symbol, thread_local) = self.external_globals.get(qualified)?.clone();
         if let Some(existing) = self.globals.get(&symbol).copied() {
             return Some(existing);
@@ -263,10 +268,7 @@ impl<'ctx> Lowerer<'ctx> {
     }
 
     /// Installs the methods of a type family, by their name spans.
-    pub fn set_templated_methods(
-        &mut self,
-        methods: std::collections::HashSet<Span>,
-    ) {
+    pub fn set_templated_methods(&mut self, methods: std::collections::HashSet<Span>) {
         self.templated_methods = methods;
     }
 
@@ -372,6 +374,19 @@ impl<'ctx> Lowerer<'ctx> {
         self.method_calls = calls;
     }
 
+    /// Records the parameters and answer of every coroutine member a program
+    /// calls.
+    ///
+    /// `resume` and `result` are declared by nobody -- they belong to the
+    /// compiler -- so the signature of a call cannot be looked up by symbol.
+    /// What the checker resolved is what this stage builds the call from.
+    pub fn set_coroutine_calls(
+        &mut self,
+        calls: HashMap<Span, (Vec<fallc_sema::Type>, fallc_sema::Type)>,
+    ) {
+        self.coroutine_calls = calls;
+    }
+
     /// Records the symbols the checker resolved for plain assignments.
     pub fn set_assign_methods(&mut self, methods: HashMap<Span, String>) {
         self.assign_methods = methods;
@@ -386,19 +401,13 @@ impl<'ctx> Lowerer<'ctx> {
     /// Installs the constant arguments a call site filled omitted defaults with.
     pub fn set_default_arguments(
         &mut self,
-        values: std::collections::HashMap<
-            fallc_span::Span,
-            Vec<(usize, i64, fallc_sema::Type)>,
-        >,
+        values: std::collections::HashMap<fallc_span::Span, Vec<(usize, i64, fallc_sema::Type)>>,
     ) {
         self.default_argument_values = values;
     }
 
     /// Installs the defaults a call site left to an expression.
-    pub fn set_default_expressions(
-        &mut self,
-        values: fallc_sema::ExpressionDefaults,
-    ) {
+    pub fn set_default_expressions(&mut self, values: fallc_sema::ExpressionDefaults) {
         self.default_expressions = values;
     }
 
@@ -461,7 +470,10 @@ impl<'ctx> Lowerer<'ctx> {
     /// `.o` holds the compiled functions and `.tl` the templates that go with
     /// them. The optimisation level names the directory the pair lives in, so
     /// the files themselves say only what they are.
-    pub fn object_library_entries(&self, cache_hash: u64) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    pub fn object_library_entries(
+        &self,
+        cache_hash: u64,
+    ) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
         let directory = self.module_cache.clone()?;
         let target = format!("{:?}", self.backend.host_triple());
         let opt = format!("{:?}/{}", self.mode, self.optimization.spelling());
@@ -643,12 +655,7 @@ impl<'ctx> Lowerer<'ctx> {
             ));
         }
         if out_of_line {
-            params.insert(
-                0,
-                context
-                    .ptr_type(inkwell::AddressSpace::default())
-                    .into(),
-            );
+            params.insert(0, context.ptr_type(inkwell::AddressSpace::default()).into());
         }
         // A `??` function in another module returns `{ ok, value, error }` like
         // this module's own, so the declaration built here has to say the same.
@@ -735,5 +742,4 @@ impl<'ctx> Lowerer<'ctx> {
             });
         self.lower_symbol_call(ast, types, builder, qualified, &symbol, call, span)
     }
-
 }

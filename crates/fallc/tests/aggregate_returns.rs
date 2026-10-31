@@ -391,8 +391,5 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("global-aggregates");
-    assert_eq!(
-        scratch.run("global-aggregates", source),
-        "1 2 3 hello b\n"
-    );
+    assert_eq!(scratch.run("global-aggregates", source), "1 2 3 hello b\n");
 }

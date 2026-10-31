@@ -157,10 +157,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("compress");
-    assert_eq!(
-        scratch.run("compress", source),
-        "16 5 hello ValueError"
-    );
+    assert_eq!(scratch.run("compress", source), "16 5 hello ValueError");
 }
 
 #[test]

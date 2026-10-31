@@ -94,6 +94,9 @@ impl<'ctx> Lowerer<'ctx> {
             compile_time_ifs: HashMap::new(),
             aliases: HashMap::new(),
             pre_resolved_params: Vec::new(),
+            coroutine: None,
+            function_coroutines: std::collections::HashSet::new(),
+            coroutine_frames: HashMap::new(),
             by_address_arguments: std::collections::HashSet::new(),
             operator_methods: HashMap::new(),
             adopted_types: HashMap::new(),
@@ -106,6 +109,7 @@ impl<'ctx> Lowerer<'ctx> {
             in_place_by_address: HashMap::new(),
             init_calls: HashMap::new(),
             method_calls: HashMap::new(),
+            coroutine_calls: HashMap::new(),
             indirect_receivers: HashMap::new(),
             type_of_types: HashMap::new(),
             throwing_calls: std::collections::HashSet::new(),
@@ -135,9 +139,10 @@ impl<'ctx> Lowerer<'ctx> {
     /// otherwise fail much later, inside LLVM, with a far worse message.
     pub fn lower(&mut self, ast: &Ast, types: &TypeTable, bindings: &BindingTypes) -> LowerResult {
         self.collect_static_functions(ast);
-        self.has_setup = ast.items.iter().any(|item| {
-            matches!(&ast.item(*item).kind, fallc_ast::ItemKind::Setup(_))
-        });
+        self.has_setup = ast
+            .items
+            .iter()
+            .any(|item| matches!(&ast.item(*item).kind, fallc_ast::ItemKind::Setup(_)));
         self.lower_items(ast, types, bindings);
         self.lower_pending_lambdas();
         self.lower_setup_blocks(ast, types, bindings, true);
@@ -168,11 +173,23 @@ impl<'ctx> Lowerer<'ctx> {
     /// produces: a malformed module is a compiler bug, and it is far better to
     /// report it than to emit it.
     pub(super) fn verify_and_finish(&mut self) -> LowerResult {
-        let llvm_ir = match self.backend.verify() {
-            Ok(()) => self.backend.to_llvm_ir().0,
-            Err(error) => {
-                self.diagnostics.push(error.to_diagnostic());
-                String::new()
+        // A module that already has an error is not verified: the error says
+        // what this stage could not do, and the module it left behind is the
+        // half-built consequence. Reporting the verifier's complaint instead
+        // would bury the cause under an internal error.
+        let llvm_ir = if self
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity.is_fatal())
+        {
+            String::new()
+        } else {
+            match self.backend.verify() {
+                Ok(()) => self.backend.to_llvm_ir().0,
+                Err(error) => {
+                    self.diagnostics.push(error.to_diagnostic());
+                    String::new()
+                }
             }
         };
 
@@ -343,6 +360,15 @@ impl<'ctx> Lowerer<'ctx> {
                         .map(|(span, name)| (*span, name.clone())),
                 );
                 self.lower_items(module.ast, module.types, module.bindings);
+                // A module may declare a coroutine of its own -- the executor
+                // does, so that the module which runs tasks says how to run one
+                // -- and that coroutine's `resume` and `result` belong in this
+                // object, where its frame layout is known. Emitted here, while
+                // the module's own tables are installed.
+                let mut module_frames = std::mem::take(&mut self.coroutine_frames);
+                self.coroutine_frames = std::mem::take(&mut module_frames);
+                self.emit_coroutine_members();
+                self.coroutine_frames.clear();
                 self.lower_pending_lambdas();
                 self.install(&saved);
                 self.nominal_types = saved_types;
@@ -368,6 +394,12 @@ impl<'ctx> Lowerer<'ctx> {
             }
         }
         self.lower_instantiations(ast, types, bindings);
+        // A coroutine's `resume` and `result` are declared in the standard
+        // library and implemented here, once per coroutine type. They are
+        // emitted after the instantiations, because their bodies build the
+        // optional answers with the library's own constructors -- and those
+        // are instantiations too.
+        self.emit_coroutine_members();
         self.lower_pending_lambdas();
         self.lower_setup_blocks(ast, types, bindings, true);
         if !modules_cached {
@@ -440,6 +472,10 @@ impl<'ctx> Lowerer<'ctx> {
                 &mut self.disabled_functions,
                 next.disabled_functions.clone(),
             ),
+            coroutine_calls: std::mem::replace(
+                &mut self.coroutine_calls,
+                next.coroutine_calls.clone(),
+            ),
             closure_calls: std::mem::replace(&mut self.closure_calls, next.closure_calls.clone()),
             interface_conversions: std::mem::replace(
                 &mut self.interface_conversions,
@@ -505,7 +541,10 @@ impl<'ctx> Lowerer<'ctx> {
                 &mut self.indirect_receivers,
                 next.indirect_receivers.clone(),
             ),
-            assign_methods: std::mem::replace(&mut self.assign_methods, next.assign_methods.clone()),
+            assign_methods: std::mem::replace(
+                &mut self.assign_methods,
+                next.assign_methods.clone(),
+            ),
             deref_reads: std::mem::replace(&mut self.deref_reads, next.deref_reads.clone()),
             pointer_targets: std::mem::replace(
                 &mut self.pointer_targets,
@@ -549,7 +588,12 @@ impl<'ctx> Lowerer<'ctx> {
     /// A template declared in a module is emitted while that module's
     /// resolutions are installed, and `instantiated` remembers what has been
     /// done, so a template used from two places is one function.
-    pub(super) fn declare_instantiations(&mut self, ast: &Ast, types: &TypeTable, bindings: &BindingTypes) {
+    pub(super) fn declare_instantiations(
+        &mut self,
+        ast: &Ast,
+        types: &TypeTable,
+        bindings: &BindingTypes,
+    ) {
         for instantiation in self.instantiation_list(ast) {
             self.declare_instantiation(&instantiation);
         }
@@ -671,20 +715,26 @@ impl<'ctx> Lowerer<'ctx> {
         // node id -- which is an index into one tree, and names different
         // functions in different translation units.
         let function = instantiation.function.clone();
+        // A template declared without a body declares no code: the compiler
+        // implements it, per type, wherever that implementation lives. Declaring
+        // an instantiation of it here would create a symbol with no definition,
+        // which the linker cannot resolve and LLVM refuses to verify.
+        if function.body.is_none() {
+            return;
+        }
         let Some(substitution) =
             fallc_sema::Substitution::new(&instantiation.params, &instantiation.arguments)
         else {
             return;
         };
-        let previous_symbol = self
-            .current_symbol
-            .replace(instantiation.symbol.clone());
+        let previous_symbol = self.current_symbol.replace(instantiation.symbol.clone());
         let previous = self.substitution.replace(substitution);
         let previous_values = std::mem::take(&mut self.template_value_types);
         for param in &instantiation.params {
             if let fallc_ast::TemplateParamKind::Value(ty) = &param.kind {
                 let resolved = self.resolve_type(ty);
-                self.template_value_types.insert(param.name.clone(), resolved);
+                self.template_value_types
+                    .insert(param.name.clone(), resolved);
             }
         }
         // The parameter types the checker resolved, for the same reason
@@ -728,9 +778,9 @@ impl<'ctx> Lowerer<'ctx> {
             .iter()
             .chain(self.unit_setup_symbols.iter())
             .map(|symbol| {
-                module.get_function(symbol).unwrap_or_else(|| {
-                    module.add_function(symbol, setup_type, None)
-                })
+                module
+                    .get_function(symbol)
+                    .unwrap_or_else(|| module.add_function(symbol, setup_type, None))
             })
             .collect();
         // The user's `main` is wrapped whenever it cannot stand for the C entry
@@ -808,10 +858,7 @@ impl<'ctx> Lowerer<'ctx> {
                 } else {
                     zero
                 };
-                if builder
-                    .build_conditional_branch(flag, ok, failed)
-                    .is_err()
-                {
+                if builder.build_conditional_branch(flag, ok, failed).is_err() {
                     return;
                 }
                 exception = Some(error);
@@ -895,7 +942,11 @@ impl<'ctx> Lowerer<'ctx> {
                         is_rvalue: false,
                     };
                     let data = self
-                        .std_function("data", std::slice::from_ref(&receiver), fallc_span::Span::SYNTHETIC)
+                        .std_function(
+                            "data",
+                            std::slice::from_ref(&receiver),
+                            fallc_span::Span::SYNTHETIC,
+                        )
                         .ok()?;
                     let call = builder
                         .build_call(data, &[slot.as_basic_value_enum().into()], "text")
@@ -918,10 +969,8 @@ impl<'ctx> Lowerer<'ctx> {
         // one, separated by `: `. A `raise "X";` has no message, and printing
         // the separator anyway left `uncaught exception: X: ` with nothing
         // after the colon.
-        let mut arguments: Vec<inkwell::values::BasicMetadataValueEnum<'static>> = vec![
-            stream.into(),
-            format_global.as_pointer_value().into(),
-        ];
+        let mut arguments: Vec<inkwell::values::BasicMetadataValueEnum<'static>> =
+            vec![stream.into(), format_global.as_pointer_value().into()];
         let message = texts.get(1).map(|text| text.to_owned());
         if let Some(name) = texts.first() {
             arguments.push((*name).into());
@@ -977,10 +1026,8 @@ impl<'ctx> Lowerer<'ctx> {
         newline_global.set_initializer(&newline);
         newline_global.set_constant(true);
         newline_global.set_linkage(inkwell::module::Linkage::Private);
-        let newline_arguments: Vec<inkwell::values::BasicMetadataValueEnum<'static>> = vec![
-            stream.into(),
-            newline_global.as_pointer_value().into(),
-        ];
+        let newline_arguments: Vec<inkwell::values::BasicMetadataValueEnum<'static>> =
+            vec![stream.into(), newline_global.as_pointer_value().into()];
         let _ = builder.build_call(fprintf, &newline_arguments, "report.end");
         let seventy = i32_type.const_int(70, false).as_basic_value_enum();
         let _ = builder.build_return(Some(&seventy));
@@ -990,31 +1037,31 @@ impl<'ctx> Lowerer<'ctx> {
         let _ = builder.build_return(Some(&value));
     }
 
-/// Returns a program status as an `int`, whatever width `main` returned.
-///
-/// The C runtime reads an `int` from the entry, so a status of another width --
-/// a deduced `bool`, say -- is widened or truncated to one. A value that is not
-/// an integer at all becomes 0: only `int` and nothing are entry statuses, and
-/// the checker says so.
-fn status_value(
-    builder: &inkwell::builder::Builder<'static>,
-    value: BasicValueEnum<'static>,
-    i32_type: inkwell::types::IntType<'static>,
-    zero: BasicValueEnum<'static>,
-) -> BasicValueEnum<'static> {
-    let BasicValueEnum::IntValue(status) = value else {
-        return zero;
-    };
-    if status.get_type() == i32_type {
-        return status.as_basic_value_enum();
+    /// Returns a program status as an `int`, whatever width `main` returned.
+    ///
+    /// The C runtime reads an `int` from the entry, so a status of another width --
+    /// a deduced `bool`, say -- is widened or truncated to one. A value that is not
+    /// an integer at all becomes 0: only `int` and nothing are entry statuses, and
+    /// the checker says so.
+    fn status_value(
+        builder: &inkwell::builder::Builder<'static>,
+        value: BasicValueEnum<'static>,
+        i32_type: inkwell::types::IntType<'static>,
+        zero: BasicValueEnum<'static>,
+    ) -> BasicValueEnum<'static> {
+        let BasicValueEnum::IntValue(status) = value else {
+            return zero;
+        };
+        if status.get_type() == i32_type {
+            return status.as_basic_value_enum();
+        }
+        let coerced = if status.get_type().get_bit_width() < 32 {
+            builder.build_int_z_extend(status, i32_type, "status")
+        } else {
+            builder.build_int_truncate(status, i32_type, "status")
+        };
+        coerced.map_or(zero, |value| value.as_basic_value_enum())
     }
-    let coerced = if status.get_type().get_bit_width() < 32 {
-        builder.build_int_z_extend(status, i32_type, "status")
-    } else {
-        builder.build_int_truncate(status, i32_type, "status")
-    };
-    coerced.map_or(zero, |value| value.as_basic_value_enum())
-}
 
     /// Declares the module-level variables of an imported module.
     ///
@@ -1038,8 +1085,7 @@ fn status_value(
                 None => self.backend.module().add_global(llvm, None, &symbol),
             };
             global.set_linkage(inkwell::module::Linkage::External);
-            self.globals
-                .insert(variable.name.clone(), (global, llvm));
+            self.globals.insert(variable.name.clone(), (global, llvm));
         }
     }
 
@@ -1086,7 +1132,12 @@ fn status_value(
     }
 
     /// Emits the bodies of every instantiation belonging to this module.
-    pub(super) fn lower_instantiations(&mut self, ast: &Ast, types: &TypeTable, bindings: &BindingTypes) {
+    pub(super) fn lower_instantiations(
+        &mut self,
+        ast: &Ast,
+        types: &TypeTable,
+        bindings: &BindingTypes,
+    ) {
         for instantiation in self.instantiation_list(ast) {
             self.lower_instantiation(bindings, &instantiation);
             // An instantiation is one function however many translation units
@@ -1132,6 +1183,13 @@ fn status_value(
         let ast = instantiation.tree.clone();
         let function = instantiation.function.clone();
         let types = &instantiation.types;
+        // A bodyless template is implemented by the compiler, not emitted from
+        // this stage; skipping it here keeps it from becoming a declared
+        // function nothing defines.
+        if function.body.is_none() {
+            self.instantiated.insert(instantiation.symbol.clone());
+            return;
+        }
         // The body's own binding types, for the same reason as its type table:
         // a local like `fresh *T` has the substituted type `*i32`, and the
         // importer's table has never heard of it.
@@ -1150,7 +1208,8 @@ fn status_value(
         for param in &instantiation.params {
             if let fallc_ast::TemplateParamKind::Value(ty) = &param.kind {
                 let resolved = self.resolve_type(ty);
-                self.template_value_types.insert(param.name.clone(), resolved);
+                self.template_value_types
+                    .insert(param.name.clone(), resolved);
             }
         }
         self.current_symbol = Some(instantiation.symbol.clone());
@@ -1197,10 +1256,7 @@ fn status_value(
                 &mut self.interface_calls,
                 records.interface_calls.clone(),
             ),
-            lambda_calls: std::mem::replace(
-                &mut self.lambda_calls,
-                records.lambda_calls.clone(),
-            ),
+            lambda_calls: std::mem::replace(&mut self.lambda_calls, records.lambda_calls.clone()),
             lambda_values: std::mem::replace(
                 &mut self.lambda_values,
                 records.lambda_values.clone(),
@@ -1232,9 +1288,15 @@ fn status_value(
                 records.constructor_types.clone(),
             ),
             init_calls: std::mem::replace(&mut self.init_calls, records.init_calls.clone()),
-            index_methods: std::mem::replace(&mut self.index_methods, records.index_methods.clone()),
+            index_methods: std::mem::replace(
+                &mut self.index_methods,
+                records.index_methods.clone(),
+            ),
             bool_methods: std::mem::replace(&mut self.bool_methods, records.bool_methods.clone()),
-            unary_methods: std::mem::replace(&mut self.unary_methods, records.unary_methods.clone()),
+            unary_methods: std::mem::replace(
+                &mut self.unary_methods,
+                records.unary_methods.clone(),
+            ),
             in_place_methods: std::mem::replace(
                 &mut self.in_place_methods,
                 records.in_place_methods.clone(),
@@ -1243,7 +1305,10 @@ fn status_value(
                 &mut self.in_place_by_address,
                 records.in_place_by_address.clone(),
             ),
-            assign_methods: std::mem::replace(&mut self.assign_methods, records.assign_methods.clone()),
+            assign_methods: std::mem::replace(
+                &mut self.assign_methods,
+                records.assign_methods.clone(),
+            ),
             literal_constructions: std::mem::replace(
                 &mut self.literal_constructions,
                 records.literal_constructions.clone(),
@@ -1252,7 +1317,10 @@ fn status_value(
                 &mut self.literal_construction_types,
                 records.literal_construction_types.clone(),
             ),
-            adopted_types: std::mem::replace(&mut self.adopted_types, records.adopted_types.clone()),
+            adopted_types: std::mem::replace(
+                &mut self.adopted_types,
+                records.adopted_types.clone(),
+            ),
             constant_values: std::mem::replace(
                 &mut self.constant_values,
                 records.constant_values.clone(),
@@ -1273,7 +1341,6 @@ fn status_value(
     pub(super) fn restore_records(&mut self, previous: fallc_sema::InstantiationRecords) {
         let _ = self.install_records(&previous);
     }
-
 }
 
 impl<'ctx> Lowerer<'ctx> {
@@ -1509,14 +1576,12 @@ impl<'ctx> Lowerer<'ctx> {
             let _ = std::fs::remove_file(&entry);
             let _ = std::fs::remove_file(&manifest);
         }
-        let Some((built, setups, defined)) =
-            self.compile_module_library(
-                modules,
-                module_instantiations,
-                &entry,
-                LibraryOutput::Bitcode,
-            )
-        else {
+        let Some((built, setups, defined)) = self.compile_module_library(
+            modules,
+            module_instantiations,
+            &entry,
+            LibraryOutput::Bitcode,
+        ) else {
             return false;
         };
         let compiled = match self.backend.read_module(&built) {
@@ -1573,9 +1638,12 @@ impl<'ctx> Lowerer<'ctx> {
             let _ = std::fs::remove_file(&object);
             let _ = std::fs::remove_file(&manifest);
         }
-        let Some((built, setups, defined)) =
-            self.compile_module_library(modules, module_instantiations, &object, LibraryOutput::Object)
-        else {
+        let Some((built, setups, defined)) = self.compile_module_library(
+            modules,
+            module_instantiations,
+            &object,
+            LibraryOutput::Object,
+        ) else {
             return false;
         };
         // Both files appear complete or not at all; an entry without its
@@ -1672,6 +1740,14 @@ impl<'ctx> Lowerer<'ctx> {
                     .map(|(span, name)| (*span, name.clone())),
             );
             child.lower_items(module.ast, module.types, module.bindings);
+            // A module may declare a coroutine of its own -- the executor does,
+            // so that the object which runs tasks also says how to run one --
+            // and its `resume` and `result` belong in this object, where its
+            // frame layout is known.
+            let mut module_frames = std::mem::take(&mut child.coroutine_frames);
+            child.coroutine_frames = std::mem::take(&mut module_frames);
+            child.emit_coroutine_members();
+            child.coroutine_frames.clear();
             child.lower_pending_lambdas();
             child.install(&saved);
             child.private_function_prefix = false;
@@ -1736,7 +1812,8 @@ impl<'ctx> Lowerer<'ctx> {
                     self.diagnostics.push(error.to_diagnostic());
                     return None;
                 }
-                backend.write_position_independent_object_file(&temporary, self.optimization.as_llvm())
+                backend
+                    .write_position_independent_object_file(&temporary, self.optimization.as_llvm())
             }
         };
         if written.is_err() {

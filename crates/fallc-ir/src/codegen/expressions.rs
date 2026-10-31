@@ -174,7 +174,19 @@ impl<'ctx> Lowerer<'ctx> {
                 // variable's global, or -- when it names a function -- its
                 // address, which is the decay a function name gets in value
                 // position.
-                match self.lookup_binding(name) {
+                // Inside a coroutine the binding's storage is a frame slot, and
+                // its address is an instruction: one from the block the binding
+                // was declared in does not dominate a block the machine resumes
+                // in, so the address is taken again where it is used.
+                let binding = match self.coroutine_slot_name(name) {
+                    Some((field, ty)) => self
+                        .coroutine_slot_pointer(builder, field, name)
+                        .ok()
+                        .map(|storage| LocalBinding { storage, ty }),
+                    None => None,
+                }
+                .or_else(|| self.lookup_binding(name));
+                match binding {
                     Some(binding) => {
                         // `build_load` takes the pointee type, which the
                         // binding records because opaque pointers cannot
@@ -188,7 +200,8 @@ impl<'ctx> Lowerer<'ctx> {
                         // records which uses read through, exactly as it does
                         // for a call that returns a reference.
                         if let Some(referent) = self.deref_reads.get(&node.span).cloned()
-                            && let Some(llvm) = TypeMapper::new(self.backend.context()).map(&referent)
+                            && let Some(llvm) =
+                                TypeMapper::new(self.backend.context()).map(&referent)
                             && let BasicValueEnum::PointerValue(address) = loaded
                         {
                             let value = builder
@@ -206,8 +219,7 @@ impl<'ctx> Lowerer<'ctx> {
                         // module's table under its bare name: the checker
                         // recorded which qualified variable the name means, and
                         // the symbol it was declared with.
-                        if let Some(qualified) =
-                            self.external_global_refs.get(&node.span).cloned()
+                        if let Some(qualified) = self.external_global_refs.get(&node.span).cloned()
                             && let Some((global, llvm)) = self.external_global(&qualified)
                         {
                             let loaded = builder
@@ -220,9 +232,7 @@ impl<'ctx> Lowerer<'ctx> {
                             // as an expression is its address. That is the
                             // decay a function name gets wherever a value is
                             // wanted.
-                            if let Some(pointer) =
-                                self.function_pointer(name, types.get(expr))
-                            {
+                            if let Some(pointer) = self.function_pointer(name, types.get(expr)) {
                                 return Ok(Some(pointer.as_basic_value_enum()));
                             }
                             return Err(CodegenError::waiting_for_spec(
@@ -293,7 +303,14 @@ impl<'ctx> Lowerer<'ctx> {
                         .map_err(|error| CodegenError::Emit(error.to_string()))?;
                     let bindings = self.current_bindings.clone();
                     builder.position_at_end(then_block);
-                    self.lower_if_branch_into(ast, types, &bindings, builder, node.then_block, None)?;
+                    self.lower_if_branch_into(
+                        ast,
+                        types,
+                        &bindings,
+                        builder,
+                        node.then_block,
+                        None,
+                    )?;
                     if !Self::is_terminated(builder) {
                         builder
                             .build_unconditional_branch(join_block)
@@ -317,12 +334,26 @@ impl<'ctx> Lowerer<'ctx> {
                 let bindings = self.current_bindings.clone();
 
                 builder.position_at_end(then_block);
-                self.lower_if_branch_into(ast, types, &bindings, builder, node.then_block, Some(slot))?;
+                self.lower_if_branch_into(
+                    ast,
+                    types,
+                    &bindings,
+                    builder,
+                    node.then_block,
+                    Some(slot),
+                )?;
                 self.branch_to(builder, join_block)?;
                 builder.position_at_end(else_block);
                 match node.else_block {
                     Some(block) => {
-                        self.lower_if_branch_into(ast, types, &bindings, builder, block, Some(slot))?;
+                        self.lower_if_branch_into(
+                            ast,
+                            types,
+                            &bindings,
+                            builder,
+                            block,
+                            Some(slot),
+                        )?;
                     }
                     None => {
                         // No `else`: the condition was false and there is no
@@ -414,9 +445,7 @@ impl<'ctx> Lowerer<'ctx> {
                     .get(&node.span)
                     .copied()
                     .ok_or_else(|| {
-                        CodegenError::Emit(
-                            "internal error: a `??` query has no answer".to_owned(),
-                        )
+                        CodegenError::Emit("internal error: a `??` query has no answer".to_owned())
                     })?;
                 Ok(Some(
                     self.backend
@@ -426,13 +455,21 @@ impl<'ctx> Lowerer<'ctx> {
                         .as_basic_value_enum(),
                 ))
             }
+            // `yield expr` suspends the coroutine: the value goes into the
+            // frame, the entry number records where to resume, and the call
+            // returns to the resumer.
+            ExprKind::Yield(node) => {
+                self.lower_yield(ast, types, builder, node, ast.expr(expr).span)
+            }
             ExprKind::Fold(_) | ExprKind::SizeofPack(_) => {
                 if let Some(value) = self.constant_values.get(&node.span).copied() {
                     let ty = types.get(expr).cloned().unwrap_or(fallc_sema::Type::INT);
                     if let Some(llvm) = TypeMapper::new(self.backend.context()).map(&ty)
                         && let inkwell::types::BasicTypeEnum::IntType(int) = llvm
                     {
-                        return Ok(Some(int.const_int(value as u64, false).as_basic_value_enum()));
+                        return Ok(Some(
+                            int.const_int(value as u64, false).as_basic_value_enum(),
+                        ));
                     }
                 }
                 Err(CodegenError::Emit(format!(
@@ -455,12 +492,19 @@ impl<'ctx> Lowerer<'ctx> {
                     ExprKind::Name(name) => !self.static_function_names.contains(name),
                     _ => true,
                 };
-                if let Some(value) = self.constant_values.get(&node.span).copied().filter(|_| folds) {
+                if let Some(value) = self
+                    .constant_values
+                    .get(&node.span)
+                    .copied()
+                    .filter(|_| folds)
+                {
                     let ty = types.get(expr).cloned().unwrap_or(fallc_sema::Type::INT);
                     if let Some(llvm) = TypeMapper::new(self.backend.context()).map(&ty)
                         && let inkwell::types::BasicTypeEnum::IntType(int) = llvm
                     {
-                        return Ok(Some(int.const_int(value as u64, false).as_basic_value_enum()));
+                        return Ok(Some(
+                            int.const_int(value as u64, false).as_basic_value_enum(),
+                        ));
                     }
                 }
                 let value = self.lower_call(ast, types, builder, call, node.span)?;
@@ -526,7 +570,9 @@ impl<'ctx> Lowerer<'ctx> {
                     if let Some(llvm) = TypeMapper::new(self.backend.context()).map(&ty)
                         && let inkwell::types::BasicTypeEnum::IntType(int) = llvm
                     {
-                        return Ok(Some(int.const_int(value as u64, false).as_basic_value_enum()));
+                        return Ok(Some(
+                            int.const_int(value as u64, false).as_basic_value_enum(),
+                        ));
                     }
                 }
                 self.lower_field(ast, types, builder, field, node.span)
@@ -546,7 +592,9 @@ impl<'ctx> Lowerer<'ctx> {
                     if let Some(llvm) = TypeMapper::new(self.backend.context()).map(&ty)
                         && let inkwell::types::BasicTypeEnum::IntType(int) = llvm
                     {
-                        return Ok(Some(int.const_int(value as u64, false).as_basic_value_enum()));
+                        return Ok(Some(
+                            int.const_int(value as u64, false).as_basic_value_enum(),
+                        ));
                     }
                 }
                 let value = self.lower_index(ast, types, builder, index, node.span)?;
@@ -575,12 +623,10 @@ impl<'ctx> Lowerer<'ctx> {
             // A `type(expr)` is not a value: the checker refuses one outside a
             // trait query, which is folded at compile time and never reaches
             // here.
-            ExprKind::TypeOf(_) | ExprKind::TypeLiteral(_) => {
-                Err(CodegenError::waiting_for_spec(
-                    "a type used as a value",
-                    node.span,
-                ))?
-            }
+            ExprKind::TypeOf(_) | ExprKind::TypeLiteral(_) => Err(CodegenError::waiting_for_spec(
+                "a type used as a value",
+                node.span,
+            ))?,
             // `sizeof(T)` and `alignof(T)` were folded by the checker into a
             // number, which is what a constant is. The lowering here produces
             // that number so the expression has a value like any other; there
@@ -700,10 +746,10 @@ impl<'ctx> Lowerer<'ctx> {
         // the checker recorded which one it is.
         let argument_value: inkwell::values::BasicMetadataValueEnum<'static> =
             if resolved.argument_by_address {
-            let value = self
-                .lower_expr(ast, types, builder, argument)?
-                .ok_or_else(|| CodegenError::waiting_for_spec("this operand", span))?;
-            match value {
+                let value = self
+                    .lower_expr(ast, types, builder, argument)?
+                    .ok_or_else(|| CodegenError::waiting_for_spec("this operand", span))?;
+                match value {
                     BasicValueEnum::PointerValue(pointer) => pointer.as_basic_value_enum().into(),
                     value => self
                         .store_temporary(builder, value, "operand")?
@@ -720,9 +766,8 @@ impl<'ctx> Lowerer<'ctx> {
                     .get(&ast.expr(argument).span)
                     .cloned()
                 {
-                    let address = self.lower_literal_construction(
-                        ast, types, builder, argument, &symbol, span,
-                    )?;
+                    let address = self
+                        .lower_literal_construction(ast, types, builder, argument, &symbol, span)?;
                     address.as_basic_value_enum().into()
                 } else {
                     // An unsuffixed literal adopted the method's parameter type,
@@ -795,7 +840,12 @@ impl<'ctx> Lowerer<'ctx> {
     /// ordinary way: it names a value that only exists inside an instantiation,
     /// so its type is the one the template declared rather than one recorded
     /// against a span.
-    pub(super) fn expression_type(&self, ast: &Ast, types: &TypeTable, expr: ExprId) -> Option<fallc_sema::Type> {
+    pub(super) fn expression_type(
+        &self,
+        ast: &Ast,
+        types: &TypeTable,
+        expr: ExprId,
+    ) -> Option<fallc_sema::Type> {
         if let Some(ty) = types.get(expr) {
             return Some(ty.clone());
         }
@@ -889,15 +939,16 @@ impl<'ctx> Lowerer<'ctx> {
 
         let base = self
             .indexed_address(ast, types, builder, index.object, &object_ty)
-            .ok_or_else(|| {
-                CodegenError::waiting_for_spec("this indexed value's address", span)
-            })?;
+            .ok_or_else(|| CodegenError::waiting_for_spec("this indexed value's address", span))?;
 
         let subscript = self
             .lower_expr(ast, types, builder, index.index)?
             .ok_or_else(|| CodegenError::waiting_for_spec("this subscript", span))?;
         let BasicValueEnum::IntValue(subscript) = subscript else {
-            return Err(CodegenError::waiting_for_spec("a non-integer subscript", span));
+            return Err(CodegenError::waiting_for_spec(
+                "a non-integer subscript",
+                span,
+            ));
         };
         // The subscript may be narrower or wider than the pointer's index type,
         // so it is widened; a negative subscript is the caller's business, as
@@ -961,7 +1012,10 @@ impl<'ctx> Lowerer<'ctx> {
             .map_err(|error| error.to_diagnostic())
             .map(|machine| machine.get_target_data())
             .map_err(|_| CodegenError::Emit("cannot create a target machine".to_owned()))?;
-        let target_bits = self.backend.context().ptr_sized_int_type(&target_data, None);
+        let target_bits = self
+            .backend
+            .context()
+            .ptr_sized_int_type(&target_data, None);
         let from_bits = value.get_type().get_bit_width();
         let to_bits = target_bits.get_bit_width();
         if from_bits == to_bits {
@@ -994,7 +1048,12 @@ impl<'ctx> Lowerer<'ctx> {
     /// expression, so the syntactic form decides, exactly as `infer_lvalue`
     /// does in the checker. Everything else has a recorded type, and a reference
     /// there reads as its referent, which is what an lvalue is.
-    pub(super) fn lvalue_value_type(&self, ast: &Ast, types: &TypeTable, target: ExprId) -> Option<Type> {
+    pub(super) fn lvalue_value_type(
+        &self,
+        ast: &Ast,
+        types: &TypeTable,
+        target: ExprId,
+    ) -> Option<Type> {
         match &ast.expr(target).kind {
             ExprKind::Unary(unary) if unary.op == UnaryOp::Deref => {
                 let pointer = self.expression_type(ast, types, unary.operand)?;
@@ -1010,7 +1069,12 @@ impl<'ctx> Lowerer<'ctx> {
 
     /// Returns what a pointer expression points at, looking through a reference
     /// to the pointer as well.
-    pub(super) fn pointer_pointee_of(&self, ast: &Ast, types: &TypeTable, expr: ExprId) -> Option<Type> {
+    pub(super) fn pointer_pointee_of(
+        &self,
+        ast: &Ast,
+        types: &TypeTable,
+        expr: ExprId,
+    ) -> Option<Type> {
         let ty = self.expression_type(ast, types, expr)?;
         let ty = ty.referent().cloned().unwrap_or(ty);
         ty.pointee().cloned()
@@ -1208,15 +1272,9 @@ impl<'ctx> Lowerer<'ctx> {
             .map_err(|error| CodegenError::Emit(error.to_string()))?
             .into_int_value();
         builder
-            .build_select(
-                is_greater,
-                int_type.const_int(1, false),
-                negative,
-                "cmp",
-            )
+            .build_select(is_greater, int_type.const_int(1, false), negative, "cmp")
             .map_err(|error| CodegenError::Emit(error.to_string()))
     }
-
 }
 
 impl<'ctx> Lowerer<'ctx> {

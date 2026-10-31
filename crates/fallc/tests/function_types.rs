@@ -219,10 +219,7 @@ fn main() int {
 "#;
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("type mismatch"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("type mismatch"), "{diagnostics}");
 }
 
 #[test]
@@ -265,11 +262,8 @@ fn main() int {
     return p(1);
 }
 "#;
-    let (outcome, printed) = fallc::pipeline::compile_text(
-        "throwing-pointer.ft",
-        source,
-        &[fallc::cli::EmitKind::Llvm],
-    );
+    let (outcome, printed) =
+        fallc::pipeline::compile_text("throwing-pointer.ft", source, &[fallc::cli::EmitKind::Llvm]);
     assert_eq!(outcome, fallc::Outcome::Failure, "{printed}");
     assert!(printed.contains("fn(i32) i32 except"), "{printed}");
 }
@@ -285,11 +279,8 @@ fn main() int {
     return p(1);
 }
 "#;
-    let (outcome, printed) = fallc::pipeline::compile_text(
-        "plain-pointer.ft",
-        source,
-        &[fallc::cli::EmitKind::Llvm],
-    );
+    let (outcome, printed) =
+        fallc::pipeline::compile_text("plain-pointer.ft", source, &[fallc::cli::EmitKind::Llvm]);
     assert_eq!(outcome, fallc::Outcome::Success, "{printed}");
 }
 
@@ -330,7 +321,10 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("throwing-pointer-call");
-    assert_eq!(scratch.run("throwing_pointer", source), "6\ncaught Negative\n");
+    assert_eq!(
+        scratch.run("throwing_pointer", source),
+        "6\ncaught Negative\n"
+    );
 }
 
 #[test]
@@ -349,11 +343,8 @@ fn main() int {
     return 0;
 }
 "#;
-    let (outcome, printed) = fallc::pipeline::compile_text(
-        "mixed-pointers.ft",
-        source,
-        &[fallc::cli::EmitKind::Llvm],
-    );
+    let (outcome, printed) =
+        fallc::pipeline::compile_text("mixed-pointers.ft", source, &[fallc::cli::EmitKind::Llvm]);
     assert_eq!(outcome, fallc::Outcome::Failure, "{printed}");
     assert!(printed.contains("*fn(i32) i32 except"), "{printed}");
     assert!(printed.contains("*fn(i32) i32,"), "{printed}");

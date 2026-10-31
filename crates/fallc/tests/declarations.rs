@@ -58,7 +58,8 @@ fn an_enum_counts_from_zero_and_continues_from_a_written_value() {
 #[test]
 fn an_enum_may_omit_its_base_type() {
     // The base defaults to `int`, so the members are `int`s.
-    let source = "enum Dir {\n    UP,\n    DOWN,\n}\nfn main() int {\n    return Dir.DOWN as int;\n}\n";
+    let source =
+        "enum Dir {\n    UP,\n    DOWN,\n}\nfn main() int {\n    return Dir.DOWN as int;\n}\n";
     let output = ir_of(source);
     assert!(output.contains("ret i32 1"), "{output}");
 }
@@ -165,9 +166,16 @@ fn a_block_destroys_what_it_declared() {
     // the end of the function.
     let source = "type G { id int; }\nfn __drop__(this &G) void {\n    this.id = 0;\n}\nfn f() int {\n    {\n        a G = .{1};\n    }\n    b G = .{2};\n    return b.id;\n}\n";
     let output = ir_of(source);
-    let first = output.find("call void @__drop__").expect("a destructor runs");
-    let second = output.rfind("call void @__drop__").expect("a destructor runs");
-    assert_ne!(first, second, "both blocks destroy their own value:\n{output}");
+    let first = output
+        .find("call void @__drop__")
+        .expect("a destructor runs");
+    let second = output
+        .rfind("call void @__drop__")
+        .expect("a destructor runs");
+    assert_ne!(
+        first, second,
+        "both blocks destroy their own value:\n{output}"
+    );
 }
 
 #[test]
@@ -216,7 +224,8 @@ fn a_local_may_shadow_a_module_constant() {
 fn the_anonymous_variable_may_be_declared_more_than_once() {
     // `_` declares storage and gives it no name, so nothing can be read back
     // and nothing can collide: a scope may hold as many as it likes.
-    let source = "fn main() int {\n    _ int = 1;\n    _ int = 2;\n    _ int = 3;\n    return 0;\n}\n";
+    let source =
+        "fn main() int {\n    _ int = 1;\n    _ int = 2;\n    _ int = 3;\n    return 0;\n}\n";
     let output = ir_of(source);
     assert!(output.contains("ret i32 0"), "{output}");
 }
@@ -255,7 +264,8 @@ fn a_second_anonymous_declaration_shadows_the_first() {
 fn an_anonymous_declaration_in_an_inner_block_ends_with_it() {
     // The outer `_` is visible again once the block closes, so the return reads
     // the first declaration and nothing reads the block's own.
-    let source = "fn main() int {\n    _ int = 1;\n    {\n        _ int = 2;\n    }\n    return _;\n}\n";
+    let source =
+        "fn main() int {\n    _ int = 1;\n    {\n        _ int = 2;\n    }\n    return _;\n}\n";
     let output = ir_of(source);
     assert!(!output.contains("load i32, ptr %_1"), "{output}");
     assert!(output.contains("load i32, ptr %_"), "{output}");

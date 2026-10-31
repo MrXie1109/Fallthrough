@@ -19,11 +19,13 @@ use super::*;
 /// c8) int;` has none, so any number of files may declare it.
 ///
 /// Returns the first violation, with both places named.
-pub(super) fn check_one_definition_rule(session: &mut Session, inputs: &[PathBuf]) -> Result<(), String> {
+pub(super) fn check_one_definition_rule(
+    session: &mut Session,
+    inputs: &[PathBuf],
+) -> Result<(), String> {
     // Symbol to the file that defined it, so the second definition can name the
     // first.
-    let mut defined: std::collections::HashMap<String, PathBuf> =
-        std::collections::HashMap::new();
+    let mut defined: std::collections::HashMap<String, PathBuf> = std::collections::HashMap::new();
     for path in inputs {
         let Ok(text) = fs::read_to_string(path) else {
             // Unreadable files are reported by the compilation itself, which
@@ -67,7 +69,11 @@ pub(super) fn check_one_definition_rule(session: &mut Session, inputs: &[PathBuf
             {
                 function.name.clone()
             } else {
-                format!("{}.{}", super::linking::module_name_for(path), function.name)
+                format!(
+                    "{}.{}",
+                    super::linking::module_name_for(path),
+                    function.name
+                )
             };
             if let Some(first) = defined.get(&symbol) {
                 return Err(format!(
@@ -107,10 +113,7 @@ pub(super) fn compile_to_object(
         .filter(|kind| {
             !matches!(
                 kind,
-                EmitKind::Object
-                    | EmitKind::Static
-                    | EmitKind::Shared
-                    | EmitKind::Executable
+                EmitKind::Object | EmitKind::Static | EmitKind::Shared | EmitKind::Executable
             )
         })
         .collect();
@@ -295,9 +298,7 @@ pub(super) fn compile_several(
     // is compiled, so a violation is reported with both locations rather than
     // as a linker error.
     if let Err(message) = check_one_definition_rule(session, inputs) {
-        session.report(
-            Diagnostic::error(message).with_code(DiagnosticCode::driver(6)),
-        );
+        session.report(Diagnostic::error(message).with_code(DiagnosticCode::driver(6)));
         return Outcome::Failure;
     }
 
@@ -396,7 +397,11 @@ pub(super) fn compile_file(
     session.report_all(lexed.diagnostics.clone());
     if show_tokens(emit_kinds) {
         let text = emit::tokens(&lexed, session.sources());
-        let target = artifact_path(output, EmitKind::Tokens, is_first(emit_kinds, EmitKind::Tokens));
+        let target = artifact_path(
+            output,
+            EmitKind::Tokens,
+            is_first(emit_kinds, EmitKind::Tokens),
+        );
         if write_emitted(session, target, &text).is_err() {
             return Outcome::Failure;
         }
@@ -619,13 +624,11 @@ pub(super) fn compile_file(
     register_imported_interfaces(&mut checker, &imported_interfaces);
     // The third field says whether the object is one per thread; an
     // `@extern_C` variable is a plain global.
-    let mut external_globals: std::collections::HashMap<
-        String,
-        (fallc_sema::Type, String, bool),
-    > = register_imported_variables(&mut checker, &imported_variables)
-        .into_iter()
-        .map(|(name, (ty, symbol))| (name, (ty, symbol, false)))
-        .collect();
+    let mut external_globals: std::collections::HashMap<String, (fallc_sema::Type, String, bool)> =
+        register_imported_variables(&mut checker, &imported_variables)
+            .into_iter()
+            .map(|(name, (ty, symbol))| (name, (ty, symbol, false)))
+            .collect();
     // An exported module-level variable is storage in another module, read
     // through its symbol exactly as an `extern` one is.
     external_globals.extend(register_imported_globals(&mut checker, &imported_globals));
@@ -728,7 +731,11 @@ pub(super) fn compile_file(
 
     if show_types(emit_kinds) {
         let text = emit::types(&types, session.sources());
-        let target = artifact_path(output, EmitKind::Types, is_first(emit_kinds, EmitKind::Types));
+        let target = artifact_path(
+            output,
+            EmitKind::Types,
+            is_first(emit_kinds, EmitKind::Types),
+        );
         if write_emitted(session, target, &text).is_err() {
             return Outcome::Failure;
         }
@@ -790,6 +797,7 @@ pub(super) fn compile_file(
         &checked.in_place_by_address,
         &checked.init_calls,
         &checked.method_calls,
+        &checked.coroutine_calls,
         &checked.indirect_receivers,
         &checked.assign_methods,
         &checked.deref_reads,
@@ -854,8 +862,12 @@ pub(super) fn compile_file(
 
     if wants_object || wants_executable || wants_static || wants_shared {
         let object_path = if wants_object {
-            artifact_path(output, EmitKind::Object, is_first(emit_kinds, EmitKind::Object))
-                .unwrap_or_else(|| default_output_path(path, "o"))
+            artifact_path(
+                output,
+                EmitKind::Object,
+                is_first(emit_kinds, EmitKind::Object),
+            )
+            .unwrap_or_else(|| default_output_path(path, "o"))
         } else {
             temporary_object_path(path)
         };
@@ -896,8 +908,12 @@ pub(super) fn compile_file(
         }
 
         if wants_static {
-            let library = artifact_path(output, EmitKind::Static, is_first(emit_kinds, EmitKind::Static))
-                .unwrap_or_else(|| default_output_path(path, "a"));
+            let library = artifact_path(
+                output,
+                EmitKind::Static,
+                is_first(emit_kinds, EmitKind::Static),
+            )
+            .unwrap_or_else(|| default_output_path(path, "a"));
             if let Err(message) = create_static_library(&objects, &library) {
                 session.report(Diagnostic::error(message).with_code(DiagnosticCode::driver(4)));
                 return Outcome::Failure;
@@ -905,8 +921,12 @@ pub(super) fn compile_file(
         }
 
         if wants_shared {
-            let library = artifact_path(output, EmitKind::Shared, is_first(emit_kinds, EmitKind::Shared))
-                .unwrap_or_else(|| default_output_path(path, extension_of(EmitKind::Shared)));
+            let library = artifact_path(
+                output,
+                EmitKind::Shared,
+                is_first(emit_kinds, EmitKind::Shared),
+            )
+            .unwrap_or_else(|| default_output_path(path, extension_of(EmitKind::Shared)));
             if let Err(message) = link_shared(&objects, &library, &links) {
                 session.report(Diagnostic::error(message).with_code(DiagnosticCode::driver(4)));
                 return Outcome::Failure;
@@ -935,7 +955,11 @@ fn stage(name: &str, start: &std::time::Instant) {
     }
     let resident = std::fs::read_to_string("/proc/self/statm")
         .ok()
-        .and_then(|text| text.split_whitespace().nth(1).and_then(|pages| pages.parse::<u64>().ok()))
+        .and_then(|text| {
+            text.split_whitespace()
+                .nth(1)
+                .and_then(|pages| pages.parse::<u64>().ok())
+        })
         .map(|pages| pages * 4096 / (1024 * 1024))
         .unwrap_or(0);
     eprintln!(
@@ -993,16 +1017,17 @@ pub(super) fn configure_lowerer(
     in_place_by_address: &std::collections::HashMap<fallc_span::Span, bool>,
     init_calls: &std::collections::HashMap<fallc_span::Span, String>,
     method_calls: &std::collections::HashMap<fallc_span::Span, String>,
+    coroutine_calls: &std::collections::HashMap<
+        fallc_span::Span,
+        (Vec<fallc_sema::Type>, fallc_sema::Type),
+    >,
     indirect_receivers: &std::collections::HashMap<fallc_span::Span, String>,
     assign_methods: &std::collections::HashMap<fallc_span::Span, String>,
     deref_reads: &std::collections::HashMap<fallc_span::Span, fallc_sema::Type>,
     pointer_targets: &std::collections::HashMap<fallc_span::Span, fallc_sema::Type>,
     throwing_calls: &std::collections::HashSet<fallc_span::Span>,
     propagating_calls: &std::collections::HashSet<fallc_span::Span>,
-    in_place_operations: &std::collections::HashMap<
-        fallc_span::Span,
-        fallc_sema::InPlaceOperation,
-    >,
+    in_place_operations: &std::collections::HashMap<fallc_span::Span, fallc_sema::InPlaceOperation>,
     resolutions: &Resolutions,
     externals: std::collections::HashMap<String, fallc_ir::ExternalSignature>,
 ) {
@@ -1057,6 +1082,7 @@ pub(super) fn configure_lowerer(
     lowerer.set_in_place_by_address(in_place_by_address.clone());
     lowerer.set_init_calls(init_calls.clone());
     lowerer.set_method_calls(method_calls.clone());
+    lowerer.set_coroutine_calls(coroutine_calls.clone());
     lowerer.set_indirect_receivers(indirect_receivers.clone());
     lowerer.set_assign_methods(assign_methods.clone());
     lowerer.set_throwing_calls(throwing_calls.clone(), propagating_calls.clone());
@@ -1100,8 +1126,10 @@ pub(super) fn register_imported_variables(
     let mut for_codegen = std::collections::HashMap::new();
     for (qualified, variable) in variables {
         let ty = resolve_signature_type(&variable.ty, false);
-        checker
-            .add_imported_variables(std::collections::HashMap::from([(qualified.clone(), ty.clone())]));
+        checker.add_imported_variables(std::collections::HashMap::from([(
+            qualified.clone(),
+            ty.clone(),
+        )]));
         for_codegen.insert(qualified.clone(), (ty, variable.symbol.clone()));
     }
     for_codegen
@@ -1146,12 +1174,9 @@ pub(super) fn register_imported_types(
                     // The declaring module's answer when it has one: fields
                     // whose written form needs folding -- `[32]byte` -- cannot
                     // be resolved here at all.
-                    let ty = field
-                        .resolved
-                        .clone()
-                        .unwrap_or_else(|| {
-                            resolve_signature_type_with(&field.ty, false, &previous)
-                        });
+                    let ty = field.resolved.clone().unwrap_or_else(|| {
+                        resolve_signature_type_with(&field.ty, false, &previous)
+                    });
                     (field.name.clone(), ty)
                 })
                 .collect();
@@ -1304,7 +1329,11 @@ pub(super) fn check_entry_function(ast: &Ast, session: &mut Session) {
             continue;
         }
         // A method named `main` is not the entry; an entry is a free function.
-        if function.params.first().is_some_and(|param| param.name == "this") {
+        if function
+            .params
+            .first()
+            .is_some_and(|param| param.name == "this")
+        {
             continue;
         }
         let reported = function.name_span;
@@ -1318,9 +1347,7 @@ pub(super) fn check_entry_function(ast: &Ast, session: &mut Session) {
         // nothing, and `fn main() { return 0; }` one that returns an `int`.
         // Whatever it deduces to, the wrapper adapts to it.
         let returns_nothing = match &function.return_type {
-            fallc_ast::TypeSyntax::Named(named) => {
-                named.path.is_empty() || named.path == "void"
-            }
+            fallc_ast::TypeSyntax::Named(named) => named.path.is_empty() || named.path == "void",
             fallc_ast::TypeSyntax::Auto(_) => true,
             _ => false,
         };

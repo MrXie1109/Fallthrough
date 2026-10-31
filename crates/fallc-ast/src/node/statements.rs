@@ -388,4 +388,3 @@ pub struct Throws {
     /// The annotation's own source range.
     pub span: Span,
 }
-

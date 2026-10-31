@@ -24,7 +24,8 @@ fn a_call_with_constant_arguments_is_evaluated() {
     // The function is not marked, and the call still folds -- folding is an
     // optimisation. What the marker controls is the *other* tests here: whether
     // the call may stand where the language requires a constant.
-    let source = "fn square(n int) int {\n    return n * n;\n}\nfn main() int {\n    return square(3);\n}\n";
+    let source =
+        "fn square(n int) int {\n    return n * n;\n}\nfn main() int {\n    return square(3);\n}\n";
     let output = ir_of(source);
     assert!(
         output.contains("ret i32 9"),
@@ -243,5 +244,8 @@ fn main() int {
     // The call is emitted, and the branch that reads the variable is emitted
     // with it: neither `1` nor `2` stands in for the call.
     assert!(output.contains("call i32 @f("), "{output}");
-    assert!(!output.contains("i32 2)") || output.contains("call"), "{output}");
+    assert!(
+        !output.contains("i32 2)") || output.contains("call"),
+        "{output}"
+    );
 }

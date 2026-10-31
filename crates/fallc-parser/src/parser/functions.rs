@@ -173,11 +173,9 @@ impl Parser {
                 }
                 _ => {
                     self.diagnostics.push(
-                        Diagnostic::error(
-                            "a `static_assert` message must be a string literal",
-                        )
-                        .with_code(DiagnosticCode::parser(2))
-                        .with_span(ast.expr(argument).span),
+                        Diagnostic::error("a `static_assert` message must be a string literal")
+                            .with_code(DiagnosticCode::parser(2))
+                            .with_span(ast.expr(argument).span),
                     );
                     None
                 }
@@ -240,7 +238,9 @@ impl Parser {
                 };
                 // `values ...Ts` marks a pack: this parameter takes any
                 // number of arguments instead of one.
-                let is_pack = stream.eat(TokenKind::Punct(Punctuation::DotDotDot)).is_some();
+                let is_pack = stream
+                    .eat(TokenKind::Punct(Punctuation::DotDotDot))
+                    .is_some();
                 // A parameter list is where `[]T` means `*T`.
                 let ty = self.parse_parameter_type(stream, ast)?;
                 // A default follows `=`. Defaults must come last, as in C++,
@@ -444,15 +444,13 @@ impl Parser {
                 // none to claim about.
                 if stream.at(TokenKind::Punct(Punctuation::OpenParen)) {
                     self.push_diagnostic(
-                        Diagnostic::error(
-                            "a function type carries `except` without a condition",
-                        )
-                        .with_code(DiagnosticCode::parser(2))
-                        .with_span(except.span)
-                        .with_note(
-                            "`except(cond)` says when a particular function may raise; a type \
+                        Diagnostic::error("a function type carries `except` without a condition")
+                            .with_code(DiagnosticCode::parser(2))
+                            .with_span(except.span)
+                            .with_note(
+                                "`except(cond)` says when a particular function may raise; a type \
                              can only say that a call of it may",
-                        ),
+                            ),
                     );
                 }
                 true
@@ -511,9 +509,9 @@ impl Parser {
                 ))));
             }
             let inner = self.parse_type_impl(stream, ast, in_parameter)?;
-            return Some(TypeSyntax::Pointer(Box::new(TypeSyntax::Pointer(Box::new(
-                inner,
-            )))));
+            return Some(TypeSyntax::Pointer(Box::new(TypeSyntax::Pointer(
+                Box::new(inner),
+            ))));
         }
 
         // `*T` and `*const T`
@@ -749,7 +747,11 @@ impl Parser {
     /// Looked at rather than parsed: `values` is an ordinary name and `+` an
     /// ordinary operator, so the only thing that makes this a fold is the
     /// `...` where an operand would be.
-    pub(super) fn parse_fold(&mut self, stream: &mut TokenStream, ast: &mut Ast) -> Option<Option<FoldExpr>> {
+    pub(super) fn parse_fold(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<Option<FoldExpr>> {
         // `(... op pack)`: the `...` comes first, which no expression can.
         if stream.peek_kind(1) == TokenKind::Punct(Punctuation::DotDotDot) {
             let TokenKind::Punct(operator) = stream.peek_kind(2) else {
@@ -882,7 +884,6 @@ impl Parser {
     }
 
     // ----------------------------------------------------------- statements
-
 }
 
 /// Whether a written type is the bare `fn(..) ..`, which already means an

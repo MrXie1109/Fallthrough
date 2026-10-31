@@ -35,8 +35,14 @@ and `@cold` suggest, and a conforming implementation may ignore either.
 | `@constexpr` | — | the function may be called in a constant position |
 | `@extern_C` | — | use the C ABI: the symbol is not mangled |
 | `@overridable` | — | a default implementation; a definition of the same name replaces it |
+| `@coroutine` | — | the function is a coroutine: it may `yield`, and its return type **must** be `std.Coroutine<Send, Yield, Return>` |
 
 C.3.1 `@noreturn` on a function returning anything but `void` is an error.
+
+C.3.1a `@coroutine` on a function whose return type is not
+`std.Coroutine<Send, Yield, Return>` is an error. The body's `return` gives its
+*Return* type, a `yield` hands a *Yield* over and produces the *Send* the next
+`resume` brings, and `yield` anywhere outside such a body is an error.
 
 C.3.1.1 `@overridable` states a fallback. A definition of the same name and the same
 parameter list elsewhere in the program replaces it, with nothing written at the call
@@ -95,7 +101,7 @@ C.4.2 `@uninitialized` and an initialiser cannot both be written.
 
 C.5.1 `export` is not an attribute in this sense, though it is written in the same
 position: it is part of the declaration's own syntax
-([08 Modules](08-modules.md#the-export-table)).
+([08 Modules](09-modules.md#the-export-table)).
 
 ## C.6 Branches
 

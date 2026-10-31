@@ -136,7 +136,11 @@ fn unique_span() -> Span {
     use std::sync::atomic::{AtomicU32, Ordering};
     static NEXT: AtomicU32 = AtomicU32::new(1);
     let serial = NEXT.fetch_add(1, Ordering::Relaxed);
-    Span::new(fallc_span::FileId::SYNTHETIC, serial, serial.saturating_add(1))
+    Span::new(
+        fallc_span::FileId::SYNTHETIC,
+        serial,
+        serial.saturating_add(1),
+    )
 }
 
 fn synthetic_span(index: usize) -> Span {
@@ -378,6 +382,13 @@ impl Expander<'_> {
             fallc_ast::ExprKind::ThrowQuery(inner) => {
                 fallc_ast::ExprKind::ThrowQuery(self.expr(*inner))
             }
+            // `yield expr` is not a pack expansion, but the value under it is
+            // an ordinary expression and gets copied like one.
+            fallc_ast::ExprKind::Yield(node) => fallc_ast::ExprKind::Yield(
+                fallc_ast::YieldExpr {
+                    value: node.value.map(|value| self.expr(value)),
+                },
+            ),
             fallc_ast::ExprKind::Fold(fold) => fallc_ast::ExprKind::Fold(
                 fallc_ast::FoldExpr {
                     pack: fold.pack.clone(),
@@ -438,9 +449,7 @@ impl Expander<'_> {
     fn copy_span(&mut self, span: Span) -> Span {
         match self.element {
             Some(0) | None => span,
-            Some(_) => {
-                unique_span()
-            }
+            Some(_) => unique_span(),
         }
     }
 
@@ -449,7 +458,11 @@ impl Expander<'_> {
         // A nested initialiser is an expression and carries an id; a top-level
         // one does not, and its id is a dummy that stays as it is.
         let dummy = init.expr == ExprId::DUMMY;
-        let expr = if dummy { ExprId::DUMMY } else { self.expr(init.expr) };
+        let expr = if dummy {
+            ExprId::DUMMY
+        } else {
+            self.expr(init.expr)
+        };
         fallc_ast::DesignatedInit {
             expr,
             text: init.text.clone(),
@@ -473,36 +486,30 @@ impl Expander<'_> {
         let node = self.source.stmt(id);
         let span = node.span;
         let kind = match &node.kind {
-            fallc_ast::StmtKind::Defer(block) => {
-                fallc_ast::StmtKind::Defer(self.block(*block))
-            }
-            fallc_ast::StmtKind::Block(block) => {
-                fallc_ast::StmtKind::Block(self.block(*block))
-            }
-            fallc_ast::StmtKind::Bind(bind) => fallc_ast::StmtKind::Bind(
-                fallc_ast::BindStmt {
-                    name: bind.name.clone(),
-                    name_span: bind.name_span,
-                    ty: bind.ty.clone(),
-                    init: bind.init.as_ref().map(|init| match init {
-                        fallc_ast::Initializer::Expr(expr) => {
-                            fallc_ast::Initializer::Expr(self.expr(*expr))
-                        }
-                        fallc_ast::Initializer::Designated(init) => {
-                            fallc_ast::Initializer::Designated(self.designated(init))
-                        }
-                    }),
-                    is_static: bind.is_static,
-                    is_thread_local: bind.is_thread_local,
-                    align: bind.align.as_ref().map(|align| fallc_ast::AlignSpec {
-                        alignment: self.expr(align.alignment),
-                        span: align.span,
-                    }),
-                    exported: bind.exported,
-                    is_uninitialized: bind.is_uninitialized,
-                    attrs: bind.attrs.clone(),
-                },
-            ),
+            fallc_ast::StmtKind::Defer(block) => fallc_ast::StmtKind::Defer(self.block(*block)),
+            fallc_ast::StmtKind::Block(block) => fallc_ast::StmtKind::Block(self.block(*block)),
+            fallc_ast::StmtKind::Bind(bind) => fallc_ast::StmtKind::Bind(fallc_ast::BindStmt {
+                name: bind.name.clone(),
+                name_span: bind.name_span,
+                ty: bind.ty.clone(),
+                init: bind.init.as_ref().map(|init| match init {
+                    fallc_ast::Initializer::Expr(expr) => {
+                        fallc_ast::Initializer::Expr(self.expr(*expr))
+                    }
+                    fallc_ast::Initializer::Designated(init) => {
+                        fallc_ast::Initializer::Designated(self.designated(init))
+                    }
+                }),
+                is_static: bind.is_static,
+                is_thread_local: bind.is_thread_local,
+                align: bind.align.as_ref().map(|align| fallc_ast::AlignSpec {
+                    alignment: self.expr(align.alignment),
+                    span: align.span,
+                }),
+                exported: bind.exported,
+                is_uninitialized: bind.is_uninitialized,
+                attrs: bind.attrs.clone(),
+            }),
             fallc_ast::StmtKind::If(node) => fallc_ast::StmtKind::If(fallc_ast::IfStmt {
                 is_constexpr: node.is_constexpr,
                 probes_compilable: node.probes_compilable,
@@ -529,36 +536,32 @@ impl Expander<'_> {
                 },
                 else_attrs: node.else_attrs.clone(),
             }),
-            fallc_ast::StmtKind::While(node) => fallc_ast::StmtKind::While(
-                fallc_ast::LoopStmt {
-                    condition: self.expr(node.condition),
-                    body: self.block(node.body),
-                    else_block: node.else_block.map(|block| self.block(block)),
-                },
-            ),
-            fallc_ast::StmtKind::ForC(node) => fallc_ast::StmtKind::ForC(
-                fallc_ast::ForCStmt {
-                    init: match &node.init {
-                        Some(init) => {
-                            let mut cloned = self.stmt(*init);
-                            match cloned.pop() {
-                                Some(first) => Some(first),
-                                None => {
-                                    self.problem.get_or_insert(PackProblem::ValueUse);
-                                    return Vec::new();
-                                }
+            fallc_ast::StmtKind::While(node) => fallc_ast::StmtKind::While(fallc_ast::LoopStmt {
+                condition: self.expr(node.condition),
+                body: self.block(node.body),
+                else_block: node.else_block.map(|block| self.block(block)),
+            }),
+            fallc_ast::StmtKind::ForC(node) => fallc_ast::StmtKind::ForC(fallc_ast::ForCStmt {
+                init: match &node.init {
+                    Some(init) => {
+                        let mut cloned = self.stmt(*init);
+                        match cloned.pop() {
+                            Some(first) => Some(first),
+                            None => {
+                                self.problem.get_or_insert(PackProblem::ValueUse);
+                                return Vec::new();
                             }
                         }
-                        None => None,
-                    },
-                    condition: node.condition.map(|condition| self.expr(condition)),
-                    update: node.update.map(|update| self.expr(update)),
-                    body: self.block(node.body),
-                    else_block: node.else_block.map(|block| self.block(block)),
+                    }
+                    None => None,
                 },
-            ),
-            fallc_ast::StmtKind::Switch(node) => fallc_ast::StmtKind::Switch(
-                fallc_ast::SwitchStmt {
+                condition: node.condition.map(|condition| self.expr(condition)),
+                update: node.update.map(|update| self.expr(update)),
+                body: self.block(node.body),
+                else_block: node.else_block.map(|block| self.block(block)),
+            }),
+            fallc_ast::StmtKind::Switch(node) => {
+                fallc_ast::StmtKind::Switch(fallc_ast::SwitchStmt {
                     scrutinee: self.expr(node.scrutinee),
                     arms: node
                         .arms
@@ -573,22 +576,20 @@ impl Expander<'_> {
                             attrs: arm.attrs.clone(),
                         })
                         .collect(),
-                },
-            ),
+                })
+            }
             fallc_ast::StmtKind::Fallthrough => fallc_ast::StmtKind::Fallthrough,
             fallc_ast::StmtKind::Break => fallc_ast::StmtKind::Break,
             fallc_ast::StmtKind::Continue => fallc_ast::StmtKind::Continue,
-            fallc_ast::StmtKind::Return(node) => fallc_ast::StmtKind::Return(
-                fallc_ast::ReturnStmt {
+            fallc_ast::StmtKind::Return(node) => {
+                fallc_ast::StmtKind::Return(fallc_ast::ReturnStmt {
                     value: node.value.map(|value| self.expr(value)),
-                },
-            ),
-            fallc_ast::StmtKind::Raise(node) => fallc_ast::StmtKind::Raise(
-                fallc_ast::RaiseStmt {
-                    exception_type: node.exception_type.map(|id| self.expr(id)),
-                    message: node.message.map(|id| self.expr(id)),
-                },
-            ),
+                })
+            }
+            fallc_ast::StmtKind::Raise(node) => fallc_ast::StmtKind::Raise(fallc_ast::RaiseStmt {
+                exception_type: node.exception_type.map(|id| self.expr(id)),
+                message: node.message.map(|id| self.expr(id)),
+            }),
             fallc_ast::StmtKind::Try(node) => fallc_ast::StmtKind::Try(fallc_ast::TryStmt {
                 body: self.block(node.body),
                 except_clauses: node
@@ -614,21 +615,14 @@ impl Expander<'_> {
                         let previous = self.element.replace(index);
                         let cloned = self.expr(*pattern);
                         self.element = previous;
-                        let statement_span = if index == 0 {
-                            span
-                        } else {
-                            unique_span()
-                        };
-                        statements.push(
-                            self.tree
-                                .builder()
-                                .alloc_stmt(fallc_ast::StmtKind::Expr(
-                                    fallc_ast::ExprStmt {
-                                        expr: cloned,
-                                        yields_value: false,
-                                    },
-                                ), statement_span),
-                        );
+                        let statement_span = if index == 0 { span } else { unique_span() };
+                        statements.push(self.tree.builder().alloc_stmt(
+                            fallc_ast::StmtKind::Expr(fallc_ast::ExprStmt {
+                                expr: cloned,
+                                yields_value: false,
+                            }),
+                            statement_span,
+                        ));
                     }
                     return statements;
                 }

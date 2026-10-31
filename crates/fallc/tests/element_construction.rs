@@ -159,11 +159,15 @@ fn main() int {
         "the element shares the source's buffer:\n{output}"
     );
     assert!(
-        output.contains("element [a heap string long enough that a second copy needs its own buffer]"),
+        output.contains(
+            "element [a heap string long enough that a second copy needs its own buffer]"
+        ),
         "the element changed when the source did:\n{output}"
     );
     assert!(
-        output.contains("source [a heap string long enough that a second copy needs its own buffer!]"),
+        output.contains(
+            "source [a heap string long enough that a second copy needs its own buffer!]"
+        ),
         "the source was changed by the push:\n{output}"
     );
 }
@@ -282,7 +286,10 @@ fn main() int {
         address(&output, "element"),
         "the array destructor did not release the element's buffer:\n{output}"
     );
-    assert!(output.contains("probe [yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy]"), "{output}");
+    assert!(
+        output.contains("probe [yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy]"),
+        "{output}"
+    );
 }
 
 #[test]

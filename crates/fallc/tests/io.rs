@@ -20,7 +20,8 @@ struct Scratch {
 
 impl Scratch {
     fn new(label: &str) -> Scratch {
-        let directory = std::env::temp_dir().join(format!("fallc-io-{label}-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("fallc-io-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a temporary directory can be created");
         Scratch { directory }
@@ -477,10 +478,7 @@ fn main() int except {
 "#;
     let (outcome, diagnostics) = compile_text("t.ft", source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("__input__"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("__input__"), "{diagnostics}");
 }
 
 #[test]
@@ -498,10 +496,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("println");
-    assert_eq!(
-        scratch.run("println", source),
-        "line\n1 2\n\nend"
-    );
+    assert_eq!(scratch.run("println", source), "line\n1 2\n\nend");
 }
 
 #[test]

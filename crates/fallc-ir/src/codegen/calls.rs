@@ -17,7 +17,10 @@ impl<'ctx> Lowerer<'ctx> {
     /// and the exception leaves the way any other does.
     /// Returns whether `ty` is the shape a throwing call returns: a tag, an
     /// optional value, and the exception itself.
-    pub(super) fn is_throwing_result_type(&mut self, ty: inkwell::types::StructType<'static>) -> bool {
+    pub(super) fn is_throwing_result_type(
+        &mut self,
+        ty: inkwell::types::StructType<'static>,
+    ) -> bool {
         if ty.count_fields() < 2 {
             return false;
         }
@@ -302,8 +305,10 @@ impl<'ctx> Lowerer<'ctx> {
             // from another module is emitted here, and its external signature
             // describes the template rather than the member.
             if let Some(symbol) = self.call_symbols.get(&span).cloned() {
-                let qualified = format!("{}.{}", name_of(&ast.expr(field.object).kind), field.field);
-                return self.lower_symbol_call(ast, types, builder, &qualified, &symbol, call, span);
+                let qualified =
+                    format!("{}.{}", name_of(&ast.expr(field.object).kind), field.field);
+                return self
+                    .lower_symbol_call(ast, types, builder, &qualified, &symbol, call, span);
             }
             if self.external_symbols.contains_key(
                 format!("{}.{}", name_of(&ast.expr(field.object).kind), field.field).as_str(),
@@ -433,6 +438,13 @@ impl<'ctx> Lowerer<'ctx> {
             None if self.external_symbols.contains_key(name.as_str()) => {
                 self.declare_external(&symbol, name, span)?
             }
+            // A coroutine's `resume` or `result`: neither is declared in a
+            // module, so the call site declares what the checker resolved. The
+            // body comes from `emit_coroutine_members`, once the entry that
+            // built the machine has been lowered.
+            None if { self.coroutine_calls.contains_key(&span) } => {
+                self.declare_coroutine_call(span)?
+            }
             None => {
                 if std::env::var_os("FALLC_STAGES").is_some() {
                     eprintln!(
@@ -485,9 +497,7 @@ impl<'ctx> Lowerer<'ctx> {
         let target = receiver_ty
             .pointee()
             .cloned()
-            .ok_or_else(|| {
-                CodegenError::waiting_for_spec("construction into raw storage", span)
-            })?;
+            .ok_or_else(|| CodegenError::waiting_for_spec("construction into raw storage", span))?;
 
         let lowered = self.lower_expr(ast, types, builder, field.object)?;
         let storage = if receiver_ty.is_pointer() {
@@ -513,7 +523,10 @@ impl<'ctx> Lowerer<'ctx> {
                 }
             }
         } else {
-            return Err(CodegenError::waiting_for_spec("construction into raw storage", span));
+            return Err(CodegenError::waiting_for_spec(
+                "construction into raw storage",
+                span,
+            ));
         };
 
         match operation {
@@ -592,13 +605,16 @@ impl<'ctx> Lowerer<'ctx> {
         // while the emitted symbol was `__init___P00N1_P_I3_i32`, and the
         // constructor was silently never called.
         pointer_forms(ty).iter().any(|receiver| {
-            [constructor_symbol(receiver), implicit_constructor_symbol(receiver)]
-                .iter()
-                .any(|prefix| {
-                    self.emitted_symbols
-                        .iter()
-                        .any(|symbol| symbol == prefix || symbol.starts_with(&format!("{prefix}_")))
-                })
+            [
+                constructor_symbol(receiver),
+                implicit_constructor_symbol(receiver),
+            ]
+            .iter()
+            .any(|prefix| {
+                self.emitted_symbols
+                    .iter()
+                    .any(|symbol| symbol == prefix || symbol.starts_with(&format!("{prefix}_")))
+            })
         })
     }
 
@@ -657,5 +673,92 @@ impl<'ctx> Lowerer<'ctx> {
             .map(|byte| u32::from(*byte))
             .collect()
     }
+}
 
+impl<'ctx> Lowerer<'ctx> {
+    /// Declares the function a coroutine member call reaches.
+    ///
+    /// `resume` and `result` belong to the compiler: no module declares them,
+    /// and there is no instantiation to read a signature from. What the checker
+    /// resolved is recorded against the call's span, and that is what the
+    /// declaration is built from. The definition is filled in by
+    /// `emit_coroutine_members` for the coroutine whose frame it belongs to.
+    ///
+    /// - `span`: where the call is written
+    pub(super) fn declare_coroutine_call(
+        &mut self,
+        span: fallc_span::Span,
+    ) -> Result<FunctionValue<'static>, CodegenError> {
+        let Some((params, returns)) = self.coroutine_calls.get(&span).cloned() else {
+            return Err(CodegenError::waiting_for_spec(
+                "a call to an undeclared coroutine member",
+                span,
+            ));
+        };
+        // The symbol the call reaches, as the checker built it. `method_calls`
+        // holds it for a member call.
+        let Some(symbol) = self.method_calls.get(&span).cloned() else {
+            return Err(CodegenError::waiting_for_spec(
+                "the symbol this coroutine call reaches",
+                span,
+            ));
+        };
+        let context = self.backend.context();
+        let mapper = TypeMapper::new(context);
+        let pointer = context.ptr_type(inkwell::AddressSpace::default());
+        let mut parameters: Vec<inkwell::types::BasicMetadataTypeEnum<'static>> = Vec::new();
+        for (index, ty) in params.iter().enumerate() {
+            if index == 0 {
+                // The receiver is the coroutine object itself.
+                parameters.push(pointer.into());
+                continue;
+            }
+            let Some(llvm) = mapper.map(ty) else {
+                return Err(CodegenError::waiting_for_spec(
+                    "a coroutine member with this parameter type",
+                    span,
+                ));
+            };
+            parameters.push(llvm.into());
+        }
+        // `result` answers its value through the exception result, because it
+        // may raise; `resume` answers the value itself.
+        let fn_type = if self.throwing_calls.contains(&span) {
+            // A `Return` of `void` still answers through the throwing result:
+            // whether asking succeeded, and no value beside it.
+            let value = if returns.is_void() {
+                None
+            } else {
+                let Some(mapped) = mapper.map(&returns) else {
+                    return Err(CodegenError::waiting_for_spec(
+                        "a coroutine member with this answer",
+                        span,
+                    ));
+                };
+                Some(mapped)
+            };
+            let Some(result_llvm) = self.throwing_result_type(value) else {
+                return Err(CodegenError::waiting_for_spec(
+                    "the answer of a throwing coroutine member",
+                    span,
+                ));
+            };
+            result_llvm.fn_type(&parameters, false)
+        } else if returns.is_void() {
+            // A `yield` with no operand hands nothing over, so the call answers
+            // nothing: the run is the whole of what it does.
+            context.void_type().fn_type(&parameters, false)
+        } else {
+            let Some(value) = mapper.map(&returns) else {
+                return Err(CodegenError::waiting_for_spec(
+                    "a coroutine member with this answer",
+                    span,
+                ));
+            };
+            value.fn_type(&parameters, false)
+        };
+        let function = self.backend.module().add_function(&symbol, fn_type, None);
+        function.set_linkage(inkwell::module::Linkage::External);
+        Ok(function)
+    }
 }

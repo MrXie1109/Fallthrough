@@ -246,7 +246,10 @@ fn an_alignment_must_be_a_compile_time_constant() {
     let scratch = Scratch::new("constant");
     let printed = scratch.refused("constant", source);
     assert!(printed.contains("S0137"), "{printed}");
-    assert!(printed.contains("needs a value the compiler knows"), "{printed}");
+    assert!(
+        printed.contains("needs a value the compiler knows"),
+        "{printed}"
+    );
 }
 
 #[test]

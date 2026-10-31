@@ -120,10 +120,7 @@ impl TypeChecker {
         // value of `x` is overwritten by what is tested, and the test may then
         // be of the *written* value rather than of the expression. Spelled out
         // as a condition it is nearly always a missing `=`.
-        if matches!(
-            ast.expr(condition).kind,
-            fallc_ast::ExprKind::Assign(_)
-        ) {
+        if matches!(ast.expr(condition).kind, fallc_ast::ExprKind::Assign(_)) {
             self.diagnostics.push(
                 Diagnostic::warning("this condition assigns")
                     .with_code(DiagnosticCode::sema(145))
@@ -154,11 +151,9 @@ impl TypeChecker {
             return;
         }
         let span = ast.expr(condition).span;
-        if let Some(symbol) = self.resolve_nullary_method(
-            resolutions,
-            &ty,
-            fallc_ast::special::SpecialMethod::Bool,
-        ) {
+        if let Some(symbol) =
+            self.resolve_nullary_method(resolutions, &ty, fallc_ast::special::SpecialMethod::Bool)
+        {
             self.bool_methods.insert(span, symbol);
             // Asked for the value's truth, the conversion is a call site: a
             // `__bool__` that may raise raises here.
@@ -178,16 +173,13 @@ impl TypeChecker {
             return;
         }
         self.diagnostics.push(
-            Diagnostic::error(format!(
-                "`{}` cannot be used as a condition",
-                ty.spelling()
-            ))
-            .with_code(DiagnosticCode::sema(67))
-            .with_span(span)
-            .with_note(
-                "a number, `bool`, character, or pointer is tested directly; \
+            Diagnostic::error(format!("`{}` cannot be used as a condition", ty.spelling()))
+                .with_code(DiagnosticCode::sema(67))
+                .with_span(span)
+                .with_note(
+                    "a number, `bool`, character, or pointer is tested directly; \
                  any other type needs `__bool__`",
-            ),
+                ),
         );
     }
 
@@ -216,16 +208,14 @@ impl TypeChecker {
                 let call_span = ast.expr(node.expr).span;
                 if self.must_use_calls.contains(&call_span) {
                     self.diagnostics.push(
-                        Diagnostic::warning(
-                            "the result of this `@must_use` call is discarded",
-                        )
-                        .with_code(DiagnosticCode::sema(191))
-                        .with_warning("unused-result")
-                        .with_span(call_span)
-                        .with_note(
-                            "use the value, or bind it to `_` to say the result is \
+                        Diagnostic::warning("the result of this `@must_use` call is discarded")
+                            .with_code(DiagnosticCode::sema(191))
+                            .with_warning("unused-result")
+                            .with_span(call_span)
+                            .with_note(
+                                "use the value, or bind it to `_` to say the result is \
                              deliberately dropped",
-                        ),
+                            ),
                     );
                 }
             }
@@ -267,9 +257,7 @@ impl TypeChecker {
                             Diagnostic::error("`raise;` outside an `except` block")
                                 .with_code(DiagnosticCode::sema(82))
                                 .with_span(ast.stmt(stmt).span)
-                                .with_note(
-                                    "a bare `raise;` re-raises the exception being handled",
-                                ),
+                                .with_note("a bare `raise;` re-raises the exception being handled"),
                         );
                     }
                 } else if node.exception_type.is_none() {
@@ -393,7 +381,8 @@ impl TypeChecker {
                         self.check_else_branch(ast, resolutions, types, &node.else_branch);
                         return;
                     };
-                    self.compile_time_ifs.insert(ast.expr(node.condition).span, taken != 0);
+                    self.compile_time_ifs
+                        .insert(ast.expr(node.condition).span, taken != 0);
                     // Only the branch taken is checked. The other is not merely
                     // skipped in the output -- it is never looked at.
                     if taken != 0 {
@@ -433,7 +422,8 @@ impl TypeChecker {
                 // were checked above, so nothing is hidden -- only the dead code
                 // is dropped.
                 if let Some(taken) = constant {
-                    self.compile_time_ifs.insert(ast.expr(node.condition).span, taken != 0);
+                    self.compile_time_ifs
+                        .insert(ast.expr(node.condition).span, taken != 0);
                 }
             }
             StmtKind::While(node) => {
@@ -574,10 +564,7 @@ impl TypeChecker {
                     self.check_block(ast, resolutions, types, clause.block);
                     self.except_depth -= 1;
                 }
-                for block in [node.else_block, node.finally_block]
-                    .into_iter()
-                    .flatten()
-                {
+                for block in [node.else_block, node.finally_block].into_iter().flatten() {
                     self.check_block(ast, resolutions, types, block);
                 }
             }
@@ -647,7 +634,14 @@ impl TypeChecker {
                 | fallc_ast::TypeSyntax::PointerToConst(_)
                 | fallc_ast::TypeSyntax::ConstPointer(_)
         );
-        let found = self.auto_initialiser(ast, resolutions, types, node, Some(auto_span), wants_address)?;
+        let found = self.auto_initialiser(
+            ast,
+            resolutions,
+            types,
+            node,
+            Some(auto_span),
+            wants_address,
+        )?;
         let init_span = match &node.init {
             Some(fallc_ast::Initializer::Expr(expr)) => ast.expr(*expr).span,
             _ => node.name_span,
@@ -812,7 +806,9 @@ impl TypeChecker {
                     );
                     return None;
                 };
-                let Some(len) = self.const_eval_int(array.len).and_then(|len| u64::try_from(len).ok())
+                let Some(len) = self
+                    .const_eval_int(array.len)
+                    .and_then(|len| u64::try_from(len).ok())
                 else {
                     self.diagnostics.push(
                         Diagnostic::error("an array length must be a constant".to_owned())
@@ -822,14 +818,22 @@ impl TypeChecker {
                     return None;
                 };
                 Type::Array {
-                    element: Box::new(self.deduce_from(&array.element, &element, span, init_span)?),
+                    element: Box::new(self.deduce_from(
+                        &array.element,
+                        &element,
+                        span,
+                        init_span,
+                    )?),
                     len,
                 }
             }
             // A written name next to an `auto` is not a deduction: the hole is
             // what is being filled.
-            TypeSyntax::Named(_) | TypeSyntax::TypeOf(_) | TypeSyntax::Member(_)
-            | TypeSyntax::UnsizedArray(_) | TypeSyntax::Unresolved(_) => found.clone(),
+            TypeSyntax::Named(_)
+            | TypeSyntax::TypeOf(_)
+            | TypeSyntax::Member(_)
+            | TypeSyntax::UnsizedArray(_)
+            | TypeSyntax::Unresolved(_) => found.clone(),
         };
         Some(deduced)
     }
@@ -906,13 +910,15 @@ impl TypeChecker {
         let constexpr = node.attrs.iter().any(|attr| attr.name == "constexpr");
         for attr in &node.attrs {
             match attr.name.as_str() {
-                "inline" | "deprecated" | "align" | "constexpr" | "static"
-                | "thread_local" | "maybe_unused" | "uninitialized" => {}
+                "inline" | "deprecated" | "align" | "constexpr" | "static" | "thread_local"
+                | "maybe_unused" | "uninitialized" => {}
                 "export" => self.diagnostics.push(
-                    Diagnostic::error("`@export` applies to a module-level declaration, not a local")
-                        .with_code(DiagnosticCode::sema(189))
-                        .with_span(attr.span)
-                        .with_note("a local name belongs to one call frame"),
+                    Diagnostic::error(
+                        "`@export` applies to a module-level declaration, not a local",
+                    )
+                    .with_code(DiagnosticCode::sema(189))
+                    .with_span(attr.span)
+                    .with_note("a local name belongs to one call frame"),
                 ),
                 other => self.unknown_attribute(other, attr.span),
             }
@@ -1152,9 +1158,7 @@ impl TypeChecker {
             compatible = true;
         }
         if !compatible {
-            compatible = self.try_implicit_conversion(
-                resolutions, ast, types, expr, declared,
-            );
+            compatible = self.try_implicit_conversion(resolutions, ast, types, expr, declared);
         }
         if !compatible {
             self.report_type_mismatch(ast.expr(expr).span, &found, declared);
@@ -1166,7 +1170,8 @@ impl TypeChecker {
         // decides whether to read from the same expectation, and a pointer is
         // an address *type*: it suppressed the read and stored the address.
         if declared.is_pointer() && found.is_reference() {
-            self.deref_reads.insert(ast.expr(expr).span, declared.clone());
+            self.deref_reads
+                .insert(ast.expr(expr).span, declared.clone());
         } else {
             // A value wants the referent: `a int = r;` is the value `r` names,
             // not the address it holds.
@@ -1232,9 +1237,7 @@ impl TypeChecker {
                 // literal -- `return 300.0;` in a function returning `Celsius`
                 // -- was a type mismatch even though `Celsius c = 300.0;`
                 // worked.
-                let constructed = if expected.is_indirection()
-                    || expected.is_unspecified()
-                {
+                let constructed = if expected.is_indirection() || expected.is_unspecified() {
                     None
                 } else {
                     self.init_overload_for(&expected, value, ast, resolutions, types)
@@ -1246,10 +1249,9 @@ impl TypeChecker {
                 // pointer-typed binding does: `return *p;` in a function
                 // returning `*T` is the pointee, and code generation read it as
                 // the address because a pointer looks like an address.
-                if expected.is_pointer()
-                    && types.get(value).is_some_and(Type::is_reference)
-                {
-                    self.deref_reads.insert(ast.expr(value).span, expected.clone());
+                if expected.is_pointer() && types.get(value).is_some_and(Type::is_reference) {
+                    self.deref_reads
+                        .insert(ast.expr(value).span, expected.clone());
                 }
             }
             None => {
@@ -1281,6 +1283,14 @@ impl TypeChecker {
         node: Option<&fallc_ast::CallExpr>,
     ) {
         if !signature.throws {
+            return;
+        }
+        // Calling a `@coroutine` function only creates the coroutine and stores
+        // the arguments in its frame: the body does not run, so the call cannot
+        // raise however raising the body may be. What the body's failures are
+        // reaches the caller through `result`, which is `except` for this very
+        // reason.
+        if self.coroutine_functions.contains(&signature.written_name) {
             return;
         }
         // An `except(auto)` callee said nothing; what its body turned out to do
@@ -1449,7 +1459,6 @@ impl TypeChecker {
             .with_note("a function that can raise says so after its return type"),
         );
     }
-
 }
 
 impl TypeChecker {
@@ -1462,9 +1471,7 @@ impl TypeChecker {
         if !self.except_auto(&signature.written_name) {
             return false;
         }
-        !self
-            .throwing_functions
-            .contains(&signature.written_name)
+        !self.throwing_functions.contains(&signature.written_name)
             && !self
                 .throwing_functions
                 .contains(signature.written_name.rsplit('.').next().unwrap_or(""))

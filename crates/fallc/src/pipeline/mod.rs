@@ -37,10 +37,7 @@ use crate::session::Session;
 /// own name, the platform and architecture the program is being built for, and
 /// the date and time of the build. The compiler targets the machine it runs on,
 /// so the platform is the host's.
-pub(super) fn builtins_for(
-    path: &Path,
-    text: &str,
-) -> fallc_lexer::macros::Builtins {
+pub(super) fn builtins_for(path: &Path, text: &str) -> fallc_lexer::macros::Builtins {
     let platform = crate::modules::target_platform();
     let windows = platform == "windows";
     let (date, time) = build_date_and_time();
@@ -405,7 +402,10 @@ impl LoadedImports {
                         candidates.push((format!("{umbrella}.{name}"), umbrella.clone()));
                     }
                     for candidate in candidates {
-                        if !types.iter().any(|(existing, _, _)| *existing == candidate.0) {
+                        if !types
+                            .iter()
+                            .any(|(existing, _, _)| *existing == candidate.0)
+                        {
                             types.push((candidate.0, ty.clone(), candidate.1));
                         }
                     }
@@ -435,10 +435,7 @@ impl LoadedImports {
                 let Some(variable) = external.variables.get(name) else {
                     continue;
                 };
-                let mut candidates = vec![
-                    name.clone(),
-                    format!("{module}.{name}"),
-                ];
+                let mut candidates = vec![name.clone(), format!("{module}.{name}")];
                 for umbrella in self.umbrellas.get(module).into_iter().flatten() {
                     candidates.push(format!("{umbrella}.{name}"));
                 }
@@ -490,7 +487,10 @@ impl LoadedImports {
                     continue;
                 };
                 for candidate in self.spellings(module, name) {
-                    if !constants.iter().any(|(existing, _, _)| *existing == candidate) {
+                    if !constants
+                        .iter()
+                        .any(|(existing, _, _)| *existing == candidate)
+                    {
                         constants.push((candidate, value, ty.clone()));
                     }
                 }
@@ -659,7 +659,6 @@ impl LinkRequest {
     fn qualifier(&self) -> &str {
         &self.library
     }
-
 }
 
 #[cfg(test)]
@@ -704,12 +703,11 @@ mod tests {
     }
 }
 
-
 mod cache;
 mod compile;
 mod exports;
-mod interface;
 mod imports;
+mod interface;
 mod linking;
 mod reporting;
 

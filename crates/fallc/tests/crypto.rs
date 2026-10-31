@@ -137,10 +137,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("uuid");
-    assert_eq!(
-        scratch.run("uuid", source),
-        "36 4 2 1 0 UuidError"
-    );
+    assert_eq!(scratch.run("uuid", source), "36 4 2 1 0 UuidError");
 }
 
 #[test]

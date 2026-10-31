@@ -264,9 +264,7 @@ fn main() int {
 
 #[test]
 fn an_unknown_name_is_reported_with_the_parameters() {
-    let source = format!(
-        "{PRELUDE}\nfn main() int {{\n    return f(1, 2, .d = 3);\n}}\n"
-    );
+    let source = format!("{PRELUDE}\nfn main() int {{\n    return f(1, 2, .d = 3);\n}}\n");
     let (outcome, diagnostics) = compile_text("t.ft", &source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
     assert!(
@@ -277,41 +275,26 @@ fn an_unknown_name_is_reported_with_the_parameters() {
 
 #[test]
 fn a_parameter_given_twice_is_reported() {
-    let source = format!(
-        "{PRELUDE}\nfn main() int {{\n    return f(1, .b = 2, .b = 3);\n}}\n"
-    );
+    let source = format!("{PRELUDE}\nfn main() int {{\n    return f(1, .b = 2, .b = 3);\n}}\n");
     let (outcome, diagnostics) = compile_text("t.ft", &source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("is given `b` twice"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("is given `b` twice"), "{diagnostics}");
 }
 
 #[test]
 fn a_parameter_written_by_position_and_by_name_is_reported() {
-    let source = format!(
-        "{PRELUDE}\nfn main() int {{\n    return f(1, 2, .b = 3);\n}}\n"
-    );
+    let source = format!("{PRELUDE}\nfn main() int {{\n    return f(1, 2, .b = 3);\n}}\n");
     let (outcome, diagnostics) = compile_text("t.ft", &source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("is given `b` twice"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("is given `b` twice"), "{diagnostics}");
 }
 
 #[test]
 fn a_required_parameter_a_named_call_leaves_out_is_reported() {
-    let source = format!(
-        "{PRELUDE}\nfn main() int {{\n    return f(.c = 3);\n}}\n"
-    );
+    let source = format!("{PRELUDE}\nfn main() int {{\n    return f(.c = 3);\n}}\n");
     let (outcome, diagnostics) = compile_text("t.ft", &source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("needs `a`"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("needs `a`"), "{diagnostics}");
 }
 
 #[test]
@@ -334,17 +317,12 @@ fn an_initialiser_may_not_leave_a_field_out() {
     );
     let (outcome, diagnostics) = compile_text("t.ft", &source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
-    assert!(
-        diagnostics.contains("needs field `y`"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains("needs field `y`"), "{diagnostics}");
 }
 
 #[test]
 fn a_named_argument_keeps_its_type_checking() {
-    let source = format!(
-        "{PRELUDE}\nfn main() int {{\n    return f(1, 2, .c = \"text\");\n}}\n"
-    );
+    let source = format!("{PRELUDE}\nfn main() int {{\n    return f(1, 2, .c = \"text\");\n}}\n");
     let (outcome, diagnostics) = compile_text("t.ft", &source, &[EmitKind::Llvm]);
     assert_eq!(outcome, Outcome::Failure, "{diagnostics}");
     assert!(diagnostics.contains("type mismatch"), "{diagnostics}");

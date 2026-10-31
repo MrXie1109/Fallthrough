@@ -195,8 +195,6 @@ pub struct TraitParam {
     pub ty: TypeSyntax,
 }
 
-
-
 /// One requirement: an operation that must compile, and what its result has to
 /// be.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -818,7 +816,6 @@ pub struct Param {
     /// The whole parameter's source range.
     pub span: Span,
 }
-
 
 impl FunctionItem {
     /// Returns `true` when a parameter is a pack.

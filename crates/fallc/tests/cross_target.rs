@@ -68,7 +68,10 @@ fn the_library_checks_for_windows_on_any_host() {
     // `random_entropy.windows.ftm`.
     let scratch = Scratch::new("windows");
     let (accepted, output) = scratch.check("windows", PROGRAM);
-    assert!(accepted, "the library must type-check for Windows:\n{output}");
+    assert!(
+        accepted,
+        "the library must type-check for Windows:\n{output}"
+    );
 }
 
 #[test]
@@ -76,5 +79,8 @@ fn the_library_checks_for_the_host() {
     let scratch = Scratch::new("host");
     let target = std::env::consts::OS;
     let (accepted, output) = scratch.check(target, PROGRAM);
-    assert!(accepted, "the library must type-check for this host:\n{output}");
+    assert!(
+        accepted,
+        "the library must type-check for this host:\n{output}"
+    );
 }

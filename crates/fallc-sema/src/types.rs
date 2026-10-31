@@ -854,7 +854,10 @@ impl Type {
         // adding const is also legal implicitly, but dropping it needs the
         // explicit `as` that reaches this function. The pointee's structure
         // must still line up, which `same_shape_ignoring_const` checks.
-        if self.is_indirection() && target.is_indirection() && same_shape_ignoring_const(self, target) {
+        if self.is_indirection()
+            && target.is_indirection()
+            && same_shape_ignoring_const(self, target)
+        {
             return true;
         }
         // A byte pointer converts to and from a pointer to anything, and `as`
@@ -1083,8 +1086,7 @@ impl Type {
                 if let Some(abi) = abi {
                     written.push_str(&format!(" \"{abi}\""));
                 }
-                let listed: Vec<String> =
-                    parameters.iter().map(|ty| ty.spelling()).collect();
+                let listed: Vec<String> = parameters.iter().map(|ty| ty.spelling()).collect();
                 written.push('(');
                 written.push_str(&listed.join(", "));
                 if *variadic {
@@ -1596,57 +1598,84 @@ mod mangling_tests {
             ("bool", Type::Bool),
             ("byte", Type::Byte),
             ("Box", box_ty.clone()),
-            ("*Box", Type::Pointer {
-                pointee: Box::new(box_ty.clone()),
-                pointee_is_const: false,
-                pointer_is_const: false,
-            }),
-            // The four const combinations of one pointer type. These are the
-            // ones a printed form cannot tell apart.
-            ("*const Box", Type::Pointer {
-                pointee: Box::new(box_ty.clone()),
-                pointee_is_const: true,
-                pointer_is_const: false,
-            }),
-            ("const *Box", Type::Pointer {
-                pointee: Box::new(box_ty.clone()),
-                pointee_is_const: false,
-                pointer_is_const: true,
-            }),
-            ("const *const Box", Type::Pointer {
-                pointee: Box::new(box_ty.clone()),
-                pointee_is_const: true,
-                pointer_is_const: true,
-            }),
-            ("**Box", Type::Pointer {
-                pointee: Box::new(Type::Pointer {
+            (
+                "*Box",
+                Type::Pointer {
                     pointee: Box::new(box_ty.clone()),
                     pointee_is_const: false,
                     pointer_is_const: false,
-                }),
-                pointee_is_const: false,
-                pointer_is_const: false,
-            }),
-            ("&Box", Type::Reference {
-                is_rvalue: false,
-                referent: Box::new(box_ty.clone()),
-                referent_is_const: false,
-            }),
-            ("&const Box", Type::Reference {
-                is_rvalue: false,
-                referent: Box::new(box_ty.clone()),
-                referent_is_const: true,
-            }),
-            ("[3]Box", Type::Array {
-                element: Box::new(box_ty.clone()),
-                len: 3,
-            }),
+                },
+            ),
+            // The four const combinations of one pointer type. These are the
+            // ones a printed form cannot tell apart.
+            (
+                "*const Box",
+                Type::Pointer {
+                    pointee: Box::new(box_ty.clone()),
+                    pointee_is_const: true,
+                    pointer_is_const: false,
+                },
+            ),
+            (
+                "const *Box",
+                Type::Pointer {
+                    pointee: Box::new(box_ty.clone()),
+                    pointee_is_const: false,
+                    pointer_is_const: true,
+                },
+            ),
+            (
+                "const *const Box",
+                Type::Pointer {
+                    pointee: Box::new(box_ty.clone()),
+                    pointee_is_const: true,
+                    pointer_is_const: true,
+                },
+            ),
+            (
+                "**Box",
+                Type::Pointer {
+                    pointee: Box::new(Type::Pointer {
+                        pointee: Box::new(box_ty.clone()),
+                        pointee_is_const: false,
+                        pointer_is_const: false,
+                    }),
+                    pointee_is_const: false,
+                    pointer_is_const: false,
+                },
+            ),
+            (
+                "&Box",
+                Type::Reference {
+                    is_rvalue: false,
+                    referent: Box::new(box_ty.clone()),
+                    referent_is_const: false,
+                },
+            ),
+            (
+                "&const Box",
+                Type::Reference {
+                    is_rvalue: false,
+                    referent: Box::new(box_ty.clone()),
+                    referent_is_const: true,
+                },
+            ),
+            (
+                "[3]Box",
+                Type::Array {
+                    element: Box::new(box_ty.clone()),
+                    len: 3,
+                },
+            ),
             // A length and an element that could run together if the length
             // were not delimited.
-            ("[1]Box", Type::Array {
-                element: Box::new(box_ty.clone()),
-                len: 1,
-            }),
+            (
+                "[1]Box",
+                Type::Array {
+                    element: Box::new(box_ty.clone()),
+                    len: 1,
+                },
+            ),
             ("[]Box", Type::UnsizedArray(Box::new(box_ty.clone()))),
             ("const Box", Type::Const(Box::new(box_ty.clone()))),
             // A type whose *name* looks like an encoding, which is what the
@@ -1819,7 +1848,11 @@ mod primitive_tests {
     fn character_types_are_distinct_from_the_integers_they_sit_on() {
         // The point of the distinction, as with `byte`: a character is not a
         // number, so it takes no part in arithmetic.
-        for (name, bits, base) in [("c8", 8, Type::C8), ("c16", 16, Type::C16), ("c32", 32, Type::C32)] {
+        for (name, bits, base) in [
+            ("c8", 8, Type::C8),
+            ("c16", 16, Type::C16),
+            ("c32", 32, Type::C32),
+        ] {
             let character = Type::from_name(name).unwrap_or_else(|| panic!("`{name}` resolves"));
             assert_eq!(character, base);
             assert!(!character.is_integer());

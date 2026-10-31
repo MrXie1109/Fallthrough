@@ -143,10 +143,20 @@ fn main() int {
 "#;
     let scratch = Scratch::new("grow");
     let output = scratch.run("grow", source);
-    assert_eq!(field(&output, "inline"), "0x0".replace("0x0", &field(&output, "inline")), "{output}");
-    assert!(output.contains("inline") && output.contains("cap 23 len 22"), "{output}");
+    assert_eq!(
+        field(&output, "inline"),
+        "0x0".replace("0x0", &field(&output, "inline")),
+        "{output}"
+    );
+    assert!(
+        output.contains("inline") && output.contains("cap 23 len 22"),
+        "{output}"
+    );
     // A heap string's capacity is larger than the text, and its text is intact.
-    assert!(output.contains("text [0123456789012345678901x]"), "{output}");
+    assert!(
+        output.contains("text [0123456789012345678901x]"),
+        "{output}"
+    );
     assert!(
         !window(&output, "heap").contains("cap 23 "),
         "the string did not allocate when it outgrew the object:\n{output}"
@@ -285,7 +295,8 @@ fn a_type_that_cannot_be_written_down_says_so() {
     // it can render around: the diagnostic names the declaration to add instead
     // of failing in code generation.
     let source = "type P {\n    v int;\n}\n\nfn main() int {\n    p P = .{3};\n    text String = str(p);\n    return 0;\n}\n";
-    let (outcome, printed) = fallc::pipeline::compile_text("render.ft", source, &[fallc::cli::EmitKind::Llvm]);
+    let (outcome, printed) =
+        fallc::pipeline::compile_text("render.ft", source, &[fallc::cli::EmitKind::Llvm]);
     assert_eq!(outcome, fallc::Outcome::Failure, "{printed}");
     assert!(printed.contains("S0182"), "{printed}");
     assert!(printed.contains("__str__"), "{printed}");

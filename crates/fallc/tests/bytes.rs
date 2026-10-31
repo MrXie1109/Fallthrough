@@ -70,10 +70,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("grow");
-    assert_eq!(
-        scratch.run("grow", source),
-        "4 0 104\n5 0\n1\n"
-    );
+    assert_eq!(scratch.run("grow", source), "4 0 104\n5 0\n1\n");
 }
 
 #[test]
@@ -96,10 +93,7 @@ fn main() int except {
 }
 "#;
     let scratch = Scratch::new("convert");
-    assert_eq!(
-        scratch.run("convert", source),
-        "hello!\n1 0\n5 6\n"
-    );
+    assert_eq!(scratch.run("convert", source), "hello!\n1 0\n5 6\n");
 }
 
 #[test]

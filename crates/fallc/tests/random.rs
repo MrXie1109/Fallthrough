@@ -99,10 +99,7 @@ fn main() int {
 "#;
     let scratch = Scratch::new("global");
     let first_run = scratch.run("global-one", source);
-    assert!(
-        first_run.starts_with("1\nin range 1\ndraw "),
-        "{first_run}"
-    );
+    assert!(first_run.starts_with("1\nin range 1\ndraw "), "{first_run}");
     let second_run = scratch.run("global-two", source);
     assert_ne!(
         first_run, second_run,
@@ -209,10 +206,7 @@ fn main() int {
 }
 "#;
     let scratch = Scratch::new("repeatable");
-    assert_eq!(
-        scratch.run("repeatable", source),
-        "same 1\ndifferent 1\n"
-    );
+    assert_eq!(scratch.run("repeatable", source), "same 1\ndifferent 1\n");
 }
 
 #[test]

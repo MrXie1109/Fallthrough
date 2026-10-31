@@ -93,9 +93,7 @@ pub fn cache_directory() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache"))
-        })
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
         .unwrap_or_else(std::env::temp_dir);
     let path = base.join("fallthrough");
     std::fs::create_dir_all(&path).ok().map(|()| path)
@@ -106,7 +104,11 @@ mod tests {
     use super::*;
 
     fn key(cache_hash: u64, target: &str, opt: &str) -> CacheKey<'_> {
-        CacheKey { cache_hash, target, opt }
+        CacheKey {
+            cache_hash,
+            target,
+            opt,
+        }
     }
 
     #[test]
@@ -125,7 +127,10 @@ mod tests {
         let Some(path) = entry_path(&key) else {
             return;
         };
-        assert_eq!(path.file_name().unwrap().to_str().unwrap(), key.entry_name());
+        assert_eq!(
+            path.file_name().unwrap().to_str().unwrap(),
+            key.entry_name()
+        );
         assert!(path.parent().is_some());
     }
 }

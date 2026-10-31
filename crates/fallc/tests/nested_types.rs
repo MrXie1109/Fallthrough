@@ -209,7 +209,8 @@ fn main() int {
 
 #[test]
 fn a_nested_name_that_is_not_declared_is_reported() {
-    let source = "type Outer {\n    x int;\n}\n\nfn f() int {\n    a Outer.Nope = 1;\n    return a;\n}\n";
+    let source =
+        "type Outer {\n    x int;\n}\n\nfn f() int {\n    a Outer.Nope = 1;\n    return a;\n}\n";
     let scratch = Scratch::new("missing");
     let (outcome, output) = scratch.check("missing", source);
     assert_eq!(outcome, Outcome::Failure, "{output}");

@@ -11,6 +11,7 @@
 export from std.type_traits import *;
 export from std.error import *;
 export from std.optional import *;
+export from std.coroutine import *;
 export from std.bytes import *;
 export from std.basic_string import *;
 export from std.any import *;
