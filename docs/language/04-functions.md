@@ -38,7 +38,7 @@ the return type is `void`, which may also be omitted.
 2.1.3 The type of a function is written `fn(Ps) R`; a function pointer type is written
 `*fn(Ps) R`, see [02 Types](02-types.md#function-types).
 
-2.1.4 `export` makes a function visible to importers; `@extern_C` specifies the C ABI
+2.1.4 `export` makes a function visible to importers; `@cabi` specifies the C ABI
 and has no function body; `constexpr` promises that the function may be used in a
 constant position.
 

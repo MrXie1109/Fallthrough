@@ -18,10 +18,11 @@
 
 import std.string;
 from std.string import *;
+from std.string import String;
 import std.util;
 from std.util import *;
 
-@extern_C fn CreateProcessA(
+@cabi fn CreateProcessA(
     application_name *const char,
     command_line *char,
     process_attributes *byte,
@@ -34,9 +35,9 @@ from std.util import *;
     process_info *ProcessInfo
 ) i32;
 
-@extern_C fn WaitForSingleObject(handle *byte, milliseconds u32) u32;
-@extern_C fn GetExitCodeProcess(handle *byte, exit_code *u32) i32;
-@extern_C fn CloseHandle(handle *byte) i32;
+@cabi fn WaitForSingleObject(handle *byte, milliseconds u32) u32;
+@cabi fn GetExitCodeProcess(handle *byte, exit_code *u32) i32;
+@cabi fn CloseHandle(handle *byte) i32;
 
 // The `STARTUPINFOA` fields a `CreateProcessA` call has to fill in.
 type StartupInfo {

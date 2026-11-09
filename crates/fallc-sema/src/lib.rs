@@ -17,6 +17,7 @@
 
 pub mod builtins;
 pub mod interp;
+pub mod pcm;
 pub mod resolve;
 pub mod template;
 pub mod typeck;

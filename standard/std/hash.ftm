@@ -21,6 +21,7 @@ from std.memory import *;
 from std.string import String;
 import std.util;
 from std.util import *;
+from std.util import Unit;
 
 // What a type has to provide to be used as a hash key.
 //

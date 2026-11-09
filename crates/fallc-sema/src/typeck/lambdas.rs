@@ -365,6 +365,7 @@ impl TypeChecker {
             .entry(name.clone())
             .or_insert_with(|| crate::types::NominalType {
                 name: name.clone(),
+                declared_in: None,
                 fields,
                 mutable_fields: Vec::new(),
                 field_alignments: Vec::new(),

@@ -79,6 +79,7 @@ import std.optional;
 from std.optional import *;
 import std.time;
 from std.time import *;
+from std.time import Instant;
 import std.type_traits;
 from std.type_traits import *;
 

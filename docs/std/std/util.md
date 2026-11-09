@@ -174,7 +174,7 @@ template <T type>
 fn move_can_raise() bool
 ```
 
-### `export define MOVES(T) except(T(util.fake<&&T>()))`
+### `export define MOVES(T) except(T(fake<&&T>()))`
 
 The move question as a macro: `$MOVES(T)` asks whether moving a `T` can
 raise.
@@ -186,7 +186,7 @@ macro expands to the query itself, so the condition is foldable at the place
 it is written -- which is why the containers use it.
 
 ```
-export define MOVES(T) except(T(util.fake<&&T>()))
+export define MOVES(T) except(T(fake<&&T>()))
 ```
 
 ### `fn __ft_moves() bool`

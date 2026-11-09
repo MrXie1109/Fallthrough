@@ -23,6 +23,7 @@
 
 import std.string;
 from std.string import *;
+from std.string import String;
 import std.util;
 from std.util import *;
 

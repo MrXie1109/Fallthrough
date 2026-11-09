@@ -336,6 +336,24 @@ impl TypeChecker {
                 if let Some(nominal) = self.nominal_types.get(&named.path) {
                     return Type::Nominal(nominal.clone());
                 }
+                // A type the file declares itself, when the table holds it
+                // under the qualified name its module gives it: a module's own
+                // signature writes `Thing`, and the table may spell it
+                // `m.Thing` because that is the name an importer writes.
+                if let Some(nominal) = self
+                    .nominal_types
+                    .iter()
+                    .find(|(key, nominal)| {
+                        nominal
+                            .name
+                            .rsplit_once('.')
+                            .is_some_and(|(_, last)| last == named.path)
+                            && key.ends_with(&format!(".{}", named.path))
+                    })
+                    .map(|(_, nominal)| nominal.clone())
+                {
+                    return Type::Nominal(nominal);
+                }
                 if let Some(primitive) = Type::from_name(&named.path) {
                     return primitive;
                 }

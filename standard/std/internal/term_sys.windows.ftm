@@ -4,7 +4,7 @@
 // a program asks about; a HANDLE-based check would need the console mode and
 // says the same thing for the three descriptors colour is used on.
 
-@extern_C fn _isatty(fd i32) i32;
+@cabi fn _isatty(fd i32) i32;
 
 // Whether `fd` is a console.
 export fn is_terminal(fd i32) bool {

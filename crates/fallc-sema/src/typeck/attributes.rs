@@ -126,7 +126,7 @@ impl TypeChecker {
                         self.attribute_arity(attr, 0);
                     }
                 }
-                "export" | "extern_C" | "constexpr" | "noinline" | "maybe_unused" | "cold" => {}
+                "export" | "cabi" | "constexpr" | "noinline" | "maybe_unused" | "cold" => {}
                 other => self.unknown_attribute(other, attr.span),
             }
         }
@@ -197,7 +197,7 @@ impl TypeChecker {
                 // Storage and export spellings the parser already folded into
                 // the binding's fields, plus the ones the checker treats as
                 // intent markers; none of them is a diagnostic on a variable.
-                "export" | "static" | "thread_local" | "constexpr" | "extern_C" | "must_use"
+                "export" | "static" | "thread_local" | "constexpr" | "cabi" | "must_use"
                 | "maybe_unused" | "cold" => {}
                 other => self.unknown_attribute(other, attr.span),
             }

@@ -75,8 +75,8 @@ Takes an attribute's storage.
 export fn __init__(this &XmlAttribute, other &&XmlAttribute) void {
     (&this._name)->__init__();
     (&this._value)->__init__();
-    this._name = util.move(other._name);
-    this._value = util.move(other._value);
+    this._name = move(other._name);
+    this._value = move(other._value);
 }
 ```
 
@@ -144,10 +144,10 @@ export fn __init__(this &XmlNode, other &&XmlNode) void {
     (&this._attributes)->__init__();
     (&this._children)->__init__();
     (&this._text)->__init__();
-    this._name = util.move(other._name);
-    this._attributes = util.move(other._attributes);
-    this._children = util.move(other._children);
-    this._text = util.move(other._text);
+    this._name = move(other._name);
+    this._attributes = move(other._attributes);
+    this._children = move(other._children);
+    this._text = move(other._text);
 }
 ```
 
@@ -195,7 +195,7 @@ Moves a document's storage.
 ```
 export fn __init__(this &XmlDocument, other &&XmlDocument) void {
     (&this._nodes)->__init__();
-    this._nodes = util.move(other._nodes);
+    this._nodes = move(other._nodes);
     this._root = other._root;
 }
 ```

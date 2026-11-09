@@ -16,6 +16,7 @@
 // the module brings.
 import std.sync;
 from std.sync import *;
+from std.sync import Atomic;
 import std.util;
 from std.util import *;
 

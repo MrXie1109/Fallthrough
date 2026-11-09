@@ -13,7 +13,7 @@ use std::fmt::Write as _;
 
 use crate::node::{
     Ast, BindingType, BlockId, ElseBranch, ExprId, ImportedMembers, Initializer, ItemId, ItemKind,
-    LinkLocation, StmtId, StmtKind, Unresolved,
+    LinkLocation, StmtId, StmtKind, Unresolved, UseTarget,
 };
 use crate::visit::Visitor;
 
@@ -62,7 +62,7 @@ fn unresolved_text(u: &Unresolved) -> String {
 }
 
 impl Visitor for Dumper {
-    fn visit_item(&mut self, _ast: &Ast, id: ItemId, item: &crate::node::Item) {
+    fn visit_item(&mut self, ast: &Ast, id: ItemId, item: &crate::node::Item) {
         match &item.kind {
             ItemKind::Conditional(node) => {
                 self.open("Conditional");
@@ -135,6 +135,33 @@ impl Visitor for Dumper {
                     ),
                 };
                 self.line(&format!("Import {id} {}{alias}{members}", node.module));
+                return;
+            }
+            ItemKind::Use(node) => {
+                let path = match &node.target {
+                    UseTarget::Module { alias: Some(alias) } => {
+                        format!("{} as {}", node.module, alias.name)
+                    }
+                    UseTarget::Module { alias: None } => node.module.clone(),
+                    UseTarget::Member(member) => format!("{}.{}", node.module, member.name),
+                    UseTarget::All => format!("{}.*", node.module),
+                };
+                self.line(&format!("Use {id} {path}"));
+                return;
+            }
+            ItemKind::Module(node) => {
+                let name = if node.name.name.is_empty() {
+                    "(anonymous)".to_owned()
+                } else {
+                    node.name.name.clone()
+                };
+                self.open(&format!("Module {id} {name}"));
+                // The members are items in the same arena, so they are dumped
+                // by the same walk rather than by a second printer.
+                for &member in &node.items {
+                    crate::visit::walk_item(ast, member, self);
+                }
+                self.close();
                 return;
             }
             ItemKind::Link(node) => {

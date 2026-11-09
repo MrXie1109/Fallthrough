@@ -361,7 +361,7 @@ fn a_module_declaration_does_not_get_an_empty_body() {
     let scratch = Scratch::new("extern-decl");
     scratch.module(
         "Mixed",
-        "@extern_C export fn puts(text *const c8) int;\nexport fn twice(n int) int { return n + n; }\n",
+        "@cabi export fn puts(text *const c8) int;\nexport fn twice(n int) int { return n + n; }\n",
     );
     let (built, output) = scratch.build_and_run(
         "import Mixed;\nfn main() int {\n    Mixed.puts(\"hi\");\n    return Mixed.twice(21);\n}\n",

@@ -5,7 +5,7 @@
 // conversion is needed here. Linux and macOS share the call and the layout of
 // `timespec`, so one file serves both.
 
-@extern_C fn clock_gettime(clock_id int, time *Timespec) int;
+@cabi fn clock_gettime(clock_id int, time *Timespec) int;
 
 // `struct timespec` on the platforms here: two 64-bit fields.
 type Timespec {

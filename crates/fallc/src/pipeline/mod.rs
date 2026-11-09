@@ -157,6 +157,30 @@ pub fn check_file(session: &mut Session, path: &Path) -> Outcome {
 }
 
 /// Runs `fallc` according to `options`.
+/// Whether compiled tables (`*.pcm`) are read and written.
+///
+/// A table replaces parsing and checking a module with an answer an earlier run
+/// gave. That is what makes rebuilding an unchanged program cheap, and it is
+/// wrong for a caller that edits its sources between runs -- a test, or a tool
+/// that compiles one file twice.
+static COMPILED_TABLES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Turns the compiled-module cache on or off for this process.
+///
+/// The `--pcm` / `--no-pcm` flags set it through this; so does a test that
+/// compiles a fixture and then edits it. Not read from the environment: a
+/// process-wide setting that a library call can change is the same thing
+/// without a second source of truth.
+pub fn set_compiled_tables(enabled: bool) {
+    COMPILED_TABLES.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether compiled tables are in use.
+#[must_use]
+pub fn compiled_tables() -> bool {
+    COMPILED_TABLES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn run(options: &Options) -> std::process::ExitCode {
     match &options.command {
         Command::Version => {
@@ -349,6 +373,34 @@ struct ModuleBody {
 }
 
 impl ModuleBody {
+    /// A body that exists only so its module counts toward the library.
+    ///
+    /// A compiled table makes a module's declarations available without reading
+    /// its tree, but the program still links that module's code -- and the
+    /// library object is keyed on the set of modules it was built from. This is
+    /// the entry that keeps the set the same whether a table was hit or the
+    /// module was compiled.
+    ///
+    /// Nothing reads its tree, tables, or resolutions: the object being reused
+    /// was compiled from the same source, and code generation only needs to
+    /// know it is there.
+    pub(super) fn cache_only(module: String, cache_hash: u64) -> Self {
+        Self {
+            module,
+            declarations: Vec::new(),
+            cache_hash,
+            ast: std::rc::Rc::new(Ast::new()),
+            types: std::rc::Rc::new(fallc_sema::TypeTable::default()),
+            binding_types: fallc_sema::BindingTypes::default(),
+            resolved: std::rc::Rc::new(fallc_ir::ModuleResolutions::empty()),
+            checker_resolutions: std::rc::Rc::new(fallc_sema::Resolutions::new()),
+            external_global_refs: std::collections::HashMap::new(),
+            constant_values: std::collections::HashMap::new(),
+            constant_types: std::collections::HashMap::new(),
+            environment: std::rc::Rc::new(fallc_sema::TypeEnvironment::default()),
+        }
+    }
+
     /// Drops the checker tables that only template registration needed.
     ///
     /// A module's templates are registered with their own resolutions,
@@ -394,10 +446,18 @@ impl LoadedImports {
                     // (`std.string.String`), and the umbrella's
                     // (`std.String`) -- the last because the umbrella is what a
                     // program imported.
-                    let mut candidates = vec![
-                        (name.clone(), "".to_owned()),
-                        (format!("{module}.{name}"), module.clone()),
-                    ];
+                    // A type's bare name is a name of the importing file only
+                    // where the form binds it: `from M import T` and
+                    // `use M.T`. A plain `import M;` reaches it as `M.T`
+                    // (09 §2.2.1), so the bare spelling is left out.
+                    let bound = self
+                        .bindings
+                        .iter()
+                        .any(|binding| &binding.local == name && binding.module == *module);
+                    let mut candidates = vec![(format!("{module}.{name}"), module.clone())];
+                    if bound {
+                        candidates.push((name.clone(), "".to_owned()));
+                    }
                     for umbrella in self.umbrellas.get(module).into_iter().flatten() {
                         candidates.push((format!("{umbrella}.{name}"), umbrella.clone()));
                     }
@@ -709,6 +769,7 @@ mod exports;
 mod imports;
 mod interface;
 mod linking;
+mod pcm;
 mod reporting;
 
 pub use reporting::{

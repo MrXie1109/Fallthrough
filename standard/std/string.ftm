@@ -41,6 +41,7 @@
 import C;
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.util;
 from std.util import *;
 
@@ -1471,7 +1472,7 @@ export fn __ft_memory_error() Exception {
 // Set by the compiler when a handler starts and cleared when it ends, so that
 // `std.exception()` has something to name. It is a pointer rather than the value
 // because a handler reads it more than once and must not see copies drift apart.
-@extern_C fn __ft_handled() *const Exception;
+@cabi fn __ft_handled() *const Exception;
 
 // Returns the exception being handled.
 //

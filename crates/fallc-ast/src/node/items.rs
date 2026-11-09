@@ -14,6 +14,14 @@ use super::*;
 pub enum ItemKind {
     /// `import Name;`
     Import(ImportItem),
+    /// `use foo.get;`, `use foo as f;`, `use foo.*;`
+    ///
+    /// The one way to write another module's member without the module's name.
+    /// `import` decides what the file loads and what a module block is called;
+    /// `use` decides which names that file may write bare.
+    Use(UseItem),
+    /// `module Name { .. }` — a run of declarations with a visibility boundary.
+    Module(ModuleItem),
     /// `link name dynamic from default;`
     Link(LinkItem),
     /// `type Name { field Type; ... }`, `type Name = Other;`, or
@@ -98,7 +106,7 @@ pub struct ExternVariableItem {
     pub exported: bool,
     /// The whole declaration's source range.
     pub span: Span,
-    /// Attributes written after the declaration: `name T @extern_C;`.
+    /// Attributes written after the declaration: `name T @cabi;`.
     pub attrs: Vec<super::Attr>,
 }
 
@@ -949,4 +957,89 @@ pub struct ConditionalItems {
     pub then_items: Vec<super::ItemId>,
     /// The declarations selected otherwise, when there is an `else`.
     pub else_items: Vec<super::ItemId>,
+}
+
+/// A name a module is known by, and whether the module has one at all.
+///
+/// `module foo { .. }` names the block; the block an `import` stands for is
+/// anonymous, because the importing file sees the module's contents either
+/// through the module's own name (which the loader supplied) or through the
+/// short names a `use` bound, and never through a name of its own.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ModuleName {
+    /// The written name, empty for an anonymous block.
+    pub name: String,
+    /// Where the name was written.
+    pub span: Span,
+}
+
+/// `module Name { .. }` — a run of declarations with a visibility boundary.
+///
+/// A module is a **container**: the declarations inside it are the module's
+/// members, and it is what `export` on a member means. A member without
+/// `export` is private to the block, so a name written from *outside* it —
+/// `foo.interal`, or a bare name in another file — is refused with "not
+/// exported", whether or not the member was ever written with a visibility in
+/// mind.
+///
+/// An `import M;` is such a block: the contents of `M.ftm` are the members of
+/// a module named `M`. `from M import x;` is the same block without a name,
+/// plus the short name `x` — which is why an imported file's private
+/// declarations stay private even though the importing file can see the whole
+/// block.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ModuleItem {
+    /// The name the block is known by; see [`ModuleName`].
+    pub name: ModuleName,
+    /// The declarations it contains, in source order.
+    pub items: Vec<super::ItemId>,
+    /// The whole block's source range.
+    pub span: Span,
+}
+
+/// `use path;` — a name another module exports, bound here.
+///
+/// The path is a module and zero or more of its members, so the three forms
+/// differ in what they bind:
+///
+/// ```text
+/// use foo;            // the module itself: `foo.get(..)`
+/// use foo.get;        // the member: `get(..)`
+/// use foo.*;          // every export of `foo`, each by its own name
+/// use geom.Point;     // a member of the module `geom`
+/// ```
+///
+/// A member is always one the module exports; `use` cannot reach into a
+/// module's private half, because that is what private means.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct UseItem {
+    /// The module the path starts at.
+    pub module: String,
+    /// Where the module's name was written.
+    pub module_span: Span,
+    /// What the path names, after the module.
+    pub target: UseTarget,
+    /// Whether the binding is published to this module's importers.
+    ///
+    /// `export use M.x;` binds `x` here and adds it to the export table, which
+    /// is what makes `use` the general form of `export from M import x;`: one
+    /// declaration that both brings a name in and passes it on. Without
+    /// `export` the binding is this file's alone.
+    pub exported: bool,
+    /// The whole declaration's source range.
+    pub span: Span,
+}
+
+/// What a `use` path names once the module is read.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum UseTarget {
+    /// `use foo;` — the module itself, under `alias` or its own name.
+    Module {
+        /// A local spelling, from `use foo as f;`.
+        alias: Option<super::ImportedName>,
+    },
+    /// `use foo.get;` — exactly this member.
+    Member(super::ImportedName),
+    /// `use foo.*;` — every name `foo` exports.
+    All,
 }

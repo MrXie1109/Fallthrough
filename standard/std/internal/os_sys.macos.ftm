@@ -5,14 +5,14 @@
 // wrong clock id returns -1 from `clock_gettime`, and the monotonic clock read
 // as zero -- so the constant is the reason this file exists.
 
-@extern_C fn getpid() int;
-@extern_C fn exit(code int) void;
-@extern_C fn getenv(name *const char) *const char;
-@extern_C fn setenv(name *const char, value *const char, overwrite int) int;
-@extern_C fn getcwd(buffer *char, size usize) *char;
-@extern_C fn chdir(path *const char) int;
-@extern_C fn clock_gettime(clock int, timespec *byte) int;
-@extern_C fn usleep(microseconds u32) int;
+@cabi fn getpid() int;
+@cabi fn exit(code int) void;
+@cabi fn getenv(name *const char) *const char;
+@cabi fn setenv(name *const char, value *const char, overwrite int) int;
+@cabi fn getcwd(buffer *char, size usize) *char;
+@cabi fn chdir(path *const char) int;
+@cabi fn clock_gettime(clock int, timespec *byte) int;
+@cabi fn usleep(microseconds u32) int;
 
 // Darwin's `CLOCK_MONOTONIC`.
 CLOCK_MONOTONIC const int = 6;

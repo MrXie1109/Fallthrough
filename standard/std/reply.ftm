@@ -34,10 +34,13 @@ import std.util;
 from std.util import *;
 import std.sync;
 from std.sync import *;
+from std.sync import CondVar, Mutex;
 import std.optional;
 from std.optional import *;
+from std.optional import Optional;
 import std.coroutine;
 from std.coroutine import *;
+from std.coroutine import Coroutine;
 
 // A value that arrives once, and the waiters it wakes.
 export

@@ -65,6 +65,7 @@ export from std.fs import *;
 export from std.math import *;
 export from std.algorithm import *;
 export from std.random import *;
+export from std.os import *;
 
 // Building text from a format string, without writing it anywhere:
 //

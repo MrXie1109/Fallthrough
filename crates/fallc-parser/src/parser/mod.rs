@@ -29,10 +29,10 @@ use fallc_ast::{
     ElseBranch, EnumDecl, EnumMember, ExprId, ExprKind, ExprStmt, FieldDecl, FieldExpr, FoldExpr,
     FoldKind, ForCStmt, FunctionItem, IfStmt, ImportItem, ImportedMembers, ImportedName,
     IncDecExpr, IncDecOp, IndexExpr, Initializer, ItemId, ItemKind, LinkItem, LinkKind,
-    LinkLocation, LoopStmt, NamedArgument, NamedType, PackRef, Param, RaiseStmt, ReturnStmt,
-    StaticAssert, StmtId, StmtKind, SwitchArm, SwitchStmt, TemplateArgumentSyntax, TemplateParam,
-    TemplateParamKind, TryStmt, TypeDecl, TypeDeclKind, TypeOfType, TypeSyntax, TypedInitExpr,
-    UnaryExpr, UnaryOp,
+    LinkLocation, LoopStmt, ModuleItem, ModuleName, NamedArgument, NamedType, PackRef, Param,
+    RaiseStmt, ReturnStmt, StaticAssert, StmtId, StmtKind, SwitchArm, SwitchStmt,
+    TemplateArgumentSyntax, TemplateParam, TemplateParamKind, TryStmt, TypeDecl, TypeDeclKind,
+    TypeOfType, TypeSyntax, TypedInitExpr, UnaryExpr, UnaryOp, UseItem, UseTarget,
 };
 use fallc_diag::{Diagnostic, DiagnosticBag, DiagnosticCode};
 use fallc_lexer::{Keyword, Punctuation};
@@ -293,6 +293,28 @@ pub fn parse_source(text: &str, file: fallc_span::FileId) -> ParseResult {
     result
 }
 
+/// Parses source text that holds one written type and nothing else.
+///
+/// The reader of a compiled module's table has a type as text -- the way the
+/// declaring module spelled it -- and needs the structure back. A type is not a
+/// file, so this parses just the type: no items, no statements, and a syntax
+/// error leaves the text as an unresolved name rather than derailing a parse
+/// that has nothing else to do.
+#[must_use]
+pub fn parse_type_source(text: &str) -> fallc_ast::TypeSyntax {
+    let mut lexer = fallc_lexer::Lexer::default();
+    let lexed = lexer.tokenize(text, fallc_span::FileId::SYNTHETIC);
+    let mut stream = TokenStream::new(lexed.tokens);
+    let mut parser = Parser::default();
+    let mut ast = fallc_ast::Ast::new();
+    parser.parse_type(&mut stream, &mut ast).unwrap_or_else(|| {
+        fallc_ast::TypeSyntax::Unresolved(fallc_ast::Unresolved {
+            text: text.to_owned(),
+            span: fallc_span::Span::SYNTHETIC,
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,7 +439,7 @@ mod tests {
 /// The prefixes a declaration may carry before its keyword.
 ///
 /// `export` is a keyword written first, and the attributes that used to be
-/// keywords -- `@extern_C`, `@constexpr` and the rest -- follow it. Grouped
+/// keywords -- `@cabi`, `@constexpr` and the rest -- follow it. Grouped
 /// rather than passed separately because they travel together: every
 /// declaration form that accepts one accepts all of them.
 #[derive(Clone, Debug, Default)]

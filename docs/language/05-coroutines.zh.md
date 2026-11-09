@@ -47,7 +47,7 @@ fn echo(n int) std.Coroutine<int, int, int> {
 | `Yield` | `yield` 不交出值；`resume` 不回答值 |
 | `Return` | 函数体不返回值；`result` 不回答值 |
 
-2.5 协程不接受改变其形态的其他属性，也不能标 `@extern_C`：协程对象是语言的值，不是 C ABI
+2.5 协程不接受改变其形态的其他属性，也不能标 `@cabi`：协程对象是语言的值，不是 C ABI
 的类型。
 
 ## `yield` 表达式
@@ -183,10 +183,10 @@ r int = c.result()??;   // 12
 
 ```ft
 import std;
-from std.go import go, settle;
+from std.go import Task, go, settle;
 
 @coroutine
-fn worker(n int) std.Coroutine<void, void, void> {
+fn worker(n int) Task {
     i int = 0;
     while (i < n) {
         yield;
@@ -226,10 +226,10 @@ fn main() int except {
 import C;
 import std;
 from std.reply import Reply;
-from std.go import go, settle;
+from std.go import Task, go, settle;
 
 @coroutine
-fn compute(n int, reply &Reply<int>) std.Coroutine<void, void, void> {
+fn compute(n int, reply &Reply<int>) Task {
     reply.set(n * 2);
 }
 

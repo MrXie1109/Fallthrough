@@ -3,9 +3,9 @@
 // `dlopen` hands back a handle, `dlsym` a symbol's address, and `dlclose`
 // releases the library. Linux and macOS share the calls.
 
-@extern_C fn dlopen(path *const char, flags i32) *byte;
-@extern_C fn dlsym(handle *byte, name *const char) *byte;
-@extern_C fn dlclose(handle *byte) i32;
+@cabi fn dlopen(path *const char, flags i32) *byte;
+@cabi fn dlsym(handle *byte, name *const char) *byte;
+@cabi fn dlclose(handle *byte) i32;
 
 // Resolve every symbol eagerly, which is what a caller that needs one symbol
 // now wants: a missing one fails at `open`, not at the first call.

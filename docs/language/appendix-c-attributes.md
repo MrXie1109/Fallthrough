@@ -33,7 +33,7 @@ and `@cold` suggest, and a conforming implementation may ignore either.
 | `@deprecated` | — or one string | warn at each use; the string, when given, is the message |
 | `@enable_if(cond)` | one condition | the declaration exists only when `cond` is true; `cond` **must** be a compile-time constant |
 | `@constexpr` | — | the function may be called in a constant position |
-| `@extern_C` | — | use the C ABI: the symbol is not mangled |
+| `@cabi` | — | use the C ABI: the symbol is not mangled |
 | `@overridable` | — | a default implementation; a definition of the same name replaces it |
 | `@coroutine` | — | the function is a coroutine: it may `yield`, and its return type **must** be `std.Coroutine<Send, Yield, Return>` |
 
@@ -84,7 +84,7 @@ others.
 | `@thread_local` | — | one object per thread |
 | `@uninitialized` | — | no zero fill and no default construction; **no** initialiser allowed; **locals only** |
 | `@maybe_unused` | — | do not report the never-read warning |
-| `@extern_C` | — | the variable's storage belongs to another language, found by an unmangled name |
+| `@cabi` | — | the variable's storage belongs to another language, found by an unmangled name |
 
 C.4.1 `@uninitialized` on a module-level variable is an error: that variable lives in the
 program image, which the loader zero-fills before the program starts, so there is no
@@ -130,7 +130,7 @@ for the layout of the generated code.
 | `@deprecated` | ✓ | ✓ | ✓ | |
 | `@enable_if` | ✓ | | | |
 | `@constexpr` | ✓ | ✓ | | ✓ |
-| `@extern_C` | ✓ | ✓ | | |
+| `@cabi` | ✓ | ✓ | | |
 | `@align(N)` | | ✓ | | |
 | `@static` | | ✓ | | |
 | `@thread_local` | | ✓ | | |

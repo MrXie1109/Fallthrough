@@ -13,6 +13,7 @@
 
 import std.string;
 from std.string import *;
+from std.string import String;
 import std.internal.dynlib_sys;
 from std.internal.dynlib_sys import *;
 

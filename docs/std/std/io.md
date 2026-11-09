@@ -708,18 +708,13 @@ anything else, dependencies first.
 fn __setup__() void
 ```
 
-### `export from std.fmt import Formattable;`
+### `fn print(values ...Ts) void except`
 
 ------------------------------------------------------------- the short forms
 The format rule itself lives in `std.fmt`: `print` writes what that module
-renders, so the two spellings of the rule cannot drift apart.
-
-```
-export from std.fmt import Formattable;
-```
-
-### `fn print(values ...Ts) void except`
-
+renders, so the two spellings of the rule cannot drift apart. A program that
+writes the rule for its own type imports that module; this one does not
+re-export it, because a name has one module it comes from.
 Writes its arguments to the standard output, with the format rule of
 `std.out.print(..)`.
 

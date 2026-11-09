@@ -28,11 +28,24 @@ import std.hash;     // only HashTable and HSet/HMap
 import std.io;       // only the devices and formatted I/O
 ```
 
-As `collections.md` says: an umbrella's **type names** can be written short
-(`RBTree<int, int>` is `std.RBTree<int, int>`), while **functions** keep their full
-name (`std.min(..)`). A container template's default arguments (comparator, hasher,
-allocator) are written short inside the module and stay that way under the umbrella:
-`TMap<String, int>` uses `std.Less<String>` without naming it.
+As `collections.md` says, **nothing is written short** after a plain `import std;`: a
+type is `std.RBTree<int, int>` and a function is `std.min(..)`. A bare name has to be
+bound, and `from` or `use` is what binds it:
+
+```ft
+import std;
+from std import RBTree, TMap, TSet;   // or: use std.RBTree; …
+
+fn main() int {
+    tree RBTree<int, int>;       // bound above; `std.RBTree<int, int>` is the same type
+    return 0;
+}
+```
+
+A container template's default arguments (comparator, hasher, allocator) are written
+short *inside the module that declares them* and stay that way when the type is used:
+`std.TMap<std.String, int>` uses `std.Less<std.String>` without the caller naming it.
+That is the declaring module's own spelling, not a name the caller may write.
 
 ## Memory: allocators, `Box`, `Rc`, `Arc`
 
@@ -46,6 +59,7 @@ dies together (a compiler pass, a document parse):
 
 ```ft
 import std.allocators;
+from std.allocators import Arena;
 
 arena Arena = Arena(64usize);
 block *byte = arena.alloc(8usize);   // uninitialised; constructing a value is __init__
@@ -66,7 +80,13 @@ traits Allocator(it A) {
 as a **template argument**, defaulting to it:
 
 ```ft
+import std.array;
+from std.array import Array;
+import std.deque;
+from std.deque import Deque;
+
 type MyAllocator { };              // with the two methods implemented
+
 xs Deque<int, MyAllocator>;        // allocated another way; Array takes only the element type
 ```
 
@@ -92,7 +112,11 @@ container `panic`s with `"out of memory"` when it does, just as `std.allocate` d
 One value on the heap, released when the box is destroyed.
 
 ```ft
+import std.memory;
+from std.memory import Box;
+
 b Box<int> = 7;        // from a value
+
 b.get() = 9;           // get() returns &T
 c Box<int> = b;        // copy: two independent values
 ```
@@ -104,7 +128,11 @@ c Box<int> = b;        // copy: two independent values
 Reference counting, for sharing one value on one thread:
 
 ```ft
+import std.memory;
+from std.memory import Rc, RcWeak;
+
 first Rc<String> = String("text");
+
 second Rc<String> = first;          // count 2
 weak RcWeak<String> = first.downgrade();
 std.out.println(weak.upgrade().get());  // a new owner, while one is alive
@@ -149,7 +177,11 @@ compile-time question answered by a trait query:
 The query is written `InputIterator(MyIterator)` and is a compile-time `bool`:
 
 ```ft
+import std.tree;
+from std.tree import SetIterator;
+
 static_assert(InputIterator(SetIterator<int>));
+
 static_assert(BidirectionalIterator(SetIterator<int>));
 ```
 
@@ -166,7 +198,6 @@ Which level holds is a fact about each type rather than a table of categories:
 
 ```ft
 import C;
-import std;
 
 fn main() int except {
     a [4]int = {1, 2, 3, 4};
@@ -198,7 +229,10 @@ traits Compare(it C, value E) {
 comparator is a type with `__call__`, passed as a template argument:
 
 ```ft
-TMap<int, String, Greater<int>> descending;
+import std;
+from std import Greater, TMap;
+
+TMap<int, std.String, Greater<int>> descending;
 ```
 
 A comparator answers "does `a` come before `b`", not a three-way comparison: `Less` is
@@ -220,7 +254,11 @@ A `TreeNode<K, V>` has `key`, `value`, and `red`, `left`, `right`, `parent`. The
 are `*TreeNode<K, V>` rather than `*byte`, so walking the tree needs no casts:
 
 ```ft
+import std.tree;
+from std.tree import TreeNode;
+
 node *TreeNode<int, String> = tree.find(3);
+
 if (node != nullptr) {
     std.out.println(node.value);
 }
@@ -243,11 +281,14 @@ The iterators are `MapIterator`/`ConstMapIterator`/`SetIterator`/`ConstSetIterat
 is therefore the key order the comparator defines:
 
 ```ft
-TMap<String, int> ages;
-ages.insert(String("Ada"), 36);
-ages.insert(String("Grace"), 85);
-it MapIterator<String, int> = ages.begin();
-stop MapIterator<String, int> = ages.end();
+import std;
+from std import MapIterator, TMap;
+
+TMap<std.String, int> ages;
+ages.insert(std.String("Ada"), 36);
+ages.insert(std.String("Grace"), 85);
+it MapIterator<std.String, int> = ages.begin();
+stop MapIterator<std.String, int> = ages.end();
 while (it != stop) {           // key order
     C.printf("%s %d\n", it.key().data(), *it);
     ++it;
@@ -277,6 +318,9 @@ traits Hashable(it T) {
 means giving it `__hash__`:
 
 ```ft
+import std.hash;
+from std.hash import Hash;
+
 type Point { x int; y int; }
 
 export fn __hash__(this &const Point) usize {
@@ -435,6 +479,7 @@ alone. The entropy source lives in `std/internal/random_entropy.ftm` and the pla
 
 ```ft
 import std.os;
+from std.fs import Path;
 
 os.pid();                 // the process id
 os.getenv("HOME");        // an environment variable; KeyError when absent (has_env asks)
@@ -484,7 +529,11 @@ standard streams, files on disk and a stream another C library hands over are al
 same thing.
 
 ```ft
+import std.io;
+from std.io import File;
+
 std.out    File   // standard output: File(C.stdout, OpenMode.WRITE)
+
 std.err    File   // standard error
 std.in     File   // standard input: File(C.stdin, OpenMode.READ)
 ```
@@ -504,7 +553,11 @@ handle.
 ### Opening
 
 ```ft
+import std.io;
+from std.io import File;
+
 f    File = File("notes.txt", OpenMode.WRITE)??;   // "wb", truncates
+
 src  File = File("notes.txt", OpenMode.READ)??;    // "rb"
 both File = File("notes.txt", OpenMode.RW)??;      // "r+b", the file must exist
 ```
@@ -517,6 +570,9 @@ A C stream that is already open can be wrapped -- which is how the standard stre
 themselves are made:
 
 ```ft
+import std.io;
+from std.io import File;
+
 log File = File(C.stderr, OpenMode.WRITE);
 ```
 
@@ -620,7 +676,11 @@ standard stream only forgets the handle; it does not close C's stream.
 ### `Mutex` and `Lock`
 
 ```ft
+import std.sync;
+from std.sync import Lock, Mutex;
+
 m Mutex;
+
 {
     _guard Lock = &m;    // locking happens in the constructor
     ...
@@ -634,7 +694,11 @@ address to a thread.
 ### `CondVar`
 
 ```ft
+import std.sync;
+from std.sync import CondVar, Lock, Mutex;
+
 ready CondVar;
+
 m Mutex;
 _guard Lock = &m;
 while (!ready_now) {
@@ -646,7 +710,11 @@ ready.notify_one();      // or notify_all()
 ### `Thread` and `sleep`
 
 ```ft
+import std.sync;
+from std.sync import Thread;
+
 fn work(argument *byte) *byte {
+
     std.sleep(10);       // milliseconds
     return argument;
 }
@@ -661,7 +729,11 @@ A `Thread`'s construction and `join` may raise `ThreadError`. The entry type is
 ### `Atomic<T>`
 
 ```ft
+import std.sync;
+from std.sync import Atomic;
+
 count Atomic<int> = 0;
+
 count.fetch_add(1);
 count.store(7);
 v int = count.load();
@@ -671,6 +743,32 @@ v int = count.load();
 implementation uses a mutex internally**, so the results are atomic but it is no faster
 than locking under contention; a genuinely lock-free one waits for a language-level
 atomic builtin.
+
+### Many readers, one writer; semaphores, one-time work, barriers
+
+`std.sync` also provides four primitives
+([`std/sync.ftm`](../../standard/std/sync.ftm)):
+
+| Primitive | Use |
+| ---- | ---- |
+| `RwLock` | `lock_shared()`/`unlock_shared()` take the read lock, which several readers may hold at once; `lock()`/`unlock()` take the write lock, which is exclusive. A waiting writer holds back new readers, so a writer cannot starve |
+| `Semaphore(initial)` | `acquire()` takes one permit, waiting when there is none; `release()` returns one; `available()` reports how many are left |
+| `Once` | `call(&action)` runs `action` exactly once, and every other caller waits for it to finish |
+| `Barrier(parties)` | `wait()` holds each party at the barrier until all of them have arrived, and then they continue together |
+
+```ft
+import std.sync;
+from std.sync import Barrier, Once;
+
+bar Barrier = Barrier(2u32);
+once Once = Once();
+once.call(&setup);          // runs once
+bar.wait();                 // waits until both parties arrive
+```
+
+`RwLock`, `Semaphore` and `Barrier` are built from `Mutex` and `CondVar`. `Once` keeps a
+state of 0/1/2 -- not started, running, done -- and the other callers wait for it to
+become 2.
 
 ## Concurrency: `std.concurrent`
 
@@ -691,6 +789,9 @@ Three things ([`std/concurrent.ftm`](../../../standard/std/concurrent.ftm)):
 
 ```ft
 import std.concurrent;
+import std.sync;
+from std.sync import Thread;
+from std.concurrent import Channel, Future, Promise, ThreadPool;
 
 channel Channel<int> = Channel<int>();
 producer_thread = Thread(producer, &context as *byte)??;
@@ -718,6 +819,7 @@ a point on the **wall** clock (Unix-epoch nanoseconds, for saying when).
 
 ```ft
 import std;
+from std.time import DateTime, Duration, Instant, SystemTime;
 import std.time;
 
 start Instant = time.now();
@@ -864,7 +966,11 @@ says so instead of quietly handling a part.
 not outlive its document ([`std/json.ftm`](../../../standard/std/json.ftm)):
 
 ```ft
+import std.json;
+from std.json import JsonDocument, JsonValue;
+
 document JsonDocument = std.parse(&text)??;
+
 root JsonValue = document.root();
 key String = String("name");
 name String = root.member(&key).value()?? as String??;
@@ -884,7 +990,11 @@ raise `ValueError` too. A number is always an `f64`.
 text that can travel; both sides are `Bytes`, because the bytes need not be text:
 
 ```ft
+import std.bytes;
+from std.bytes import Bytes;
+
 hex String = std.hex_encode(&data);        // "4142"
+
 back Bytes = std.hex_decode(&hex)??;        // a ValueError on bad text
 b64 String = std.base64_encode(&data);      // "QUI="
 pct String = std.percent_encode(&text);     // URL: alnum -_.~ stay, the rest is %XX
@@ -928,7 +1038,11 @@ two-dimensional array: one `Array<T>`, with element `(row, column)` at
 need not have a default constructor:
 
 ```ft
+import std.grid;
+from std.grid import Grid;
+
 grid Grid<int> = Grid<int>(2usize, 3usize, 0);
+
 grid.set(1, 2, 7);
 v int = grid.at(1, 2);
 rows usize = grid.rows();
@@ -963,7 +1077,11 @@ mutex.
 ## File paths: `std.fs`
 
 ```ft
+import std.fs;
+from std.fs import Path;
+
 p Path = "/home/user/notes.txt";
+
 p.directory();     // "/home/user"
 p.file_name();     // "notes.txt"
 p.extension();     // "txt"
@@ -987,6 +1105,7 @@ its own.
 
 ```ft
 import meta;
+
 std.out.println("built from ", $meta.FILE, " on ", $meta.PLATFORM);
 if ($meta.WINDOWS) @constexpr { ... } else { ... }
 ```

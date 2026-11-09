@@ -21,6 +21,7 @@ from std.memory import *;
 // body here to reach their method.
 import std.tree;
 from std.tree import *;
+from std.tree import Less;
 import std.util;
 from std.util import *;
 import std.type_traits;

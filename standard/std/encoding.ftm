@@ -16,8 +16,10 @@
 
 import std.bytes;
 from std.bytes import *;
+from std.bytes import Bytes;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // Encodes bytes as lowercase hex.
 export fn hex_encode(bytes &const Bytes) String {

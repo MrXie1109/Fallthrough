@@ -7,6 +7,33 @@
 
 use super::*;
 
+/// The type `begin()` or `end()` has on a fixed-length array, when the member
+/// is one of those two.
+///
+/// An array's iterator is a pointer to its first element, with `const` kept
+/// where the array is read-only: `[N]T` gives `*T`, `[N]const T` gives
+/// `*const T`. Both names have that type, because `end()` is a position one
+/// past the last element and a position is what `*` and `++` take.
+fn array_position(receiver: &Type, member: &str) -> Option<Type> {
+    if member != "begin" && member != "end" {
+        return None;
+    }
+    let bare = receiver.referent().unwrap_or(receiver);
+    let Type::Array { element, .. } = bare.unqualified() else {
+        return None;
+    };
+    let pointee_is_const = matches!(element.unqualified(), Type::Const(_));
+    let pointee = match element.unqualified() {
+        Type::Const(inner) => (**inner).clone(),
+        other => other.clone(),
+    };
+    Some(Type::Pointer {
+        pointee: Box::new(pointee),
+        pointee_is_const,
+        pointer_is_const: false,
+    })
+}
+
 impl TypeChecker {
     /// Chooses which overload of a method a call refers to.
     ///
@@ -651,6 +678,50 @@ impl TypeChecker {
         found
     }
 
+    /// The member functions of a type's home module whose name is `lookup`.
+    ///
+    /// This is argument-dependent lookup: the candidates for `x.f` are the
+    /// functions of the module that declares `x`'s type. A type of this file has
+    /// no home module recorded -- its functions are in scope already -- and one
+    /// that came from an import names it, so `Array`'s `length` is found where
+    /// `Array` is declared rather than where the call is written.
+    ///
+    /// ADL decides *where* to look, not *what may be found*: a member function
+    /// is still published by `export`, and one that is not exported is private
+    /// to its module however the receiver's type names it (09 §3.1.2).
+    fn associated_functions(
+        &self,
+        receiver_ty: &Type,
+        lookup: &str,
+    ) -> Vec<(String, FunctionSignature)> {
+        let bare = receiver_ty.referent().unwrap_or(receiver_ty);
+        let Some(nominal) = bare.nominal() else {
+            return Vec::new();
+        };
+        let Some(module) = &nominal.declared_in else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        for (member, signatures) in self.module_functions.get(module).into_iter().flatten() {
+            let answers = member == lookup
+                || member
+                    .rsplit_once('.')
+                    .is_some_and(|(_, last)| last == lookup);
+            if !answers {
+                continue;
+            }
+            for signature in signatures {
+                // Private to the module it is written in: the receiver's type
+                // says where to look, and `export` says what is there to find.
+                if !signature.exported {
+                    continue;
+                }
+                found.push((member.clone(), signature.clone()));
+            }
+        }
+        found
+    }
+
     /// The type a value of this type names, with references and `const` peeled.
     ///
     /// `&ICount` and `&const ICount` name `ICount`: a reference is an address of
@@ -805,11 +876,27 @@ impl TypeChecker {
         let special = fallc_ast::special::is_special(&field.field);
         let caller_substitution = self.substitution.clone();
         let member_substitution = self.receiver_substitution(&receiver_ty);
-        let lexical: Vec<FunctionSignature> = self
+        let mut lexical: Vec<FunctionSignature> = self
             .definitions_named(resolutions, &lookup)
             .into_iter()
             .filter_map(|def| def.signature.clone())
             .collect();
+        // Argument-dependent lookup: a member function belongs to the module
+        // that declares its receiver's type, and a call finds it there whether
+        // or not that module's functions were imported. Without this a type
+        // would have to publish its methods through the export table, which is
+        // the `export` every method would otherwise need -- and a method is not
+        // a name in scope, it is an answer to `receiver.name`.
+        for (member_name, signature) in self.associated_functions(&receiver_ty, &lookup) {
+            if signature.written_name == member_name
+                && !lexical.iter().any(|existing| {
+                    existing.written_name == signature.written_name
+                        && existing.param_types == signature.param_types
+                })
+            {
+                lexical.push(signature);
+            }
+        }
         // Whether the declaring module knows the name *for this receiver*. The
         // receiver is resolved with the receiver's own arguments installed, so
         // that a family's `&Array<T>` means `&Array<String>` here and the test
@@ -1004,6 +1091,21 @@ impl TypeChecker {
             }
         }
         self.substitution = caller_substitution.clone();
+        // A fixed-length array's elements are in line, and the language
+        // specifies a range loop as a call on `begin()` and `end()`
+        // (06 §5.1.6): the positions are pointers into the storage, and
+        // `end()` is `begin() + N`. There is no declaration to consult --
+        // the answer *is* the layout -- so the two members are answered here
+        // for `[N]T`, writable and read-only alike.
+        if node.args.is_empty()
+            && let Some(position) = array_position(&receiver_ty, &field.field)
+        {
+            // The symbol a member call reaches: these two are generated by
+            // code generation, which is where the pointer arithmetic lives.
+            self.method_calls
+                .insert(span, format!("__ft_array_{}", field.field));
+            return Some(position);
+        }
         let Some(first) = candidates.first() else {
             // A primitive's lifetime methods are built in, and a declared type
             // that writes none keeps the language's member-wise rules. Both
@@ -1824,6 +1926,10 @@ impl TypeChecker {
             // [`Self::type_name_as_expression`] -- except inside a requirement,
             // where naming a type is how a parameter is stated.
             crate::resolve::DefKind::Type => self.type_name_as_expression(name, span),
+            // A module is not a value either: `x auto = foo;` names a module,
+            // and what a module gives an expression is its members, reached
+            // through the dot.
+            crate::resolve::DefKind::Module => None,
             crate::resolve::DefKind::Unspecified => None,
         }
     }

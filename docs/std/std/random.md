@@ -202,7 +202,7 @@ Draws a number in `[low, high]`, included at both ends.
 
 The argument type chooses the distribution: an integer type takes the integer
 form (rejection sampling, no modulo bias), a floating type draws in
-`[low, high)`. The compiler's `IsFloating` trait decides at compile time, so
+`[low, high)`. The compiler's `std.type_traits.IsFloating` trait decides at compile time, so
 there is one call to remember and no `_real` suffix.
 
 - `low`: the smallest value the draw may give
@@ -225,18 +225,19 @@ Draws an integer in `[low, high]`, included at both ends, by rejection.
 fn uniform_int(this &Random, low int, high int) int
 ```
 
-### `export fn uniform_real(this &Random, low f64, high f64) f64 {`
+### `fn uniform_real(this &Random, low f64, high f64) f64`
 
 Returns a real in `[low, high)`.
 
 A generator word is divided by 2^32, so the result is in `[0, 1)` with the
 resolution of one word.
 
+Not exported: `uniform` covers a real interval as well as an integer one, and
+the compiler's `std.type_traits.IsFloating` chooses between them, so a program writes one
+call and never this one. The distributions below draw through it.
+
 ```
-export fn uniform_real(this &Random, low f64, high f64) f64 {
-    fraction f64 = (this.next_u32() as f64) / 4294967296.0;
-    return low + fraction * (high - low);
-}
+fn uniform_real(this &Random, low f64, high f64) f64
 ```
 
 ### `export fn normal(this &Random, mean f64, deviation f64) f64 {`
@@ -280,7 +281,7 @@ drawn away from zero so the logarithm is finite.
 ```
 export fn exponential(this &Random, rate f64) f64 {
     if (rate <= 0.0) {
-        util.panic("exponential needs a positive rate");
+        panic("exponential needs a positive rate");
     }
     u f64 = this.uniform_real(0.0, 1.0);
     if (u <= 0.0) {
@@ -312,7 +313,7 @@ of both are `mean`.
 ```
 export fn poisson(this &Random, mean f64) uint {
     if (mean < 0.0) {
-        util.panic("poisson needs a non-negative mean");
+        panic("poisson needs a non-negative mean");
     }
     if (mean > 30.0) {
         draw f64 = this.normal(mean, C.sqrt(mean));
@@ -363,7 +364,7 @@ in `(0, 1]`.
 ```
 export fn geometric(this &Random, chance f64) uint {
     if (chance <= 0.0 || chance > 1.0) {
-        util.panic("geometric needs a chance in (0, 1]");
+        panic("geometric needs a chance in (0, 1]");
     }
     if (chance >= 1.0) {
         return 1u32;

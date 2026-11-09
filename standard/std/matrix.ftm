@@ -19,10 +19,12 @@
 
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.math;
 from std.math import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 import std.util;
 from std.util import *;
 

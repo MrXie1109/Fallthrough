@@ -15,7 +15,7 @@ link bcrypt dynamic from default;
 // `BCRYPT_USE_SYSTEM_PREFERRED_RNG`: use the system's default generator.
 U32_SYSTEM_PREFERRED_RNG const u32 = 2;
 
-@extern_C fn BCryptGenRandom(algorithm *void, buffer *byte, count u32, flags u32) i32;
+@cabi fn BCryptGenRandom(algorithm *void, buffer *byte, count u32, flags u32) i32;
 
 // Fills `buffer` with `count` bytes from the system's entropy source.
 //

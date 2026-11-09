@@ -273,6 +273,23 @@ fn written_imports(tokens: &[fallc_lexer::Token]) -> Vec<String> {
     use fallc_lexer::{Keyword, TokenKind};
     let mut modules = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
+        // `use` loads the module it names, exactly as `import` does: the
+        // difference between the two words is what the names are called
+        // afterwards, not what is read from disk.
+        if matches!(token.kind, TokenKind::Keyword(Keyword::Use)) {
+            if let Some((path, _)) = path_after(tokens, index + 1) {
+                // `use M.x;` names a module and a member, and which of the two
+                // the last segment is cannot be decided here -- the parser
+                // records both readings and the loader settles it. Reading the
+                // whole path as a module name asked for a file called `M.x`,
+                // so the module a `use M.x` works through was never loaded.
+                modules.push(path.clone());
+                if let Some((module, _)) = path.rsplit_once('.') {
+                    modules.push(module.to_owned());
+                }
+            }
+            continue;
+        }
         if !matches!(token.kind, TokenKind::Keyword(Keyword::Import)) {
             continue;
         }
@@ -384,8 +401,14 @@ fn written_reexports(tokens: &[fallc_lexer::Token]) -> Vec<(String, Option<Vec<S
         // `@export from M import ..`; both publish the same names.
         let attribute = matches!(tokens[index].kind, TokenKind::Punct(Punctuation::At));
         let export_at = if attribute { index + 1 } else { index };
+        // `export` is a reserved word, so it arrives as a keyword token. The
+        // identifier spelling is accepted too: the attribute form `@export`
+        // was once written as one, and a scanner that looks for only one of
+        // the two silently re-exports nothing -- which is what an umbrella
+        // module is made of.
         let export = tokens.get(export_at).is_some_and(|token| {
-            token.kind == TokenKind::Ident && token.spelling() == Some("export")
+            matches!(token.kind, TokenKind::Keyword(Keyword::Export))
+                || (token.kind == TokenKind::Ident && token.spelling() == Some("export"))
         });
         let from = tokens
             .get(export_at + 1)
@@ -668,6 +691,11 @@ pub(super) fn load_imports(
     // that imports them, so `standard/C.ftm` can say what the C bindings need.
     let mut module_links: Vec<LinkRequest> = Vec::new();
     let mut bodies: Vec<ModuleBody> = Vec::new();
+    // The key each module read from a compiled table was written with: the
+    // closure hash is taken over this, not recomputed for a body that has no
+    // dependencies of its own.
+    let mut tabled_hashes: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
     // Which modules each loaded module imports, so that a module's checker gets
     // the template bodies of everything it can reach and nothing else: a name
     // is the same name in two modules, and std.memory's `Box` is not boxmod's.
@@ -681,14 +709,78 @@ pub(super) fn load_imports(
     // Modules already reached, so a module imported twice is loaded once and a
     // cycle terminates.
     let mut visited: Vec<String> = Vec::new();
+    // Each module an `import` or a `use` names, once each: the two forms load
+    // the same file, and what they differ in is how its names are written.
+    let mut wanted: Vec<(String, fallc_span::Span)> = Vec::new();
     for &item in &ast.items {
-        let fallc_ast::ItemKind::Import(import) = &ast.item(item).kind else {
-            continue;
+        match &ast.item(item).kind {
+            fallc_ast::ItemKind::Import(import) => {
+                wanted.push((import.module.clone(), import.name_span));
+            }
+            // `use M.get;` names `M` and a member; the module is what is
+            // loaded, and the member is bound afterwards.
+            fallc_ast::ItemKind::Use(use_item) if !use_item.module.is_empty() => {
+                // The path may be a module and a member, or one dotted module
+                // name. Both readings are tried, the longer file first: a file
+                // that answers for the whole path means the last segment was
+                // part of the module's name.
+                let whole = match &use_item.target {
+                    fallc_ast::UseTarget::Member(member) => Some((
+                        format!("{}.{}", use_item.module, member.name),
+                        use_item.module_span,
+                    )),
+                    _ => None,
+                };
+                if let Some((whole, span)) = whole
+                    && modules::find_module_file(&whole, importer, &search_path).is_some()
+                {
+                    wanted.push((whole, span));
+                }
+                wanted.push((use_item.module.clone(), use_item.module_span));
+            }
+            _ => {}
+        }
+    }
+    // A block of this file is not a file: `use foo.get;` on a `module foo { .. }`
+    // names this tree, and there is nothing to load.
+    let mut wanted = wanted;
+    {
+        let mut blocks: std::collections::HashSet<String> = std::collections::HashSet::new();
+        fn collect(
+            ast: &Ast,
+            items: &[fallc_ast::ItemId],
+            blocks: &mut std::collections::HashSet<String>,
+        ) {
+            for &item in items {
+                if let fallc_ast::ItemKind::Module(module) = &ast.item(item).kind {
+                    blocks.insert(module.name.name.clone());
+                    collect(ast, &module.items, blocks);
+                }
+            }
+        }
+        collect(ast, &ast.items, &mut blocks);
+        // Only a `use` may name a block: an `import` always names a file, and
+        // a file whose name matches a block in this file is still a file.
+        fn uses_import(ast: &Ast, name: &str) -> bool {
+            ast.items.iter().any(|item| {
+                matches!(&ast.item(*item).kind,
+                    fallc_ast::ItemKind::Import(import) if import.module == name)
+            })
+        }
+        wanted.retain(|(name, _)| !blocks.contains(name) || uses_import(ast, name));
+    }
+    for (module_name, module_span) in &wanted {
+        let import = &fallc_ast::ImportItem {
+            module: module_name.clone(),
+            name_span: *module_span,
+            alias: None,
+            exported: false,
+            members: None,
         };
-        let Some(module) = load_module(
+        let Some(_module) = load_module(
             session,
-            &import.module,
-            import.name_span,
+            module_name,
+            *module_span,
             importer,
             &search_path,
             &mut visited,
@@ -699,6 +791,7 @@ pub(super) fn load_imports(
             &mut module_links,
             &mut bodies,
             &mut module_imports,
+            &mut tabled_hashes,
             mode,
             macro_cache,
         ) else {
@@ -721,18 +814,72 @@ pub(super) fn load_imports(
                 resident
             );
         }
-        if let Some(path) = files.get(&import.module) {
-            direct.push((import.module.clone(), path.display().to_string()));
+        if let Some(path) = files.get(module_name) {
+            direct.push((module_name.clone(), path.display().to_string()));
         }
-        bind_import(
-            session,
-            import,
-            &module,
-            &mut bindings,
-            &mut aliases,
-            &mut externals,
-            &declared_types,
-        );
+    }
+    // What each import spells, once the modules are loaded: `import M;` binds
+    // `M`, `from M import x;` binds `x`, and `use` is the same binding under
+    // another word.
+    for &item in &ast.items {
+        match &ast.item(item).kind {
+            fallc_ast::ItemKind::Import(import) => {
+                let Some(module) = imported.get(&import.module) else {
+                    continue;
+                };
+                bind_import(
+                    session,
+                    import,
+                    module,
+                    &mut bindings,
+                    &mut aliases,
+                    &mut externals,
+                    &declared_types,
+                );
+            }
+            fallc_ast::ItemKind::Use(use_item) => {
+                // Which of the two readings the path had is decided by what was
+                // loaded: a file for `M.m` means `M.m` is the module's name and
+                // the path names the module itself, while a file for `M` alone
+                // means `m` is a member of it.
+                if let fallc_ast::UseTarget::Member(member) = &use_item.target
+                    && imported.contains_key(&format!("{}.{}", use_item.module, member.name))
+                {
+                    let whole = format!("{}.{}", use_item.module, member.name);
+                    if let Some(module) = imported.get(&whole) {
+                        bind_use(
+                            &fallc_ast::UseItem {
+                                module: whole,
+                                module_span: use_item.module_span,
+                                target: fallc_ast::UseTarget::Module {
+                                    alias: Some(member.clone()),
+                                },
+                                exported: use_item.exported,
+                                span: use_item.span,
+                            },
+                            module,
+                            &mut bindings,
+                            &mut aliases,
+                            &mut externals,
+                            &declared_types,
+                        );
+                    }
+                    continue;
+                }
+                let Some(module) = imported.get(&use_item.module) else {
+                    continue;
+                };
+                bind_use(
+                    use_item,
+                    module,
+                    &mut bindings,
+                    &mut aliases,
+                    &mut externals,
+                    &declared_types,
+                );
+            }
+            _ => {}
+        }
     }
     // A short name is a second name for a module, so two modules cannot share
     // one: `import a.math; import b.math;` makes `math` mean two things, and
@@ -789,7 +936,12 @@ pub(super) fn load_imports(
             "  retained: ast_items={ast_items} types={type_entries} bindings={binding_entries} defs={defs} names={name_bindings} env_nominal={nominal} env_families={families} env_interfaces={interfaces} declarations={declarations}"
         );
     }
-    stamp_cache_hashes(&mut bodies, &module_imports);
+    stamp_cache_hashes(&mut bodies, &module_imports, &tabled_hashes);
+    // Now that the closure is known, the tables on disk are told the key their
+    // objects are cached under. A reader cannot compute it -- doing so means
+    // loading every module it was compiled against, which is the work the table
+    // exists to save.
+    stamp_tables(&bodies);
     LoadedImports {
         modules: imported,
         direct,
@@ -813,11 +965,12 @@ pub(super) fn load_imports(
 fn stamp_cache_hashes(
     bodies: &mut [ModuleBody],
     module_imports: &std::collections::HashMap<String, Vec<String>>,
+    tabled: &std::collections::HashMap<String, u64>,
 ) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    let own: std::collections::HashMap<String, u64> = bodies
+    let mut own: std::collections::HashMap<String, u64> = bodies
         .iter()
         .map(|body| (body.module.clone(), body.cache_hash))
         .collect();
@@ -863,6 +1016,17 @@ fn stamp_cache_hashes(
         memo.insert(name.to_owned(), hash);
         hash
     }
+    // A module read from a compiled table already carries the key it was
+    // written with, and that key is the one its object is filed under. Taking
+    // it as the starting point is what keeps the two paths in agreement: a
+    // placeholder body has no dependence on the modules around it, so computing
+    // the closure for it would give a number the object cache has never seen.
+    for body in bodies.iter() {
+        if let Some(tabled) = tabled.get(&body.module) {
+            own.insert(body.module.clone(), *tabled);
+            memo.insert(body.module.clone(), *tabled);
+        }
+    }
     for body in bodies.iter_mut() {
         body.cache_hash = closure(
             &body.module.clone(),
@@ -871,6 +1035,33 @@ fn stamp_cache_hashes(
             &mut memo,
             &mut visiting,
         );
+    }
+}
+
+/// Writes each module's closure hash into its compiled table.
+///
+/// Only a table this compilation wrote is touched: a hit already carries the
+/// key it was written with, and rewriting it would be work for no change.
+fn stamp_tables(bodies: &[ModuleBody]) {
+    if !pcm_enabled() {
+        return;
+    }
+    let Some(directory) = crate::pipeline::cache::build_directory() else {
+        return;
+    };
+    for body in bodies {
+        let path = crate::pipeline::pcm::path_in(&directory, &body.module);
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        let Some(mut file) = crate::pipeline::pcm::read(&bytes) else {
+            continue;
+        };
+        if file.library_hash == body.cache_hash {
+            continue;
+        }
+        file.library_hash = body.cache_hash;
+        let _ = fs::write(&path, crate::pipeline::pcm::write(&file));
     }
 }
 
@@ -1006,24 +1197,36 @@ pub(super) fn add_known_types(
     imported_enums: &[(String, fallc_sema::ExportEnum)],
     imported_interfaces: &[(String, fallc_sema::ExportInterface)],
 ) {
-    for item in &ast.items {
-        match &ast.item(*item).kind {
-            fallc_ast::ItemKind::TypeDeclaration(declaration) => {
-                resolver.add_known_type(declaration.name.clone());
+    // A module block is a container, so a type it declares is a type of this
+    // file. The walk goes through blocks rather than around them.
+    fn own_names(ast: &Ast, items: &[fallc_ast::ItemId], resolver: &mut fallc_sema::Resolver) {
+        for &item in items {
+            match &ast.item(item).kind {
+                fallc_ast::ItemKind::TypeDeclaration(declaration) => {
+                    resolver.add_known_type(declaration.name.clone());
+                }
+                // An enum and an interface are types too. `Color.RED` names
+                // its enum's type through a member, and a query or a cast may
+                // name either, so the resolver has to know the name is not a
+                // value.
+                fallc_ast::ItemKind::EnumDeclaration(declaration) => {
+                    resolver.add_known_type(declaration.name.clone());
+                }
+                fallc_ast::ItemKind::Interface(declaration) => {
+                    resolver.add_known_type(declaration.name.clone());
+                }
+                fallc_ast::ItemKind::Module(module) => {
+                    own_names(ast, &module.items, resolver);
+                }
+                _ => {}
             }
-            // An enum and an interface are types too. `Color.RED` names its
-            // enum's type through a member, and a query or a cast may name
-            // either, so the resolver has to know the name is not a value.
-            fallc_ast::ItemKind::EnumDeclaration(declaration) => {
-                resolver.add_known_type(declaration.name.clone());
-            }
-            fallc_ast::ItemKind::Interface(declaration) => {
-                resolver.add_known_type(declaration.name.clone());
-            }
-            _ => {}
         }
     }
+    own_names(ast, &ast.items, resolver);
     for (name, _, _) in imported_types {
+        // Every spelling the collection decided on is a name here, bare or
+        // qualified alike: a bare one exists because the file declares it or a
+        // form bound it, and both are reasons to know the name.
         resolver.add_known_type(name.clone());
     }
     for (name, _) in imported_enums {
@@ -1038,16 +1241,72 @@ pub(super) fn add_known_types(
 ///
 /// Their names come into that file's scope, so they are written bare; a module
 /// reached with a plain `import M` binds only `M` itself.
-fn from_imported_modules(ast: &Ast) -> std::collections::HashSet<String> {
-    let mut modules = std::collections::HashSet::new();
+/// Whether a type name is one the file declares itself.
+///
+/// A module's own declarations answer to their bare names inside it, whatever
+/// the visibility rules say about importers: `std.bytes` writes `Bytes` because
+/// that is the type it declares.
+fn self_declared(declared: &std::collections::HashSet<String>, name: &str) -> bool {
+    declared.contains(name)
+}
+
+/// Whether this file names the module itself, by `import M;` or `use M;`.
+///
+/// That is the form whose members are written `M.x`. A `from M import x` and a
+/// `use M.x` bring the member into scope and not the module, so `M.x` is not a
+/// name this file has (09 §2.2.1).
+fn binds_module(ast: &Ast, module: &str) -> bool {
+    ast.items.iter().any(|item| match &ast.item(*item).kind {
+        fallc_ast::ItemKind::Import(import) => import.module == module && import.members.is_none(),
+        fallc_ast::ItemKind::Use(use_item) => {
+            use_item.module == module
+                && matches!(use_item.target, fallc_ast::UseTarget::Module { .. })
+        }
+        _ => false,
+    })
+}
+
+/// The names this file writes bare, from one module.
+///
+/// `from M import a, b;` binds `a` and `b` and nothing else; `from M import *;`,
+/// `use M.*;` bind every export; `use M.a;` binds `a`. Which names are bare is
+/// a property of the *form*, not of the module: a plain `import M;` binds none
+/// of them, so a type is written `M.Type` there and `Type` here.
+fn bound_names(
+    ast: &Ast,
+    module: &str,
+    exports: &fallc_sema::ExternalModule,
+) -> std::collections::HashSet<String> {
+    let mut bound: std::collections::HashSet<String> = std::collections::HashSet::new();
     for item in &ast.items {
-        if let fallc_ast::ItemKind::Import(import) = &ast.item(*item).kind
-            && import.members.is_some()
-        {
-            modules.insert(import.module.clone());
+        match &ast.item(*item).kind {
+            fallc_ast::ItemKind::Import(import) if import.module == module => match &import.members
+            {
+                Some(fallc_ast::ImportedMembers::All) => {
+                    // Every name, of every kind -- a type included. `from M
+                    // import *;` is the one form that makes another module's
+                    // declarations this file's names, and the language has no
+                    // second rule for a type: a name is a name.
+                    bound.extend(exports.export_names());
+                }
+                Some(fallc_ast::ImportedMembers::Named(names)) => {
+                    bound.extend(names.iter().map(|name| name.name.clone()));
+                }
+                None => {}
+            },
+            fallc_ast::ItemKind::Use(use_item) if use_item.module == module => {
+                match &use_item.target {
+                    fallc_ast::UseTarget::All => bound.extend(exports.export_names()),
+                    fallc_ast::UseTarget::Member(member) => {
+                        bound.insert(member.name.clone());
+                    }
+                    fallc_ast::UseTarget::Module { alias: _ } => {}
+                }
+            }
+            _ => {}
         }
     }
-    modules
+    bound
 }
 
 /// Teaches the resolver that these names are traits, so that a query is not
@@ -1191,9 +1450,59 @@ pub(super) fn load_module(
     module_links: &mut Vec<LinkRequest>,
     bodies: &mut Vec<ModuleBody>,
     module_imports: &mut std::collections::HashMap<String, Vec<String>>,
+    tabled_hashes: &mut std::collections::HashMap<String, u64>,
     mode: CheckMode,
     macro_cache: &mut MacroCache,
 ) -> Option<fallc_sema::ExternalModule> {
+    load_module_as(
+        session,
+        name,
+        name,
+        span,
+        importer,
+        search_path,
+        visited,
+        imported,
+        files,
+        umbrellas,
+        externals,
+        module_links,
+        bodies,
+        module_imports,
+        tabled_hashes,
+        mode,
+        macro_cache,
+    )
+}
+
+/// Loads a module, flattening its declarations into a block named after the
+/// importer's spelling of it.
+///
+/// One file is one module, and `importing` says what it is called here:
+/// `import M;` is the file's contents wrapped in `module M { .. }`, so the
+/// members are the module's and `export` decides what a name from outside may
+/// reach. The module is therefore parsed once, however many files import it.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn load_module_as(
+    session: &mut Session,
+    name: &str,
+    importing: &str,
+    span: fallc_span::Span,
+    importer: &Path,
+    search_path: &[PathBuf],
+    visited: &mut Vec<String>,
+    imported: &mut std::collections::HashMap<String, fallc_sema::ExternalModule>,
+    files: &mut std::collections::HashMap<String, PathBuf>,
+    umbrellas: &mut std::collections::HashMap<String, Vec<String>>,
+    externals: &mut std::collections::HashMap<String, fallc_ir::ExternalSignature>,
+    module_links: &mut Vec<LinkRequest>,
+    bodies: &mut Vec<ModuleBody>,
+    module_imports: &mut std::collections::HashMap<String, Vec<String>>,
+    tabled_hashes: &mut std::collections::HashMap<String, u64>,
+    mode: CheckMode,
+    macro_cache: &mut MacroCache,
+) -> Option<fallc_sema::ExternalModule> {
+    let _ = importing;
     let Some(found) = modules::find_module_file(name, importer, search_path) else {
         // Reported here rather than by the caller: only this frame knows the
         // name that was looked for, and a silent miss leaves the checker to
@@ -1251,6 +1560,61 @@ pub(super) fn load_module(
         text.hash(&mut hasher);
         hasher.finish()
     };
+    // The compiled table, when one is on disk and still describes this source.
+    //
+    // Importing a module is three passes -- parse, resolve, check -- and they
+    // produce one product. A `.pcm` is that product, so a hit skips all three.
+    //
+    // The check is on the module's *own* source hash and not on its
+    // dependencies: what a module exports is a property of its own text, and a
+    // dependency that changed under it matters only if this module was edited
+    // to match. The object cache keys on the whole closure, because an object
+    // holds inlined code; a table does not.
+    {
+        let mut dependencies_of_a_hit = Vec::new();
+        if let Some(recovered) = compiled_table(
+            mode == CheckMode::Full,
+            &mut dependencies_of_a_hit,
+            session,
+            name,
+            &found,
+            source_hash,
+            imported,
+            files,
+            bodies,
+            externals,
+            module_links,
+            tabled_hashes,
+        ) {
+            // The dependencies are recorded, and *loaded*: a table names their
+            // types, and the closure hash the library is keyed on is taken over
+            // the same graph. Skipping them saved reading a list and lost the
+            // key.
+            module_imports.insert(name.to_owned(), dependencies_of_a_hit.clone());
+            imported.insert(name.to_owned(), recovered.clone());
+            for dependency in dependencies_of_a_hit {
+                let _ = load_module(
+                    session,
+                    &dependency,
+                    span,
+                    &found,
+                    search_path,
+                    visited,
+                    imported,
+                    files,
+                    umbrellas,
+                    externals,
+                    module_links,
+                    bodies,
+                    module_imports,
+                    tabled_hashes,
+                    mode,
+                    macro_cache,
+                );
+            }
+            return Some(recovered);
+        }
+    }
     let file_id = session.add_file(found.clone(), text.clone());
     let mut lexer = Lexer::new(LexerConfig {
         preserve_trivia: false,
@@ -1285,12 +1649,44 @@ pub(super) fn load_module(
         .iter()
         .filter_map(|item| match &parsed_ast.item(*item).kind {
             fallc_ast::ItemKind::Import(import) => Some(import.module.clone()),
+            // A `use` reads its module exactly as an `import` does; it is the
+            // *binding* that differs. Leaving it out meant a module whose only
+            // reference to another was `use M.x;` never loaded `M`, so the name
+            // it exported stood for nothing.
+            fallc_ast::ItemKind::Use(use_item) if !use_item.module.is_empty() => {
+                Some(use_item.module.clone())
+            }
             _ => None,
         })
         .collect();
     module_imports.insert(name.to_owned(), direct_imports.clone());
     let mut reexported = Vec::new();
     for &item in &parsed_ast.items {
+        // A `use` loads the module it names, exactly as an `import` does.
+        if let fallc_ast::ItemKind::Use(use_item) = &parsed_ast.item(item).kind
+            && !use_item.module.is_empty()
+            && imported.get(&use_item.module).is_none()
+        {
+            let _ = load_module(
+                session,
+                &use_item.module,
+                use_item.module_span,
+                &found,
+                search_path,
+                visited,
+                imported,
+                files,
+                umbrellas,
+                externals,
+                module_links,
+                bodies,
+                module_imports,
+                tabled_hashes,
+                mode,
+                macro_cache,
+            );
+            continue;
+        }
         let fallc_ast::ItemKind::Import(import) = &parsed_ast.item(item).kind else {
             continue;
         };
@@ -1308,6 +1704,7 @@ pub(super) fn load_module(
             module_links,
             bodies,
             module_imports,
+            tabled_hashes,
             mode,
             macro_cache,
         ) else {
@@ -1327,6 +1724,48 @@ pub(super) fn load_module(
                 .or_default()
                 .push(name.to_owned());
         }
+    }
+
+    // `export use M.x;` publishes the binding it makes. It is the general form
+    // of `export from M import x;` -- one declaration that both brings a name in
+    // and passes it on -- and the two produce the same entry, because a reader
+    // of the export table cannot tell them apart and has no reason to.
+    for &item in &parsed_ast.items {
+        let fallc_ast::ItemKind::Use(use_item) = &parsed_ast.item(item).kind else {
+            continue;
+        };
+        if !use_item.exported {
+            continue;
+        }
+        let Some(dependency) = imported.get(&use_item.module).cloned() else {
+            continue;
+        };
+        let members = match &use_item.target {
+            // `export use M;` publishes the module's name, not its contents: a
+            // module is reached through `import`, and a name that names a module
+            // is not a declaration.
+            fallc_ast::UseTarget::Module { .. } => continue,
+            // `export use M.x;` publishes `x`.
+            fallc_ast::UseTarget::Member(member) => vec![member.name.clone()],
+            // `export use M.*;` publishes every name `M` exports.
+            fallc_ast::UseTarget::All => dependency.export_names(),
+        };
+        let selection = fallc_ast::ImportItem {
+            module: use_item.module.clone(),
+            name_span: use_item.module_span,
+            alias: None,
+            exported: true,
+            members: Some(fallc_ast::ImportedMembers::Named(
+                members
+                    .into_iter()
+                    .map(|name| fallc_ast::ImportedName {
+                        name,
+                        span: use_item.module_span,
+                    })
+                    .collect(),
+            )),
+        };
+        reexported.push(bind_reexport(&selection, &dependency));
     }
 
     // The module's own names are resolved and typed here, for the same reason
@@ -1358,6 +1797,37 @@ pub(super) fn load_module(
         bool,
         Vec<fallc_ast::TemplateParam>,
     );
+    // The type names this module declares itself. They are its own names
+    // wherever it is compiled, which is why they are collected once here and
+    // used by both the resolver's table and the checker's.
+    let written_here: std::collections::HashSet<String> = {
+        // A module block is a container, so a type it declares is this file's
+        // type as much as one at the top level.
+        fn collect(
+            ast: &Ast,
+            items: &[fallc_ast::ItemId],
+            out: &mut std::collections::HashSet<String>,
+        ) {
+            for &item in items {
+                match &ast.item(item).kind {
+                    fallc_ast::ItemKind::TypeDeclaration(declaration) => {
+                        out.insert(declaration.name.clone());
+                    }
+                    fallc_ast::ItemKind::EnumDeclaration(declaration) => {
+                        out.insert(declaration.name.clone());
+                    }
+                    fallc_ast::ItemKind::Interface(declaration) => {
+                        out.insert(declaration.name.clone());
+                    }
+                    fallc_ast::ItemKind::Module(module) => collect(ast, &module.items, out),
+                    _ => {}
+                }
+            }
+        }
+        let mut out = std::collections::HashSet::new();
+        collect(&parsed_ast, &parsed_ast.items, &mut out);
+        out
+    };
     let mut written: Vec<WrittenType> = Vec::new();
     for &item in &parsed_ast.items {
         if let fallc_ast::ItemKind::TypeDeclaration(declaration) = &parsed_ast.item(item).kind {
@@ -1398,6 +1868,7 @@ pub(super) fn load_module(
         .iter()
         .map(|(name, _, is_union, _)| fallc_sema::NominalType {
             name: name.clone(),
+            declared_in: None,
             fields: Vec::new(),
             mutable_fields: Vec::new(),
             field_alignments: Vec::new(),
@@ -1482,18 +1953,38 @@ pub(super) fn load_module(
                 // is a name of this file, written without the module: that is
                 // what the form does (09 §2.2.2). A plain `import M` binds no
                 // such name, so the type is written `M.Type`.
-                let names_it_binds = from_imported_modules(&parsed_ast).contains(dependency_name);
+                let bound = bound_names(&parsed_ast, dependency_name, dependency);
                 for (type_name, ty) in &dependency.types {
-                    if names_it_binds {
+                    // A type name is a name like any other: it is written bare
+                    // only where the form binds it -- `from M import ..`,
+                    // `use M.x` -- and otherwise as `M.Type`. The exporter's
+                    // *own* types are different: a module's declarations are
+                    // its own names, wherever the module is compiled.
+                    // A type of the file being checked is its own name, and
+                    // this branch walks the file's *imports* -- so the check
+                    // is whether the name is declared here, not whether some
+                    // dependency exports it.
+                    let declared_here = written_here.contains(type_name.as_str());
+                    let bare = bound.contains(type_name.as_str()) || declared_here;
+                    if bare {
                         known_types.push((type_name.clone(), ty.clone(), dependency_name.clone()));
                         resolver.add_known_type(type_name.clone());
                     }
                     for key in module_keys(dependency_name) {
-                        known_types.push((
-                            format!("{key}.{type_name}"),
-                            ty.clone(),
-                            dependency_name.clone(),
-                        ));
+                        // The qualified spelling is a name of this file only
+                        // when the form is one that binds the *module*: a
+                        // plain `import M`, or `use M`. The other forms are
+                        // `from M import x` and `use M.x`, which bind the
+                        // member and not the module, and there `M.x` names
+                        // nothing (09 §2.2.1).
+                        if binds_module(&parsed_ast, dependency_name) {
+                            known_types.push((
+                                format!("{key}.{type_name}"),
+                                ty.clone(),
+                                dependency_name.clone(),
+                            ));
+                            resolver.add_known_type(format!("{key}.{type_name}"));
+                        }
                     }
                 }
                 for (enum_name, exported) in &dependency.enums {
@@ -1503,6 +1994,11 @@ pub(super) fn load_module(
                     known_interfaces.push((interface_name.clone(), exported.clone()));
                 }
             }
+            // The file's own declarations are names here too, and nothing else
+            // would say so: the loop above walks the file's *imports*, and a
+            // type this file declares is in none of them. `add_known_types`
+            // reads the file's own tree for this, which is why it is handed the
+            // tree as well as the imported names.
             add_known_types(
                 &mut resolver,
                 &parsed_ast,
@@ -1525,21 +2021,38 @@ pub(super) fn load_module(
                 fallc_ir::ExternalSignature,
             > = std::collections::HashMap::new();
             for &item in &parsed_ast.items {
-                let fallc_ast::ItemKind::Import(import) = &parsed_ast.item(item).kind else {
-                    continue;
-                };
-                let Some(exports) = imported.get(&import.module) else {
-                    continue;
-                };
-                bind_import(
-                    session,
-                    import,
-                    exports,
-                    &mut bindings,
-                    &mut aliases,
-                    &mut local_externals,
-                    &module_declared_types,
-                );
+                // A module's own `use` binds exactly as a program's does, so
+                // the same two branches serve both.
+                match &parsed_ast.item(item).kind {
+                    fallc_ast::ItemKind::Import(import) => {
+                        let Some(exports) = imported.get(&import.module) else {
+                            continue;
+                        };
+                        bind_import(
+                            session,
+                            import,
+                            exports,
+                            &mut bindings,
+                            &mut aliases,
+                            &mut local_externals,
+                            &module_declared_types,
+                        );
+                    }
+                    fallc_ast::ItemKind::Use(use_item) if !use_item.module.is_empty() => {
+                        let Some(exports) = imported.get(&use_item.module) else {
+                            continue;
+                        };
+                        bind_use(
+                            use_item,
+                            exports,
+                            &mut bindings,
+                            &mut aliases,
+                            &mut local_externals,
+                            &module_declared_types,
+                        );
+                    }
+                    _ => {}
+                }
             }
             for (alias, module) in aliases {
                 if let Some(external) = imported.get(&module).cloned() {
@@ -1553,6 +2066,14 @@ pub(super) fn load_module(
         // A declaration-only load resolves the bodies that an instantiation
         // will be lowered from, and nothing else: the ordinary implementation
         // of this module is already in its compiled object.
+        // The types this module declares itself: a signature written in terms
+        // of one -- `fn data(this &Bytes) *byte` -- names it bare, and this is
+        // the table it resolves against. A module's own declarations are its
+        // names, and `export` decides what a *reader from outside* may reach,
+        // not what the module may say about itself.
+        for declared in &module_declared_types {
+            resolver.add_known_type(declared.name.clone());
+        }
         resolver.set_declarations_only(mode == CheckMode::DeclarationsOnly);
         if std::env::var_os("FALLC_STAGES").is_some() {
             eprintln!("    {name:<32} resolve mode {mode:?}");
@@ -1564,6 +2085,21 @@ pub(super) fn load_module(
         let mut checker = TypeChecker::new(fallc_ir::Backend::pointer_bits());
         checker.set_declarations_only(mode == CheckMode::DeclarationsOnly);
         checker.add_module(name.to_owned());
+        for declared in &module_declared_types {
+            checker.add_exported_type(
+                declared.name.clone(),
+                Vec::new(),
+                declared.fields.clone(),
+                Vec::new(),
+                None,
+                declared.is_union,
+                declared.is_incomplete,
+                declared.field_alignments.clone(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            );
+        }
         // Every name the module is reachable by, so that `memory.malloc` is
         // recognised as a module member rather than a field of a value. Using
         // the full dotted names alone meant the short name was missing here
@@ -1606,7 +2142,14 @@ pub(super) fn load_module(
                 // `lib.Thing` is the name a program uses. A module this file
                 // reaches with `from M import ..` puts `Thing` itself in scope,
                 // so that spelling is registered too (09 §2.2.2).
-                if from_imported_modules(&parsed_ast).contains(dependency_name) {
+                // The spellings the module may write: what a form binds, and
+                // its own declarations, which are its names wherever it is
+                // compiled.
+                let own = self_declared(&written_here, type_name);
+                if own
+                    || bound_names(&parsed_ast, dependency_name, dependency)
+                        .contains(type_name.as_str())
+                {
                     checker.add_exported_type(
                         type_name.clone(),
                         ty.declaration_fields(),
@@ -1700,7 +2243,7 @@ pub(super) fn load_module(
         // The exported functions of the modules this one imports are added to it
         // for exactly that.
         let mut resolutions = resolved.resolutions.clone();
-        // Only names the module does not already declare: its own `@extern_C`
+        // Only names the module does not already declare: its own `@cabi`
         // declaration of `strlen` is one function, and importing the C module's
         // exported copy as well made every call to it ambiguous.
         let already: std::collections::HashSet<(String, String)> = resolutions
@@ -1950,7 +2493,15 @@ pub(super) fn load_module(
     // -- from the export table that was just built -- is what lets an importer
     // read the interface as text instead of re-reading and re-checking the
     // module's implementation. See `interface`.
-    crate::pipeline::interface::publish(&exports, name, &parsed_ast);
+    // A declaration-only pass does not read bodies, so a deduced result is not
+    // there to write: the interface it would produce is worse than the one on
+    // disk, which the pass that read the bodies wrote.
+    crate::pipeline::interface::publish_with(
+        &exports,
+        name,
+        &parsed_ast,
+        mode != CheckMode::DeclarationsOnly,
+    );
 
     // Every exported function is also recorded as an external symbol, keyed by
     // its qualified name, so the code generator can declare the ones that are
@@ -1966,6 +2517,16 @@ pub(super) fn load_module(
             // mangling carries the parameter types: two overloads of one name
             // are two entries, not one that overwrites the other.
             for signature in signatures {
+                // A template is not a function: its parameters name its own
+                // template parameters, and the symbol belongs to each
+                // instantiation rather than to the declaration. Registering one
+                // gave a call site a signature whose parameter type is `Ts` --
+                // a name code generation has nothing to map -- and the checker
+                // had already recorded the instantiation's own symbol, so the
+                // entry was never the one a call reached.
+                if !signature.template_params.is_empty() || signature.pack.is_some() {
+                    continue;
+                }
                 let qualified = format!("{key}.{member}");
                 let external = external_signature(signature, &module_declared_types);
                 // Keyed by the qualified name, which is what a call site has.
@@ -1981,8 +2542,249 @@ pub(super) fn load_module(
         }
     }
     module_links.extend(collect_links(&parsed_ast, &[]));
+    // Written only by the pass that read everything: a declarations-only pass
+    // was reached *because* a table was missing, and writing one from it would
+    // publish a table with the bodies' answers absent -- a deduced return type
+    // is the one that showed this.
+    if std::env::var_os("FALLC_STAGES").is_some() {
+        eprintln!(
+            "    STORE {name} mode={mode:?} cache={:?}",
+            crate::pipeline::cache::build_directory().map(|d| d.display().to_string())
+        );
+    }
+    if mode == CheckMode::Full && !name_is_a_test_fixture(name) {
+        store_compiled_table(
+            name,
+            &found,
+            source_hash,
+            &exports,
+            &parsed_ast,
+            module_imports.get(name).map_or(&[][..], Vec::as_slice),
+        );
+    }
     imported.insert(name.to_owned(), exports.clone());
     Some(exports)
+}
+
+/// Whether compiled tables are read and written.
+///
+/// A table replaces parsing and checking a module with reading an answer this
+/// compiler gave, which is what makes a rebuild of an unchanged program cheap.
+/// It is on unless `FALLC_PCM=0` says otherwise.
+///
+/// A test turns it off. A test compiles a fixture in a temporary directory and
+/// then edits it; a table keyed on the source hash is *correct* across such an
+/// edit, and the failure it caused was subtler than a wrong answer -- a module
+/// whose table was written by an earlier run was read without the tree its
+/// templates needed. Reading the source is the behaviour every other test in
+/// the suite checks, so it is the behaviour they run under.
+fn pcm_enabled() -> bool {
+    crate::pipeline::compiled_tables()
+}
+
+/// Whether a module's table is not cached.
+///
+/// A module compiled from a test fixture is compiled once and never imported
+/// again; caching it only leaves files behind. The name is a convention, not a
+/// rule the language has -- `tests/` fixtures are named for what they show.
+fn name_is_a_test_fixture(name: &str) -> bool {
+    name.starts_with("probe") || name.starts_with("fixture")
+}
+
+/// Reads a module's compiled table, when the cache has one for this source.
+///
+/// Returns `None` for a miss of any kind -- no cache directory, no file, a file
+/// from another compiler, a source that changed, a table that does not decode --
+/// and every one of those means the same thing to the caller: compile the
+/// module. A cache is an optimisation, so a miss is never an error.
+fn compiled_table(
+    full: bool,
+    loaded_dependencies: &mut Vec<String>,
+    session: &mut Session,
+    name: &str,
+    found: &Path,
+    source_hash: u64,
+    imported: &std::collections::HashMap<String, fallc_sema::ExternalModule>,
+    files: &mut std::collections::HashMap<String, PathBuf>,
+    bodies: &mut Vec<ModuleBody>,
+    externals: &mut std::collections::HashMap<String, fallc_ir::ExternalSignature>,
+    module_links: &mut Vec<LinkRequest>,
+    tabled_hashes: &mut std::collections::HashMap<String, u64>,
+) -> Option<fallc_sema::ExternalModule> {
+    if !pcm_enabled() {
+        return None;
+    }
+    // A full load is the compilation a table exists to skip, and it is the one
+    // that produces the module's object. Answering it from a table would leave
+    // the program holding a table and no code.
+    if full {
+        return None;
+    }
+    let directory = crate::pipeline::cache::build_directory()?;
+    let path = crate::pipeline::pcm::path_in(&directory, name);
+    let bytes = fs::read(&path).ok()?;
+    let file = crate::pipeline::pcm::read(&bytes)?;
+    if file.library_hash == 0 {
+        // Written before the closure was known: the next full compilation
+        // completes it, and until then this file cannot name its own object.
+        return None;
+    }
+    if file.source_hash != source_hash {
+        // The module was edited. The file on disk is the previous text's table,
+        // and a table for other source is not a cache to be trusted -- it would
+        // publish a signature the source no longer has.
+        let _ = fs::remove_file(&path);
+        return None;
+    }
+    // Its own dependencies come first: the table names their types, and the
+    // names in it resolve against *their* tables. Reading this one without
+    // them would produce a module whose fields point at types nothing declares.
+    for (dependency, _) in &file.dependencies {
+        loaded_dependencies.push(dependency.clone());
+    }
+    let table = match fallc_sema::pcm::decode(&file.table, fallc_parser::parse_type_source) {
+        Ok(table) => table,
+        // A table that does not decode is a file from a compiler this one does
+        // not agree with. Removing it means the next build writes a fresh one
+        // rather than reading this one again.
+        Err(_) => {
+            let _ = fs::remove_file(&path);
+            return None;
+        }
+    };
+    if std::env::var_os("FALLC_STAGES").is_some() {
+        eprintln!("    {name:<32} table hit              ");
+    }
+    // The rest of what loading a module does, done from the table: the
+    // symbols a call site is lowered against, and the libraries it links.
+    //
+    // An importer's code generator is handed `M.f` and has to declare the
+    // symbol behind it; that record is built here because the table carries
+    // every exported signature. Without it, a call reaches code generation as
+    // an undeclared symbol -- which is what a table hit first showed.
+    // The declared types the signatures are read against: a parameter written
+    // `Array<int>` is resolved through the table's own record of it.
+    let declared: Vec<fallc_sema::NominalType> = table
+        .types
+        .iter()
+        .map(|(name, ty)| fallc_sema::NominalType {
+            name: name.clone(),
+            declared_in: Some(
+                name.rsplit_once('.')
+                    .map_or(name.clone(), |(m, _)| m.to_owned()),
+            ),
+            fields: ty
+                .fields
+                .iter()
+                .map(|field| {
+                    (
+                        field.name.clone(),
+                        field.resolved.clone().unwrap_or_else(|| {
+                            fallc_sema::Type::unspecified(
+                                &fallc_sema::pcm::syntax_text(&field.ty),
+                                fallc_span::Span::SYNTHETIC,
+                            )
+                        }),
+                    )
+                })
+                .collect(),
+            mutable_fields: Vec::new(),
+            field_alignments: ty
+                .fields
+                .iter()
+                .filter_map(|field| field.align.map(|align| (field.name.clone(), align)))
+                .collect(),
+            is_union: ty.is_union,
+            is_incomplete: ty.is_forward,
+            union_storage: None,
+            template_arguments: None,
+        })
+        .collect();
+    for (member, signatures) in &table.symbols {
+        for key in &module_keys(name) {
+            for signature in signatures {
+                let qualified = format!("{key}.{member}");
+                let external = crate::pipeline::exports::external_signature(signature, &declared);
+                externals
+                    .entry(qualified.clone())
+                    .or_insert_with(|| external.clone());
+                externals.insert(format!("{qualified}#{}", external.symbol), external);
+            }
+        }
+    }
+    // A module's own `link` instructions. They are the one thing the table
+    // does not carry -- a link instruction names a library, not a declaration
+    // -- and a hit that dropped them would link a program without the
+    // libraries its modules asked for. Reading them means parsing this
+    // module's file, which is one pass against the three a hit saves; the
+    // alternative is to write them into the table, and that is a format change
+    // for a rare statement.
+    if let Ok(text) = fs::read_to_string(found) {
+        let mut lexer = Lexer::new(LexerConfig {
+            preserve_trivia: false,
+            errors_are_warnings: false,
+        });
+        let lexed = lexer.tokenize(&text, session.add_file(found.to_path_buf(), text.clone()));
+        let mut parser = fallc_parser::Parser::default();
+        let mut stream = fallc_parser::TokenStream::new(lexed.tokens);
+        let parsed = parser.parse_file(&mut stream);
+        module_links.extend(collect_links(&parsed.ast, &[]));
+    }
+    // The library the program links is keyed on the modules' own hashes, and a
+    // hit must contribute the same entry a full load would -- otherwise the
+    // key would describe a library of no modules and the linker would find no
+    // definitions. What is recorded is the hash and the name; the tree and the
+    // tables are what a hit does not rebuild.
+    bodies.push(ModuleBody::cache_only(name.to_owned(), file.library_hash));
+    tabled_hashes.insert(name.to_owned(), file.library_hash);
+    let _ = (session, imported);
+    files.insert(name.to_owned(), found.to_path_buf());
+    Some(table)
+}
+
+/// Writes a module's compiled table into the cache.
+///
+/// Failure is silent: the directory may be read-only, the disk may be full, and
+/// none of that is a reason to fail a compilation that already succeeded.
+fn store_compiled_table(
+    name: &str,
+    found: &Path,
+    source_hash: u64,
+    exports: &fallc_sema::ExternalModule,
+    ast: &Ast,
+    dependencies: &[String],
+) {
+    if !pcm_enabled() {
+        return;
+    }
+    let Some(directory) = crate::pipeline::cache::build_directory() else {
+        return;
+    };
+    let path = crate::pipeline::pcm::path_in(&directory, name);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let module = crate::pipeline::pcm::CompiledModule {
+        // Their *names* are what the reader needs to load them before using
+        // this table. Their hashes are not consulted: see the note in `pcm`.
+        dependencies: dependencies
+            .iter()
+            .map(|dependency| (dependency.clone(), 0))
+            .collect(),
+        source_hash,
+        // The closure hash is stamped after every module is loaded, which is
+        // after this point. Zero says "not known yet"; `stamp_tables` fills it
+        // in, and a reader that finds zero treats the file as a miss -- a table
+        // without the key names a library that cannot be looked up.
+        library_hash: 0,
+        table: fallc_sema::pcm::encode(exports),
+        interface: crate::pipeline::interface::render(exports, name, ast).into_bytes(),
+        object: None,
+    };
+    let _ = (
+        found,
+        fs::write(&path, crate::pipeline::pcm::write(&module)),
+    );
 }
 
 /// Selects what an `export from` republishes from the module it names.
@@ -2041,6 +2843,92 @@ pub(super) fn bind_reexport(
         None => {}
     }
     selected
+}
+
+/// Turns one `use` declaration into the local names it introduces.
+///
+/// `use` and `from … import …` are the same binding under two words: the module
+/// is loaded once, and what differs is which names this file may write bare.
+/// The three forms are the three spellings of an import:
+///
+/// ```text
+/// use foo;            // the module itself, as `foo`
+/// use foo as f;       // the module itself, as `f`
+/// use foo.get;        // `get`
+/// use foo.*;          // every export of `foo`
+/// ```
+#[allow(clippy::too_many_arguments)]
+pub(super) fn bind_use(
+    item: &fallc_ast::UseItem,
+    exports: &fallc_sema::ExternalModule,
+    bindings: &mut Vec<fallc_sema::ImportBinding>,
+    aliases: &mut Vec<(String, String)>,
+    externals: &mut std::collections::HashMap<String, fallc_ir::ExternalSignature>,
+    declared_types: &[fallc_sema::NominalType],
+) {
+    match &item.target {
+        fallc_ast::UseTarget::Module { alias } => {
+            // The module's members must still be defined, because a special
+            // method is reached by its bound name rather than through the
+            // module; the plain import does exactly this, so it is reused.
+            bindings.push(fallc_sema::ImportBinding {
+                local: item.module.clone(),
+                module: item.module.clone(),
+                member: None,
+                span: item.module_span,
+                reexported: false,
+            });
+            if let Some(alias) = alias {
+                aliases.push((alias.name.clone(), item.module.clone()));
+                for (member, signatures) in &exports.symbols {
+                    for signature in signatures {
+                        let qualified = format!("{}.{member}", alias.name);
+                        let external = external_signature(signature, declared_types);
+                        externals
+                            .entry(qualified.clone())
+                            .or_insert_with(|| external.clone());
+                        externals.insert(format!("{qualified}#{}", external.symbol), external);
+                    }
+                }
+            }
+        }
+        fallc_ast::UseTarget::Member(member) => {
+            // The module itself is still defined, for the same reason a plain
+            // import defines it.
+            bindings.push(fallc_sema::ImportBinding {
+                local: item.module.clone(),
+                module: item.module.clone(),
+                member: None,
+                span: item.module_span,
+                reexported: false,
+            });
+            bindings.push(fallc_sema::ImportBinding {
+                local: member.name.clone(),
+                module: item.module.clone(),
+                member: Some(member.name.clone()),
+                span: member.span,
+                reexported: false,
+            });
+        }
+        fallc_ast::UseTarget::All => {
+            bindings.push(fallc_sema::ImportBinding {
+                local: item.module.clone(),
+                module: item.module.clone(),
+                member: None,
+                span: item.module_span,
+                reexported: false,
+            });
+            for name in exports.export_names() {
+                bindings.push(fallc_sema::ImportBinding {
+                    local: name.clone(),
+                    module: item.module.clone(),
+                    member: Some(name),
+                    span: item.module_span,
+                    reexported: false,
+                });
+            }
+        }
+    }
 }
 
 /// Turns one import declaration into the local names it introduces.

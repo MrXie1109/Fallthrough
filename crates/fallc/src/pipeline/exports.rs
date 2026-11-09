@@ -20,6 +20,7 @@ pub(super) fn declared_types_of(ast: &Ast) -> Vec<fallc_sema::NominalType> {
         // needed, so a field's type stays unspecified and is filled in when the
         // module is checked.
         types.push(fallc_sema::NominalType {
+            declared_in: None,
             mutable_fields: Vec::new(),
             field_alignments: Vec::new(),
             // `type Foo;` names a type whose definition is elsewhere, so the
@@ -84,7 +85,7 @@ pub(super) fn external_signature(
     // call site asked for the bare name while the module emitted a mangled one,
     // and the link failed with an undefined symbol.
     //
-    // A function implemented elsewhere keeps its declared name: `@extern_C`
+    // A function implemented elsewhere keeps its declared name: `@cabi`
     // names a symbol the C library exports under exactly that spelling, and
     // mangling it would look for something that was never there.
     let symbol = if signature.instantiated {
@@ -733,7 +734,12 @@ pub(super) fn collect_exports(
         let fallc_ast::ItemKind::Function(function) = &ast.item(item).kind else {
             continue;
         };
-        if !function.exported {
+        // A method is reached through its receiver's type, so it is published
+        // with the type whether or not it says `export`: `xs.length()` is a
+        // method of `Array`, and an importer that has the type has its methods.
+        // The type's *own* `export` decides whether the type travels at all.
+        let method = false;
+        if !function.exported && !method {
             continue;
         }
         // A declaration `@enable_if` removed for this build is not exported
@@ -747,10 +753,8 @@ pub(super) fn collect_exports(
         // answers travel with the export so an importer builds the same call
         // -- and asks for the same symbol -- as the definition emitted.
         let resolve = |ty: &fallc_ast::TypeSyntax, in_parameter: bool| {
-            type_of_types
-                .get(&ty.span())
-                .cloned()
-                .unwrap_or_else(|| resolve_signature_type_with(ty, in_parameter, declared))
+            let found = type_of_types.get(&ty.span()).cloned();
+            found.unwrap_or_else(|| resolve_signature_type_with(ty, in_parameter, declared))
         };
         let resolved = if function.template_params.is_empty()
             && !function.has_pack()
@@ -775,11 +779,23 @@ pub(super) fn collect_exports(
                         .collect::<Vec<_>>(),
                 )
             };
-            Some(fallc_sema::ResolvedSignature {
-                params,
-                returns: resolve(&function.return_type, false),
-                symbol,
-            })
+            let returns = resolve(&function.return_type, false);
+            // `auto` that nothing deduced is a question, not an answer: the
+            // body was not checked this time, so the published signature says
+            // `auto` and the reader keeps its own resolution.
+            if matches!(
+                function.return_type,
+                fallc_ast::TypeSyntax::Auto(_) | fallc_ast::TypeSyntax::DecltypeAuto(_)
+            ) && returns.is_unspecified()
+            {
+                None
+            } else {
+                Some(fallc_sema::ResolvedSignature {
+                    params,
+                    returns,
+                    symbol,
+                })
+            }
         } else {
             None
         };

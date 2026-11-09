@@ -627,6 +627,52 @@ impl<'ctx> Lowerer<'ctx> {
     /// The receiver is an address in both cases: a pointer receiver already is
     /// one, and a value receiver has its address taken. That is what lets a
     /// method be called on a value and on a pointer with the same syntax.
+    /// Lowers `begin()` or `end()` on a fixed-length array.
+    ///
+    /// The positions of an array's range loop are addresses of its elements:
+    /// `begin()` is where the first element is, and `end()` is one past the
+    /// last. Both are the storage plus an offset, which is why no function is
+    /// emitted for them -- the answer is the layout, and the layout is in hand.
+    ///
+    /// `None` when the receiver is not a fixed-length array, so the ordinary
+    /// method path still runs for every other receiver.
+    fn lower_array_position(
+        &mut self,
+        ast: &Ast,
+        types: &TypeTable,
+        builder: &Builder<'static>,
+        field: &FieldExpr,
+        span: fallc_span::Span,
+    ) -> Result<Option<BasicValueEnum<'static>>, CodegenError> {
+        let receiver = types
+            .get(field.object)
+            .cloned()
+            .ok_or_else(|| CodegenError::waiting_for_spec("this receiver", span))?;
+        let bare = receiver
+            .referent()
+            .unwrap_or(&receiver)
+            .unqualified()
+            .clone();
+        let Type::Array { element, len } = bare else {
+            return Ok(None);
+        };
+        let Some(storage) = self.lower_lvalue(ast, types, builder, field.object) else {
+            return Ok(None);
+        };
+        let start = storage.storage;
+        if field.field == "begin" {
+            return Ok(Some(start.into()));
+        }
+        // `end()` is `begin() + N`: a `getelementptr` past the last element,
+        // which is a position and not a value to read.
+        let element_llvm = TypeMapper::new(self.backend.context())
+            .map(&element)
+            .ok_or_else(|| CodegenError::waiting_for_spec("this element type", span))?;
+        let count = self.backend.context().i64_type().const_int(len, false);
+        let pointer = build_index_gep(builder, element_llvm, start, count)?;
+        Ok(Some(pointer.into()))
+    }
+
     pub(super) fn lower_method_call(
         &mut self,
         ast: &Ast,
@@ -640,6 +686,16 @@ impl<'ctx> Lowerer<'ctx> {
         // checker chose the entry.
         if let Some(info) = self.interface_calls.get(&span).cloned() {
             return self.lower_interface_call(ast, types, builder, field, call, &info, span);
+        }
+        // `begin()` and `end()` on a fixed-length array: the positions are the
+        // storage itself, so the call is the address of the first element, or
+        // that address advanced by the count (06 §5.1.6). Nothing is emitted
+        // for a function that does not exist -- the checker's answer is the
+        // layout, and the layout is right here.
+        if matches!(field.field.as_str(), "begin" | "end")
+            && let Some(value) = self.lower_array_position(ast, types, builder, field, span)?
+        {
+            return Ok(Some(value));
         }
         let name = field.field.as_str();
         // A method's symbol follows the same rule as every other function's --

@@ -1161,6 +1161,12 @@ impl Type {
 #[derive(Clone, Debug, Default)]
 pub struct BindingTypes {
     entries: Vec<(Span, Type)>,
+    /// The written name of each binding, in the order they were recorded.
+    ///
+    /// Kept so that a question about a *name* can be answered without the
+    /// tree: whether `node` in `node->value` is a local is asked while reading
+    /// an expression, and the expression's name is a string.
+    names: Vec<String>,
 }
 
 impl BindingTypes {
@@ -1190,6 +1196,28 @@ impl BindingTypes {
 
     /// Returns the type of the binding declared at `name_span`.
     #[must_use]
+    /// Whether any binding was recorded under a definition with this written
+    /// name.
+    ///
+    /// The table is keyed by span, and a span is what a binding was recorded
+    /// at; the *name* is what a reader wrote. Answering the second question
+    /// needs the spans, which is all this table holds -- so it also holds the
+    /// names, recorded beside them.
+    pub fn has_binding_named(&self, name: &str) -> bool {
+        self.names.iter().any(|candidate| candidate == name)
+    }
+
+    /// Records the written name of a binding.
+    ///
+    /// Called beside [`Self::insert`], which is given only the span: the name
+    /// is what a later question is about, and the span is what the value is
+    /// keyed by.
+    pub fn record_name(&mut self, name: &str) {
+        if !self.names.iter().any(|candidate| candidate == name) {
+            self.names.push(name.to_owned());
+        }
+    }
+
     pub fn get(&self, name_span: Span) -> Option<&Type> {
         self.entries
             .iter()
@@ -1296,7 +1324,18 @@ pub fn mangle_type(ty: &Type) -> String {
         Type::Bool => tagged('B', "bool"),
         Type::NullPointer => tagged('B', "nullptr"),
         Type::String => tagged('B', "string"),
-        Type::Nominal(nominal) => tagged('N', &nominal.name),
+        // The *declared* name, without the module a reference may qualify it
+        // with: `std.String` and `String` are one type, and a symbol built from
+        // the spelling would make them two -- the caller would ask for
+        // `__init___R0N10_std.String` while the module emitted
+        // `__init___R0N6_String`.
+        Type::Nominal(nominal) => tagged(
+            'N',
+            nominal
+                .name
+                .rsplit_once('.')
+                .map_or(nominal.name.as_str(), |(_, last)| last),
+        ),
         // `volatile T` is a different type from `T`, so it mangles
         // differently: a function taking one is not a function taking the
         // other, and they must not share a symbol.
@@ -1394,6 +1433,14 @@ pub struct ConversionMethod {
 pub struct NominalType {
     /// The declared name.
     pub name: String,
+    /// The module that declares it, when the type came from one.
+    ///
+    /// This is what argument-dependent lookup is built on: `xs.length()` is a
+    /// member function of `Array`, and the candidates for `length` are the
+    /// functions of the module that declares `Array` -- whether or not that
+    /// module's functions were imported. `None` for a type of the file being
+    /// compiled, whose functions are in scope anyway.
+    pub declared_in: Option<String>,
     /// The fields, in declaration order.
     ///
     /// Order is part of the type: it is what a positional initialiser
@@ -1449,8 +1496,21 @@ pub struct NominalType {
 /// the same type as the complete one, however few fields it carries yet.
 impl PartialEq for NominalType {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        // The declared name, without the module a reference may qualify it
+        // with. `lib.Pair` and `Pair` are one type -- the same declaration,
+        // named from two places -- and comparing the spellings made them two,
+        // which a deduced return type crossing a module boundary showed as a
+        // mismatch.
+        declared_name(self) == declared_name(other)
     }
+}
+
+/// The name a nominal type was declared with, without a module qualifier.
+fn declared_name(nominal: &NominalType) -> &str {
+    nominal
+        .name
+        .rsplit_once('.')
+        .map_or(nominal.name.as_str(), |(_, last)| last)
 }
 
 impl Eq for NominalType {}
@@ -1585,6 +1645,7 @@ mod mangling_tests {
 
     fn nominal(name: &str) -> Type {
         Type::Nominal(NominalType {
+            declared_in: None,
             mutable_fields: Vec::new(),
             field_alignments: Vec::new(),
             is_union: false,

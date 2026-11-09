@@ -27,8 +27,10 @@
 
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.string;
 from std.string import *;
+from std.string import String;
 import std.optional;
 from std.optional import *;
 import std.util;

@@ -132,8 +132,8 @@ Takes another holder's text.
 export fn __init__(this &Any, other &&Any) void {
     (&this._text)->__init__();
     (&this._type)->__init__();
-    this._text = util.move(other._text);
-    this._type = util.move(other._type);
+    this._text = move(other._text);
+    this._type = move(other._type);
     this._present = other._present;
     other._present = false;
 }
@@ -157,8 +157,8 @@ Moves another holder's text into this one.
 
 ```
 export fn __assign__(this &Any, other &&Any) void {
-    this._text = util.move(other._text);
-    this._type = util.move(other._type);
+    this._text = move(other._text);
+    this._type = move(other._type);
     this._present = other._present;
     other._present = false;
 }

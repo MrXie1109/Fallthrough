@@ -17,6 +17,10 @@ struct Scratch {
 
 impl Scratch {
     fn new(label: &str) -> Scratch {
+        // Compiled tables off: a `.pcm` answers a module's declarations from an
+        // earlier run, and this file compiles a fixture, edits it, and compiles
+        // it again. The behaviour under test is the one that reads the source.
+        fallc::pipeline::set_compiled_tables(false);
         let directory = std::env::temp_dir().join(format!("fallc-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a temporary directory can be created");
@@ -552,8 +556,12 @@ fn two_families_with_one_name_are_reported() {
         "import C;\nimport std;\nimport boxmod;\n\ntemplate <T type>\ntype Box {\n    value T;\n}\n\nfn main() int {\n    b Box<int> = .{3};\n    C.printf(\"%d %d\\n\", b.value, boxmod.make(4).v);\n    return 0;\n}\n",
     );
     let (built, output) = scratch.build(&[main], "prog");
-    assert!(!built, "two families under one name must be refused");
-    assert_eq!(output, "");
+    // A family of a module is `boxmod.Box`, and one of this file is `Box`: the
+    // two names differ, so there is nothing to refuse. What the test used to
+    // pin was the spelled-name collision that `import boxmod` produced when a
+    // module's types were written bare.
+    assert!(built, "two families under different names are two types");
+    assert_eq!(output.trim(), "3 4");
 }
 
 #[test]
@@ -836,7 +844,9 @@ fn an_imported_type_can_be_constructed_by_its_name() {
     );
     let main = scratch.write(
         "main.ft",
-        "import C;\nimport pair;\nfn main() int {\n    a pair.Pair = pair.Pair(3, 4);\n    b Pair = Pair(5, 6);\n    C.printf(\"%d %d\\n\", a.sum(), b.sum());\n    return 0;\n}\n",
+        // `import pair;` binds the module and nothing else: a type is written
+        // `pair.Pair` (09 §2.2.1).
+        "import C;\nimport pair;\nfn main() int {\n    a pair.Pair = pair.Pair(3, 4);\n    b pair.Pair = pair.Pair(5, 6);\n    C.printf(\"%d %d\\n\", a.sum(), b.sum());\n    return 0;\n}\n",
     );
     let (built, output) = scratch.build(&[main], "ctor");
     assert!(built, "an imported type must be constructible");

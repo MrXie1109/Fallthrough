@@ -4,7 +4,7 @@
 // want plain text, and a terminal can take escape sequences. Linux and macOS
 // share the call.
 
-@extern_C fn isatty(fd i32) i32;
+@cabi fn isatty(fd i32) i32;
 
 // Whether `fd` is a terminal.
 export fn is_terminal(fd i32) bool {

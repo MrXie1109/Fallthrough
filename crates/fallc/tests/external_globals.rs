@@ -1,6 +1,6 @@
 //! Variables that live in a library.
 //!
-//! `export stdin *c8 @extern_C;` declares a name whose storage is not ours:
+//! `export stdin *c8 @cabi;` declares a name whose storage is not ours:
 //! the declaration says what the name means, and the library owns the object.
 //! The C bindings use it for the three streams, which is what makes
 //! `C.fgets(.., C.stdin)` and `C.fflush(C.stdout)` ordinary uses of an imported
@@ -60,7 +60,7 @@ impl Drop for Scratch {
 
 #[test]
 fn an_external_variable_declaration_is_in_the_tree() {
-    let (outcome, tree) = compile_text("t.ft", "export counter int @extern_C;\n", &[EmitKind::Ast]);
+    let (outcome, tree) = compile_text("t.ft", "export counter int @cabi;\n", &[EmitKind::Ast]);
     assert_eq!(outcome, Outcome::Success, "{tree}");
     assert!(tree.contains("ExternVariable"), "{tree}");
     assert!(tree.contains("counter"), "{tree}");
@@ -117,7 +117,7 @@ fn an_imported_variable_is_bound_like_an_imported_function() {
     let scratch = Scratch::new("imported");
     scratch.module(
         "shared",
-        "export stdout *c8 @extern_C;\n\n\
+        "export stdout *c8 @cabi;\n\n\
          export fn stream() *c8 {\n\
          \x20   return stdout;\n\
          }\n",

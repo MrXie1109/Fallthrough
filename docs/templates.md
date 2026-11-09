@@ -6,6 +6,8 @@
 places:
 
 ```ft
+import C;
+
 @constexpr
 template <values ...int>
 fn sum() int {
@@ -23,8 +25,6 @@ template <values ...int>
 fn second() int {
     return values[1];               // element selection: the subscript must be constant
 }
-
-import C;
 
 fn main() int {
     C.printf("%d %zu %d\n", sum<1, 2, 3>(), count<1, 2, 3>(), second<10, 20, 30>());
@@ -78,6 +78,8 @@ error: counting needs no identity element.
 Because the result is a compile-time constant, it can be an array length directly:
 
 ```ft
+import C;
+
 @constexpr
 template <values ...int>
 fn buffer() int {
@@ -85,8 +87,6 @@ fn buffer() int {
     a[2] = 5;
     return a[2];
 }
-
-import C;
 
 fn main() int {
     C.printf("%d\n", buffer<1, 2, 3>());   // 5

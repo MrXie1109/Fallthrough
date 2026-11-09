@@ -9,16 +9,16 @@
 // reached through the Win32 calls, and `getenv` in a statically linked runtime
 // may see a copy.
 
-@extern_C fn GetCurrentProcessId() u32;
-@extern_C fn ExitProcess(code u32) void;
-@extern_C fn GetEnvironmentVariableA(name *const char, buffer *char, size u32) u32;
-@extern_C fn SetEnvironmentVariableA(name *const char, value *const char) i32;
-@extern_C fn GetCurrentDirectoryA(size u32, buffer *char) u32;
-@extern_C fn SetCurrentDirectoryA(path *const char) i32;
-@extern_C fn QueryPerformanceCounter(counter *u64) i32;
-@extern_C fn QueryPerformanceFrequency(frequency *u64) i32;
-@extern_C fn GetTickCount64() u64;
-@extern_C fn Sleep(milliseconds u32) void;
+@cabi fn GetCurrentProcessId() u32;
+@cabi fn ExitProcess(code u32) void;
+@cabi fn GetEnvironmentVariableA(name *const char, buffer *char, size u32) u32;
+@cabi fn SetEnvironmentVariableA(name *const char, value *const char) i32;
+@cabi fn GetCurrentDirectoryA(size u32, buffer *char) u32;
+@cabi fn SetCurrentDirectoryA(path *const char) i32;
+@cabi fn QueryPerformanceCounter(counter *u64) i32;
+@cabi fn QueryPerformanceFrequency(frequency *u64) i32;
+@cabi fn GetTickCount64() u64;
+@cabi fn Sleep(milliseconds u32) void;
 
 // The process's identifier.
 export fn pid() int {

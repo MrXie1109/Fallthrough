@@ -17,8 +17,8 @@
 import std.os;
 from std.os import *;
 
-@extern_C fn signal(number int, handler *fn(int) void) *fn(int) void;
-@extern_C fn kill(pid int, number int) int;
+@cabi fn signal(number int, handler *fn(int) void) *fn(int) void;
+@cabi fn kill(pid int, number int) int;
 
 // The handler a program installs.
 export type Handler {

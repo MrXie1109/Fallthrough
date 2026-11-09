@@ -229,10 +229,7 @@ pub(super) fn render(exports: &fallc_sema::ExternalModule, module: &str, ast: &A
     global_names.sort();
     for name in global_names {
         let global = &exports.globals[name];
-        out.push_str(&format!(
-            "export {name} {} @extern_C;\n",
-            global.ty.spelling()
-        ));
+        out.push_str(&format!("export {name} {} @cabi;\n", global.ty.spelling()));
     }
 
     let mut variable_names: Vec<&String> = exports.variables.keys().collect();
@@ -240,7 +237,7 @@ pub(super) fn render(exports: &fallc_sema::ExternalModule, module: &str, ast: &A
     for name in variable_names {
         let variable = &exports.variables[name];
         out.push_str(&format!(
-            "export {name} {} @extern_C;\n",
+            "export {name} {} @cabi;\n",
             type_syntax_in(&variable.ty, Some(ast))
         ));
     }
@@ -340,9 +337,9 @@ fn render_function(name: &str, signature: &fallc_sema::FunctionSignature, ast: &
     }
     // The prefix order is the one the language states: attributes first, then
     // the declaration keyword. `export` is a keyword, so an external function
-    // reads `@extern_C` / `export fn`, not `export @extern_C fn`.
+    // reads `@cabi` / `export fn`, not `export @cabi fn`.
     if signature.is_external {
-        out.push_str("@extern_C\n");
+        out.push_str("@cabi\n");
     }
     out.push_str("export ");
     out.push_str(&format!("fn {name}("));
@@ -361,12 +358,89 @@ fn render_function(name: &str, signature: &fallc_sema::FunctionSignature, ast: &
     out.push_str(&parts.join(", "));
     out.push(')');
     out.push(' ');
-    out.push_str(&type_syntax_in(&signature.return_type, Some(ast)));
+    // The *deduced* result, when the declaration only said `auto`. An
+    // interface is read back by an importer that has no body to deduce from,
+    // so publishing the word `auto` would publish a question instead of an
+    // answer -- and the reader would resolve the call to "no value".
+    let deduced = signature
+        .resolved
+        .as_ref()
+        .map(|resolved| &resolved.returns);
+    let was_auto = matches!(
+        signature.return_type,
+        fallc_ast::TypeSyntax::Auto(_) | fallc_ast::TypeSyntax::DecltypeAuto(_)
+    );
+    match deduced {
+        // `auto` and nothing deduced: the interface is written from a module
+        // whose bodies were not checked this time, so the word is all there is.
+        // Publishing it keeps the text faithful; leaving the result out would
+        // silently turn the function into one returning nothing.
+        Some(returns) if was_auto => out.push_str(&type_text(returns)),
+        _ => out.push_str(&type_syntax_in(&signature.return_type, Some(ast))),
+    }
     if signature.throws {
         out.push_str(" except");
     }
     out.push_str(";\n");
     out
+}
+
+/// Renders a resolved type as source text.
+///
+/// Only the forms an interface can carry: a name, and the pointer, reference
+/// and array shapes built on it. Anything else -- a function type, a member of
+/// a family -- is written by its own spelling, which an importer resolves
+/// again.
+fn type_text(ty: &fallc_sema::Type) -> String {
+    use fallc_sema::Type;
+    match ty {
+        Type::Nominal(nominal) => nominal.name.clone(),
+        Type::String => "String".to_owned(),
+        Type::Int(int) => int.spelling().to_owned(),
+        Type::Float(float) => float.spelling().to_owned(),
+        Type::Character(character) => character.spelling().to_owned(),
+        Type::Bool => "bool".to_owned(),
+        Type::Byte => "byte".to_owned(),
+        Type::NullPointer => "nullptr".to_owned(),
+        Type::Pointer {
+            pointee,
+            pointee_is_const,
+            pointer_is_const,
+        } => {
+            let inner = if *pointee_is_const {
+                format!("*const {}", type_text(pointee))
+            } else {
+                format!("*{}", type_text(pointee))
+            };
+            if *pointer_is_const {
+                format!("const {inner}")
+            } else {
+                inner
+            }
+        }
+        Type::Reference {
+            referent,
+            referent_is_const,
+            is_rvalue,
+        } => {
+            let inner = if *referent_is_const {
+                format!("&const {}", type_text(referent))
+            } else {
+                format!("&{}", type_text(referent))
+            };
+            if *is_rvalue {
+                format!("&{inner}")
+            } else {
+                inner
+            }
+        }
+        Type::Volatile(inner) => format!("volatile {}", type_text(inner)),
+        Type::Const(inner) => format!("const {}", type_text(inner)),
+        // A deduced `void`: a function that returns nothing keeps the omitted
+        // form, which is what the reader parses as "no value".
+        Type::Unspecified(unspecified) if unspecified.text.is_empty() => String::new(),
+        other => other.spelling(),
+    }
 }
 
 /// Writes a module's interface into the build cache as `<module>.it`.
@@ -376,12 +450,28 @@ fn render_function(name: &str, signature: &fallc_sema::FunctionSignature, ast: &
 /// syntax the language reads back. A cache the compiler cannot write is not an
 /// error -- the module is simply compiled from source next time, as it would be
 /// without a cache at all.
-pub(super) fn publish(exports: &fallc_sema::ExternalModule, module: &str, ast: &Ast) {
+/// Writes the interface, unless `replace` is false and one is already there.
+///
+/// A declaration-only pass is what runs when the module's object is already in
+/// the cache, and that pass does not read bodies -- so a signature whose result
+/// is deduced (`auto`) has nothing to write. The file that is already there was
+/// written by the pass that *did* read them, and it is the better text: keeping
+/// it is what stops a cached module's `auto` return from turning into a
+/// question the importer cannot answer.
+pub(super) fn publish_with(
+    exports: &fallc_sema::ExternalModule,
+    module: &str,
+    ast: &Ast,
+    replace: bool,
+) {
     let Some(directory) = crate::pipeline::cache::build_directory() else {
         return;
     };
-    let text = render(exports, module, ast);
     let path = directory.join(format!("{}.it", module.replace('.', "/")));
+    if !replace && path.is_file() {
+        return;
+    }
+    let text = render(exports, module, ast);
     if let Some(parent) = path.parent()
         && std::fs::create_dir_all(parent).is_err()
     {

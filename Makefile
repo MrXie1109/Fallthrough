@@ -46,7 +46,8 @@ TEST    ?=
 TARGET  ?=
 
 .PHONY: help build release check clippy fmt fmt-check test test-all std-check \
-        cache docs docs-check std-check smoke clean distclean install uninstall
+        cache docs docs-check docs-tool-present umbrella-check smoke clean \
+        distclean install uninstall
 
 help:
 	@echo "make build        build the workspace (debug)"
@@ -63,7 +64,7 @@ help:
 	@echo "                  the cache (run 'make release install' first)"
 	@echo "make docs         write docs/std/ from the library's comments"
 	@echo "make docs-check   fail if those pages are out of date"
-	@echo "make std-check    fail if the umbrella misses a module"
+	@echo "make umbrella-check  fail if the umbrella misses a module"
 	@echo "make smoke        compile and run tests/smoke.ft if it exists"
 	@echo "make clean        remove build artifacts"
 	@echo "make install      install fallc, the library and their env file"
@@ -105,15 +106,16 @@ test-all:
 # umbrella module and touches enough of it to lower real code.
 std-check: build
 	@mkdir -p $(SCRATCH)
-	@printf '%s\n' \
-		'import std;' \
-		'import C;' \
-		'' \
-		'fn main() int except {' \
-		'    text String = "standard library";' \
-		'    C.printf("%s\n", text.data());' \
-		'    return 0;' \
-		'> $(SCRATCH)/std-check.ft
+	@: > $(SCRATCH)/std-check.ft
+	@echo 'import std;' >> $(SCRATCH)/std-check.ft
+	@echo 'import C;' >> $(SCRATCH)/std-check.ft
+	@echo 'from std import String;' >> $(SCRATCH)/std-check.ft
+	@echo '' >> $(SCRATCH)/std-check.ft
+	@echo 'fn main() int except {' >> $(SCRATCH)/std-check.ft
+	@echo '    text String = "standard library";' >> $(SCRATCH)/std-check.ft
+	@echo '    C.printf("%s\\n", text.data());' >> $(SCRATCH)/std-check.ft
+	@echo '    return 0;' >> $(SCRATCH)/std-check.ft
+	@echo '}' >> $(SCRATCH)/std-check.ft
 	$(BIN) $(SCRATCH)/std-check.ft -o $(SCRATCH)/std-check
 	@$(SCRATCH)/std-check
 
@@ -164,16 +166,36 @@ cache:
 PYTHON ?= python3
 DOCS_TOOL := tools/std-docs.py
 
-docs:
+#
+# A tool of this checkout rather than of the project: `tools/` is not versioned,
+# so a fresh clone does not have it. Saying so is better than a Python traceback
+# on a missing file.
+docs docs-check: docs-tool-present
+
+docs-tool-present:
+	@test -f $(DOCS_TOOL) || { \
+		echo "$(DOCS_TOOL) is a local tool and is not in this checkout"; \
+		exit 1; \
+	}
+
+docs: docs-tool-present
 	$(PYTHON) $(DOCS_TOOL)
 
-docs-check:
+docs-check: docs-tool-present
 	$(PYTHON) $(DOCS_TOOL) --check
 
 # `import std;` is the whole library, so every module has to be exported from
 # the umbrella. The check knows which three are deliberately not, and fails on
 # any other gap.
-std-check:
+#
+# A tool of this checkout rather than of the project: `tools/` is not versioned,
+# so a fresh clone does not have it. Saying so is better than a Python traceback
+# on a missing file.
+umbrella-check:
+	@test -f tools/std-umbrella.py || { \
+		echo "tools/std-umbrella.py is a local tool and is not in this checkout"; \
+		exit 1; \
+	}
 	$(PYTHON) tools/std-umbrella.py
 
 smoke: build

@@ -15,6 +15,7 @@ import std.error;
 from std.error import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // Raises `DebugError` when `condition` is false.
 export fn assert(condition bool, message *const char, file *const char, line int) void except {

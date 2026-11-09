@@ -579,6 +579,16 @@ pub struct ModuleResolutions {
 }
 
 impl ModuleResolutions {
+    /// Nothing resolved, for a module whose body is not being compiled here.
+    ///
+    /// A module loaded from a compiled table contributes its declarations and
+    /// its object, not its checker's answers: the object already contains the
+    /// code those answers produced.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     /// Records everything a check resolved.
     #[must_use]
     pub fn of(checked: &fallc_sema::TypeCheckResult) -> Self {

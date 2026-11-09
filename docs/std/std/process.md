@@ -43,7 +43,7 @@ export fn spawn(program &const String, arguments &const Array<String>) Process e
     // option, and leaving the name out makes `sh` try to open the option as a
     // script.
     count usize = arguments.length();
-    slots **const char = util.allocate(sizeof(*const char) * (count + 2usize)) as **const char;
+    slots **const char = allocate(sizeof(*const char) * (count + 2usize)) as **const char;
     slots[0] = program.data();
     index usize = 0;
     while (index < count) {
@@ -52,7 +52,7 @@ export fn spawn(program &const String, arguments &const Array<String>) Process e
     }
     slots[count + 1] = nullptr;
     pid int = process_sys.spawn(program.data(), slots)??;
-    util.free(slots as *byte);
+    free(slots as *byte);
     started Process = .{ pid };
     return started;
 }

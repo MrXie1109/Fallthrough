@@ -29,6 +29,27 @@ removed, directory separators are written `.`. `std.string` corresponds to
 2.4 A translation unit consists of: all top-level declarations of the `.ft` file, and
 all declarations exported by the modules it statically imports.
 
+## Examples in this specification
+
+3.1 Code blocks in this specification are written to be read, and most of them compile:
+a block that declares `fn main` and an import can be fed to an implementation as it
+stands. Some cannot, and those say so on their first line:
+
+```ft
+// PHONY: `geom` is a module this section describes; the two files it is split
+// across cannot be compiled as one block.
+import geom;
+```
+
+3.2 A block marked `// PHONY` depends on something that does not exist — a module the
+text only describes, or a declaration from a previous block that the block itself does
+not repeat. The marker is a statement about the **example**, never about the language:
+what the block illustrates is specified in the prose around it, and the marker means the
+block alone is not a program.
+
+3.3 A block without the marker is a program an implementation **must** accept, unless the
+surrounding prose says it is the subject of a diagnostic.
+
 ## Program entry
 
 3.1 A program begins execution at the function named `main`. The **parameter list** of

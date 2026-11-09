@@ -6,6 +6,28 @@
 
 use super::*;
 
+/// Whether a template body is the declaration a call selected.
+///
+/// The written name is the same for a member and for a free function; what
+/// tells them apart is the receiver. A member's first parameter is called
+/// `this` and a free function's is not, so the two signatures agree on that
+/// fact or they are not the same declaration.
+fn body_matches(
+    body: &fallc_ast::FunctionItem,
+    signature: &crate::resolve::FunctionSignature,
+) -> bool {
+    let body_takes_receiver = body
+        .params
+        .first()
+        .is_some_and(|param| param.name == "this");
+    let signature_takes_receiver = signature
+        .param_names
+        .first()
+        .is_some_and(|name| name == "this");
+    body_takes_receiver == signature_takes_receiver
+        && body.params.len() == signature.param_types.len()
+}
+
 impl TypeChecker {
     /// Instantiates a template for this call, if the callee is one.
     ///
@@ -46,15 +68,19 @@ impl TypeChecker {
             .filter(|def| {
                 def.name == name
                     && !self.disabled_functions.contains(&def.name_span)
-                    // `module.name(..)` names a free function: a member is
-                    // reached through a value, and its `this` is not an
-                    // argument the call wrote. Without this, the member
-                    // `File.print(..)` was a candidate for `std.print(..)` and
-                    // took the first written argument as its receiver.
-                    && (!name.contains('.')
-                        || def.signature.as_ref().is_none_or(|signature| {
-                            signature.param_names.first().map(String::as_str) != Some("this")
-                        }))
+                    // A call written with a bare name is a free function: a
+                    // member is reached through a value, and the `this` it
+                    // takes is not an argument the call wrote. The member
+                    // `File.print(..)` was a candidate for `print(..)` and took
+                    // the first written argument as its receiver.
+                    //
+                    // The rule holds however the free function is spelled:
+                    // `std.print(..)` through the module, or `print(..)` through
+                    // a `use`. Gating it on the name containing a dot exempted
+                    // the second spelling, which is the one a program writes.
+                    && def.signature.as_ref().is_none_or(|signature| {
+                        signature.param_names.first().map(String::as_str) != Some("this")
+                    })
                     && def
                         .signature
                         .as_ref()
@@ -133,10 +159,33 @@ impl TypeChecker {
         });
         let symbol = template_symbol_of(&signature.written_name, &signature.param_types);
         let imported_body = if local_item.is_none() {
-            let body = self
-                .template_body_for(&symbol)
-                .or_else(|| self.template_body_for(&signature.bound_as))?;
-            Some(body)
+            // The key the declaration mangles to, and then the name it is bound
+            // under. The first is what a free template's body was registered
+            // as, and the second is the fallback a special method needs.
+            //
+            // A member and a free function may share one written name -- `File`
+            // has `print` and the library has `print` -- and a template's
+            // parameters are what tell the two apart, not the name. Looking up
+            // the mangled key first found the *member*'s body for a call to the
+            // free function, because a member's mangles differently only by the
+            // receiver. The receiver of the call decides: an argument list
+            // written for a free function does not begin with a `this`.
+            // A body is the one whose *parameters* match the declaration the
+            // call selected. Two templates may mangle to keys that differ only
+            // by a receiver -- `File` has `print` and the library has `print`
+            // -- and taking whichever key answered first gave a call to the
+            // free function the member's body, whose first parameter is a
+            // `this` the call never wrote.
+            let mut found = None;
+            for key in [&symbol, &signature.bound_as] {
+                if let Some(body) = self.template_body_for(key)
+                    && body_matches(&body.function, &signature)
+                {
+                    found = Some(body);
+                    break;
+                }
+            }
+            Some(found?)
         } else {
             None
         };
@@ -2523,6 +2572,7 @@ impl TypeChecker {
             .map(|(name, ty)| (name.clone(), substitute_type_params(ty, substitution)))
             .collect();
         let nominal = crate::types::NominalType {
+            declared_in: None,
             // The family and the arguments that made this member, so that a
             // method written against the family's parameters can be resolved
             // from the type itself -- including where it arrived from another
@@ -2657,6 +2707,7 @@ impl TypeChecker {
         self.nominal_types.insert(
             member_name.clone(),
             crate::types::NominalType {
+                declared_in: None,
                 template_arguments: Some((template.name.clone(), arguments.clone())),
                 name: member_name.clone(),
                 fields: Vec::new(),
@@ -2693,6 +2744,7 @@ impl TypeChecker {
         self.substitution = previous;
 
         let nominal = crate::types::NominalType {
+            declared_in: None,
             template_arguments: Some((template.name.clone(), arguments.clone())),
             name: member_name.clone(),
             fields,

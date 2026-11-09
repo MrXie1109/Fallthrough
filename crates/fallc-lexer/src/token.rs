@@ -388,6 +388,18 @@ pub enum Keyword {
     False,
     /// `import`
     Import,
+    /// `module` — a block of declarations with a visibility boundary.
+    ///
+    /// A reserved word because it introduces declarations at the top level:
+    /// `module foo { .. }` is what `export` inside the block is relative to,
+    /// and a program that used the word as a name would read like one.
+    Module,
+    /// `use` — bind another module's exported names in this file.
+    ///
+    /// The counterpart of `import`: an import decides what a file loads and
+    /// what the loaded module is called, and a `use` decides which of its names
+    /// may be written bare.
+    Use,
     /// `from` — the module a `from M import ..` declaration names.
     From,
     /// `link` — a link instruction.
@@ -472,6 +484,8 @@ impl Keyword {
             Keyword::Type => "type",
             Keyword::False => "false",
             Keyword::Import => "import",
+            Keyword::Module => "module",
+            Keyword::Use => "use",
             Keyword::From => "from",
             Keyword::Link => "link",
             Keyword::Interface => "interface",
@@ -544,6 +558,7 @@ pub static KEYWORDS: &[(&str, Keyword)] = &[
     ("interface", Keyword::Interface),
     ("lambda", Keyword::Lambda),
     ("link", Keyword::Link),
+    ("module", Keyword::Module),
     ("mutable", Keyword::Mutable),
     ("nullptr", Keyword::Nullptr),
     ("raise", Keyword::Raise),
@@ -558,6 +573,7 @@ pub static KEYWORDS: &[(&str, Keyword)] = &[
     ("try", Keyword::Try),
     ("type", Keyword::Type),
     ("union", Keyword::Union),
+    ("use", Keyword::Use),
     ("volatile", Keyword::Volatile),
     ("while", Keyword::While),
     ("yield", Keyword::Yield),
@@ -990,6 +1006,12 @@ mod tests {
             Keyword::Enum,
             Keyword::Union,
             Keyword::Traits,
+            Keyword::Module,
+            Keyword::Use,
+            Keyword::Delete,
+            Keyword::Defer,
+            Keyword::Define,
+            Keyword::Default,
         ];
         for keyword in every_keyword {
             assert_eq!(

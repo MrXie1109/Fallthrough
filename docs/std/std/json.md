@@ -120,10 +120,10 @@ export fn __init__(this &JsonNodeData, other &&JsonNodeData) void {
     (&this._children)->__init__();
     (&this._keys)->__init__();
     (&this._values)->__init__();
-    this._text = util.move(other._text);
-    this._children = util.move(other._children);
-    this._keys = util.move(other._keys);
-    this._values = util.move(other._values);
+    this._text = move(other._text);
+    this._children = move(other._children);
+    this._keys = move(other._keys);
+    this._values = move(other._values);
 }
 ```
 
@@ -188,7 +188,7 @@ Moves a document's storage.
 ```
 export fn __init__(this &JsonDocument, other &&JsonDocument) void {
     (&this._nodes)->__init__();
-    this._nodes = util.move(other._nodes);
+    this._nodes = move(other._nodes);
     this._root = other._root;
 }
 ```

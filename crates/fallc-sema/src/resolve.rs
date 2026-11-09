@@ -142,6 +142,12 @@ pub enum DefKind {
     /// definition so that the name resolves inside the body, and the
     /// instantiation is what gives it a meaning.
     TemplateParam,
+    /// A module: a block of declarations, or a file reached by `import`.
+    ///
+    /// It is a definition so that the name resolves, and so that a member
+    /// written after it -- `foo.get` -- can be checked against what the module
+    /// exports. It has no storage and no signature of its own.
+    Module,
     /// A definition whose kind is not known, used when the resolution has no
     /// definition to take a kind from.
     Unspecified,
@@ -658,9 +664,9 @@ pub struct FunctionSignature {
     pub exported: bool,
     /// Whether this function is implemented elsewhere.
     pub is_external: bool,
-    /// The ABI the declaration names, when it is written `@extern_C`.
+    /// The ABI the declaration names, when it is written `@cabi`.
     ///
-    /// An `@extern_C` function keeps the name it was declared with: the C
+    /// An `@cabi` function keeps the name it was declared with: the C
     /// library exports exactly that spelling, and a mangled one names no symbol
     /// anybody defines. A bodyless declaration *without* an ABI is a promise
     /// that another translation unit defines it, and its symbol is mangled like
@@ -965,6 +971,26 @@ impl Resolutions {
         self.bindings.push((span, def));
     }
 
+    /// Adds a definition the checker discovered.
+    ///
+    /// A `module` block exports names rather than signatures, and the name a
+    /// call writes -- `foo.get` -- has to answer to a definition with a
+    /// signature before code generation can emit the call. The checker is where
+    /// the export table and the declaration meet, so it makes that definition
+    /// and hands it back.
+    pub fn publish(&mut self, mut definition: Def) {
+        if self
+            .defs
+            .iter()
+            .any(|existing| existing.name == definition.name && existing.signature.is_some())
+        {
+            return;
+        }
+        definition.id =
+            DefId(u32::try_from(self.defs.len()).expect("definition count exceeds u32::MAX"));
+        self.defs.push(definition);
+    }
+
     /// Returns the definition a name occurrence resolves to.
     #[must_use]
     pub fn resolve(&self, span: Span) -> Option<DefId> {
@@ -1087,12 +1113,90 @@ pub struct Resolver {
     /// will be lowered from -- a template's own body is written here and checked
     /// elsewhere -- so those are resolved either way.
     declarations_only: bool,
+
+    /// Every name that stands for a module here, this file's own blocks
+    /// included.
+    module_names: std::collections::HashSet<String>,
+    /// The blocks this *file* declares.
+    ///
+    /// A block and a loaded module are the same thing to every later pass, and
+    /// that is deliberate: both publish names, both have an export table, both
+    /// answer `M.x`. What must not happen is one file's block deciding how
+    /// another module's table is read -- a block named `stdio` in a program
+    /// must not take over the loaded `C.stdio` -- so the two questions are
+    /// asked separately: `module_names` says "this is a module", `blocks` says
+    /// "this module is a block of the file being resolved". Hygiene, not
+    /// semantics.
+    blocks: std::collections::HashSet<String>,
+    /// Names a module block declares, and the scope they belong to.
+    ///
+    /// Installed with the imports, so that `use foo.get;` finds `foo.get` in
+    /// the same table every other module member is in, whatever order the
+    /// declarations were written in.
+    pending_names: Vec<PendingModuleName>,
+    /// The short names this file's `use` declarations bind.
+    pending_uses: Vec<PendingUse>,
+    /// A block's name under another spelling, from `use foo as f;`.
+    module_aliases: std::collections::HashMap<String, String>,
+    /// `alias.member` names waiting for the block's own to be published.
+    ///
+    /// `use foo as f;` makes `f` a spelling of `foo`, and `f.get` has to reach
+    /// the definition filed as `foo.get`. Which definition that is is known
+    /// only once the block's names are installed, so the pair is recorded here
+    /// and published then.
+    pending_alias_members: Vec<(String, String, String, Span)>,
+    /// `use block.*;` names whose definition is published after the walk.
+    pending_star_names: Vec<(String, String, Span)>,
     /// The names a type family declares its parameters with.
     ///
     /// A method written against them -- `fn push(this &Array<T>, ..)` -- is a
     /// template in every way that matters, so its body is resolved even in a
     /// declaration-only pass.
     family_parameters: std::collections::HashSet<String>,
+}
+
+/// One name a `module` block publishes, waiting to be installed.
+///
+/// The block itself is a name in the file's scope, and so is each of its
+/// exports under the block's name: `foo` and `foo.get` are what `use foo;` and
+/// `use foo.get;` look for.
+#[derive(Clone, Debug)]
+struct PendingModuleName {
+    /// The name as it is written, `foo` or `foo.get`.
+    name: String,
+    /// Where the block was written, for diagnostics.
+    span: Span,
+    /// The scope the name belongs to: the file's, because it is read from
+    /// outside the block.
+    scope: ScopeId,
+    /// What the name stands for.
+    kind: DefKind,
+    /// The declaration's signature, for a member that is a function. Its
+    /// written name is the member's own, so the symbol is the one the
+    /// definition was emitted under.
+    signature: Option<FunctionSignature>,
+    /// The member's own name, which the signature is emitted under.
+    written_name: String,
+}
+
+/// One short name a `use` declaration binds.
+#[derive(Clone, Debug)]
+struct PendingUse {
+    /// The name as this file may write it.
+    local: String,
+    /// The module it is reached through.
+    module: String,
+    /// The member of that module, or `None` for the module itself.
+    member: Option<String>,
+    /// Where it was written, for diagnostics and for the binding.
+    span: Span,
+    /// The definition it stands for, when the name is a block's own.
+    definition: Option<DefId>,
+    /// The form it was written in, kept until it is known whether the module
+    /// is a block of this file or a loaded one.
+    target: Option<fallc_ast::UseTarget>,
+    /// Whether the binding was written `export use`, and so is published.
+    exported: bool,
 }
 
 /// One name an import brings into the importing file's scope.
@@ -1154,6 +1258,13 @@ impl Resolver {
             defs: Vec::new(),
             imports: Vec::new(),
             declarations_only: false,
+            module_names: std::collections::HashSet::new(),
+            blocks: std::collections::HashSet::new(),
+            pending_names: Vec::new(),
+            pending_uses: Vec::new(),
+            module_aliases: std::collections::HashMap::new(),
+            pending_alias_members: Vec::new(),
+            pending_star_names: Vec::new(),
             family_parameters: std::collections::HashSet::new(),
         };
         resolver.push_scope();
@@ -1196,7 +1307,37 @@ impl Resolver {
         // item in this file can refer to one, and so that a local declaration
         // of the same name is reported as the duplicate it is rather than
         // silently shadowing the import.
+        // The module blocks come first: their names are this file's own, and an
+        // import of another module must not be the thing that answers for
+        // them.
+        self.pending_names.clear();
+        self.blocks.clear();
+        // Every `use` is recorded first: it names a module or a block, and the
+        // populating below is what decides which.
+        for &item in &ast.items {
+            if let ItemKind::Use(use_item) = &ast.item(item).kind {
+                self.pending_uses.push(PendingUse {
+                    local: String::new(),
+                    module: use_item.module.clone(),
+                    member: match &use_item.target {
+                        fallc_ast::UseTarget::Member(member) => Some(member.name.clone()),
+                        _ => None,
+                    },
+                    span: use_item.module_span,
+                    definition: None,
+                    target: Some(use_item.target.clone()),
+                    exported: use_item.exported,
+                });
+            }
+        }
+        self.collect_module_names(ast);
+        // A block takes the name it shares with a loaded module: `import std;`
+        // and `module std { .. }` in one file is the block, because that is
+        // what the file says about itself.
+
+        self.apply_module_names();
         self.apply_imports();
+        self.apply_uses();
         self.resolve_items(ast);
         ResolveResult {
             resolutions: std::mem::take(&mut self.resolutions),
@@ -1351,6 +1492,30 @@ impl Resolver {
             // An import's names are installed by `apply_imports`, from the
             // bindings the module loader produced.
             ItemKind::Import(_) => {}
+            // A `use` binds names exactly as a `from` import does: through a
+            // binding the loader produced, installed by `apply_imports`.
+            ItemKind::Use(_) => {}
+            // A module block is flattened into the file's scope: a program
+            // reaches a name through `use`, and `use foo.get;` is what makes
+            // `get` a name here. So every member is declared as if it stood at
+            // the top level, and what `export` decides is only what `use` may
+            // bind -- the export names belong to the block, and the block's
+            // own name belongs to the file.
+            ItemKind::Module(module) => {
+                // Everything the block publishes was worked out before the
+                // walk began (`collect_module_names`): a name is a name however
+                // the declarations are ordered, and a member may write
+                // `foo.other()` inside the block.
+                //
+                // What is left is the members themselves. A block is a
+                // container, not a scope of its own: its members are this
+                // file's declarations, so they are declared exactly as if they
+                // stood at the top level, and a member may therefore read
+                // another member's name.
+                for &member in &module.items {
+                    self.declare_item(ast, member);
+                }
+            }
             // A link instruction declares no name: it is read by the driver,
             // which is the only part that links.
             ItemKind::Link(_) => {}
@@ -1483,6 +1648,17 @@ impl Resolver {
             // An external variable has a type and no body: the type names
             // types, which the checker resolves.
             ItemKind::ExternVariable(_) => {}
+            // A `use` path is read by the loader; there is nothing in it for
+            // this pass to resolve.
+            ItemKind::Use(_) => {}
+            // A module block's members are bodies like any other, and they are
+            // written from inside the block: a member may name the block's
+            // private ones, because that is what private to the block means.
+            ItemKind::Module(module) => {
+                for &member in &module.items {
+                    self.resolve_item_body(ast, member);
+                }
+            }
             // An interface's restrictions are written against its subject, so
             // the subject is a name here exactly as a trait's parameter is:
             // whether the type behind it has the operation is the checker's
@@ -1595,8 +1771,19 @@ impl Resolver {
                 {
                     self.resolve_expr(ast, condition);
                 }
+                // A declarations-only pass leaves bodies alone: they belong to
+                // the module's own object. A function whose result is `auto` is
+                // the exception, because its body *is* its signature -- the
+                // type is read out of the `return` statements, and an importer
+                // that reuses the cached object never sees the body.
+                let deduced_result = matches!(
+                    function.return_type,
+                    fallc_ast::TypeSyntax::Auto(_) | fallc_ast::TypeSyntax::DecltypeAuto(_)
+                );
                 if let Some(body) = function.body
-                    && (!self.declarations_only || self.is_template_member(function))
+                    && (!self.declarations_only
+                        || self.is_template_member(function)
+                        || deduced_result)
                 {
                     self.resolve_block(ast, body);
                 }
@@ -2419,8 +2606,52 @@ impl Resolver {
         if name.contains('.') {
             let mut end = name.len();
             while let Some(sep) = name[..end].rfind('.') {
-                if self.external.contains_key(&name[..sep]) {
-                    return self.resolve_external(&name[..sep], &name[sep + 1..], span);
+                let (module, member) = (&name[..sep], &name[sep + 1..]);
+                if self.external.contains_key(module) {
+                    // A block of this file publishes its members as
+                    // declarations of this tree, so the qualified name is
+                    // already bound; an alias of the block is looked up under
+                    // the block's own name.
+                    let real = self
+                        .module_aliases
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_else(|| module.to_owned());
+                    if self.module_names.contains(&real) {
+                        let published = format!("{real}.{member}");
+                        if let Some(def) = self.lookup(&published) {
+                            self.resolutions.bind(span, def);
+                            return Some(def);
+                        }
+                        // The block exports the name but published nothing for
+                        // it: the member is private to the block, and a name
+                        // written from outside it cannot reach one.
+                        if self
+                            .external
+                            .get(&real)
+                            .is_some_and(|table| table.constants.contains_key(member))
+                        {
+                            return self.alias_block_member(&real, member, span);
+                        }
+                    }
+                    return self.resolve_external(module, member, span);
+                }
+                // A block of this file answers for its own members directly:
+                // `foo.get` names the declaration that stands in this tree, and
+                // there is nothing to import.
+                if self.module_names.contains(module) {
+                    // `f.get` under `use foo as f;` is `foo.get`: the alias is
+                    // a spelling of the block's name, so the definition is
+                    // filed under the block's own.
+                    let real = self.module_aliases.get(module).cloned();
+                    let published = real.as_ref().map_or_else(
+                        || name[..end].to_owned(),
+                        |real| format!("{real}.{}", &name[sep + 1..]),
+                    );
+                    if let Some(def) = self.lookup(&published) {
+                        self.resolutions.bind(span, def);
+                        return Some(def);
+                    }
                 }
                 end = sep;
             }
@@ -2452,7 +2683,25 @@ impl Resolver {
 
     /// Registers what a module exports.
     pub fn add_module(&mut self, name: impl Into<String>, module: ExternalModule) {
-        self.external.insert(name.into(), module);
+        let name = name.into();
+        // A block of this file is registered the same way an imported module is,
+        // so the checker has to be told about the name as well: `foo.get(..)`
+        // is a member of a module and not a method of a value called `foo`,
+        // and only the module table says so.
+        self.module_names.insert(name.clone());
+        self.external.insert(name, module);
+    }
+
+    /// Returns every name that stands for a module here.
+    ///
+    /// Read by the driver so that the checker can be told: which names are
+    /// modules is a question about this file's imports *and* its own blocks,
+    /// and only the resolution pass has both.
+    #[must_use]
+    pub fn module_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.module_names.iter().cloned().collect();
+        names.sort();
+        names
     }
 
     /// Returns what a module exports, by its own name.
@@ -2485,6 +2734,492 @@ impl Resolver {
     ///
     /// A plain `import C` binds no bare name: `C` is a module name, and
     /// `C.printf` is resolved as a qualified name by [`Self::resolve_name`].
+    /// Installs the names this file's `module` blocks publish.
+    ///
+    /// A block is flattened, so its exports are names of this file -- but a
+    /// name is read from outside the block, and the scope it belongs to is the
+    /// one the outside is in. Installing them here rather than while the block
+    /// is walked is what makes the declaration order irrelevant: a `use` may
+    /// be written before the block it names.
+    /// Finds every `module` block in the tree and records what it publishes.
+    ///
+    /// Done before anything is resolved, so that a `use` written above the
+    /// block it names still finds it: a declaration's order in a file is not
+    /// part of its meaning.
+    fn collect_module_names(&mut self, ast: &Ast) {
+        fn walk(resolver: &mut Resolver, ast: &Ast, items: &[fallc_ast::ItemId]) {
+            for &item in items {
+                match &ast.item(item).kind {
+                    ItemKind::Module(module) => {
+                        let exports = resolver.module_export_names(ast, module);
+                        let scope = resolver.current_scope();
+                        resolver.declare_module_name(scope, &module.name, &exports, ast);
+                        walk(resolver, ast, &module.items);
+                    }
+                    // A `use` names a module this file cannot load: the loader
+                    // resolves imports, and a block is not a file. A `use` of
+                    // an imported module is its own binding, installed with the
+                    // imports; one that names a block is a local spelling of a
+                    // name the block already publishes.
+                    ItemKind::Use(use_item) => {
+                        // `use foo.get;` is stored as the module `foo` and the
+                        // member `get`. A block of this file is written in this
+                        // same tree, so it is answered here; anything else is an
+                        // imported module, whose short names the loader binds.
+                        if !resolver.module_names.contains(&use_item.module) {
+                            continue;
+                        }
+                        resolver.declare_use_of_block(use_item);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        walk(self, ast, &ast.items);
+    }
+
+    /// Records what `use block.member;` binds, for a block of this file.
+    ///
+    /// The block's export table is the answer to whether the name exists at
+    /// all: a member the block does not `export` is private to it, and `use`
+    /// cannot reach it. The short name it binds stands for the block's own
+    /// declaration, which is in this tree under `block.member`.
+    fn declare_use_of_block(&mut self, item: &fallc_ast::UseItem) {
+        let module = item.module.clone();
+        // Only a block of *this file* is answered here. A loaded module's names
+        // come from the loader, which already pushed them -- and `module_names`
+        // is not the test for that, because the driver registers loaded modules
+        // in the same table. `blocks` is.
+        if !self.blocks.contains(&module) {
+            return;
+        }
+        match &item.target {
+            fallc_ast::UseTarget::Module { alias } => {
+                let local = alias
+                    .as_ref()
+                    .map_or_else(|| module.clone(), |alias| alias.name.clone());
+                let span = alias.as_ref().map_or(item.module_span, |alias| alias.span);
+                // `use foo as f;` on a block of this file: `f` is a second
+                // name for the block, and the block's own name is what the
+                // table is filed under.
+                self.module_aliases.insert(local.clone(), module.clone());
+                // The alias is another way to write the block's name, so
+                // it answers for the block's members as well: `f.set` has
+                // to reach `foo.set`.
+                if let Some(table) = self.external.get(&module).cloned() {
+                    self.external.insert(local.clone(), table);
+                    self.module_names.insert(local.clone());
+                    self.module_aliases.insert(local.clone(), module.clone());
+                }
+                // Every member the block exports answers under the alias
+                // too: `f.get` is `foo.get` spelled another way, and the
+                // definition filed under the block's name is the one the
+                // alias reaches.
+                let members: Vec<String> = self
+                    .external
+                    .get(&module)
+                    .map(|table| table.constants.keys().cloned().collect())
+                    .unwrap_or_default();
+                let real = self
+                    .module_aliases
+                    .get(&local)
+                    .cloned()
+                    .unwrap_or_else(|| module.clone());
+                for member in members {
+                    // The block publishes its members under its own name
+                    // when they are declared, which is after this point in
+                    // the walk -- so the definition to copy is the one the
+                    // *declaration* stands for, looked up later. The alias
+                    // is therefore recorded and published once the block's
+                    // names are installed.
+                    self.pending_alias_members.push((
+                        real.clone(),
+                        local.clone(),
+                        member.clone(),
+                        span,
+                    ));
+                }
+                let definition = self.block_definition(&module, span);
+                self.pending_uses.push(PendingUse {
+                    local,
+                    module: module.clone(),
+                    member: None,
+                    span,
+                    definition: Some(definition),
+                    target: None,
+                    exported: item.exported,
+                });
+                return;
+            }
+            fallc_ast::UseTarget::Member(member) => {
+                // `use foo.get;` — `get` is the name, and it must be one the
+                // block exports.
+                if !self
+                    .external
+                    .get(&module)
+                    .is_some_and(|table| table.constants.contains_key(&member.name))
+                {
+                    self.diagnostics.push(
+                        Diagnostic::error(format!(
+                            "module `{module}` does not export `{}`",
+                            member.name
+                        ))
+                        .with_code(DiagnosticCode::sema(4))
+                        .with_span(member.span)
+                        .with_note("a module block's members are private unless marked `export`"),
+                    );
+                    return;
+                }
+                self.pending_uses.push(PendingUse {
+                    // The name written bare is the member's own: `use foo.get;`
+                    // binds `get`, and `foo.get` stays the qualified spelling of
+                    // the block's name.
+                    local: member.name.clone(),
+                    module: module.clone(),
+                    member: Some(member.name.clone()),
+                    span: member.span,
+                    definition: self.published_definition(&module, &member.name),
+                    target: None,
+                    exported: item.exported,
+                });
+            }
+            fallc_ast::UseTarget::All => {
+                // `use foo.*;` — every name the block exports, each by its own
+                // name. A block's member is already a name of this file (the
+                // block is flattened), so binding it again would be a second
+                // declaration of one name: what the star form adds is the right
+                // to *write* it bare, which is what the binding records.
+                let names: Vec<String> = self
+                    .external
+                    .get(&module)
+                    .map(|table| table.constants.keys().cloned().collect())
+                    .unwrap_or_default();
+                for name in names {
+                    let mut definition = self.published_definition(&module, &name);
+                    let span = item.module_span;
+                    if definition.is_none() {
+                        // A member whose definition is published later -- the
+                        // block's names are installed after this walk -- is
+                        // remembered and bound then.
+                        self.pending_star_names
+                            .push((module.clone(), name.clone(), span));
+                        continue;
+                    }
+                    let _ = &mut definition;
+                    self.pending_uses.push(PendingUse {
+                        local: name.clone(),
+                        module: module.clone(),
+                        member: Some(name),
+                        span,
+                        definition,
+                        target: None,
+                        exported: item.exported,
+                    });
+                }
+            }
+        }
+    }
+
+    /// Installs the short names every `use` bound.
+    ///
+    /// A `use` of an imported module is answered from that module's export
+    /// table; one that names a block of this file is answered from the block's
+    /// published name, which is `block.member`. The two are the same thing
+    /// spelled differently, and both end as a definition the checker reads by
+    /// its name.
+    ///
+    /// # Why the block list is per file
+    ///
+    /// A block's names are installed after the walk that collects them, and
+    /// installing one puts the block's name in the same table a loaded module
+    /// of that name is in -- `C.stdio` and a program's `module stdio { .. }`
+    /// are two modules that happen to collide. Which of them answers is decided
+    /// by the *file*: a name written in the file that declares the block is the
+    /// block's, and a name written anywhere else is the loaded module's. The
+    /// list is therefore cleared before each file's names are collected, never
+    /// carried from one file to the next.
+    fn apply_uses(&mut self) {
+        let uses = std::mem::take(&mut self.pending_uses);
+        for PendingUse {
+            local,
+            module,
+            member,
+            span,
+            definition,
+            target,
+            exported,
+        } in uses
+        {
+            // A `use` recorded before its module was known: whether the module
+            // is a block of this file or a loaded one decides what its names
+            // are, and both are answered here.
+            if let Some(target) = target {
+                let item = fallc_ast::UseItem {
+                    module: module.clone(),
+                    module_span: span,
+                    target,
+                    exported,
+                    span,
+                };
+                let names = self.pending_uses.len();
+                self.declare_use_of_block(&item);
+                // A loaded module binds through the loader, which already
+                // pushed its names; only a block's were waiting for this walk.
+                let _ = names;
+                continue;
+            }
+            // A block of this file answers from its own declarations: the name
+            // it published is the definition the short name stands for.
+            //
+            // The short name *is* the published one when it is spelled the
+            // same -- a member written bare inside its own block, or `use foo.*`
+            // above a block whose members are already names of this file -- so a
+            // second entry under that spelling is not made. A name is one name.
+            if let Some(definition) = definition {
+                let already = self
+                    .resolutions
+                    .def(definition)
+                    .is_some_and(|def| def.name == local);
+                if !already {
+                    if let Some(holder) = self.scopes.last_mut() {
+                        holder
+                            .names
+                            .entry(local.clone())
+                            .or_default()
+                            .push(definition);
+                    }
+                }
+                self.resolutions.bind(span, definition);
+                continue;
+            }
+            if let Some(member) = member {
+                // `use M.x;` binds `x` itself, so the local name is `x` and the
+                // module is reached through its own short name. The loader
+                // already pushed exactly this, and the id it produced has to be
+                // reused: - a second definition of one name is a duplicate,
+                // whichever spelling asked for it.
+                let short = if local.is_empty() {
+                    member.clone()
+                } else {
+                    local.clone()
+                };
+                // The loader binds the same name for a `use` of a loaded
+                // module, so the definition it produced is reused rather than
+                // made again -- two definitions of one name is a duplicate
+                // declaration, whichever spelling asked for it.
+                let already = self
+                    .lookup_all(&short)
+                    .into_iter()
+                    .any(|def| self.resolutions.def(def).is_some());
+                if !already {
+                    self.resolve_external_as(&module, &member, &short, span);
+                }
+            } else {
+                // `use foo as f;` on an imported module is an alias, and the
+                // loader registers aliases; one reached here names a module of
+                // another file that nothing loaded.
+                self.diagnostics.push(
+                    Diagnostic::error(format!("cannot find module `{module}`"))
+                        .with_code(DiagnosticCode::sema(3))
+                        .with_span(span)
+                        .with_note("add `import` for it at the top of the file"),
+                );
+            }
+        }
+    }
+
+    /// Binds `block.member` for a member the block did not publish a
+    /// definition for -- a constant, say -- by making the definition the
+    /// qualified name answers to.
+    ///
+    /// A member that is not a function has no signature to publish with, so the
+    /// export table holds its name and nothing else. The declaration that
+    /// carries it is in this tree under its own name.
+    fn alias_block_member(&mut self, block: &str, member: &str, span: Span) -> Option<DefId> {
+        let source = self.lookup(member)?;
+        let def = DefId(
+            u32::try_from(self.resolutions.defs.len()).expect("definition count exceeds u32::MAX"),
+        );
+        let mut entry = self.resolutions.def(source)?.clone();
+        entry.id = def;
+        entry.name = format!("{block}.{member}");
+        entry.scope = self.current_scope();
+        self.defs.push(None);
+        self.resolutions.defs.push(entry);
+        if let Some(holder) = self.scopes.last_mut() {
+            holder
+                .names
+                .entry(format!("{block}.{member}"))
+                .or_default()
+                .push(def);
+        }
+        self.resolutions.bind(span, def);
+        Some(def)
+    }
+
+    /// Files `alias.member` as another name for `block.member`.
+    ///
+    /// The alias is a spelling of the block's name, so a member written through
+    /// it is the same definition: same signature, same symbol, another path.
+    fn publish_alias_member(
+        &mut self,
+        block: &str,
+        alias: &str,
+        member: &str,
+        span: Span,
+        source: Option<DefId>,
+    ) {
+        let Some(source) = source else {
+            return;
+        };
+        let Some(mut entry) = self.resolutions.def(source).cloned() else {
+            return;
+        };
+        let name = format!("{alias}.{member}");
+        if self.resolutions.defs.iter().any(|def| def.name == name) {
+            return;
+        }
+        let signature = entry.signature.clone();
+        let def = DefId(
+            u32::try_from(self.resolutions.defs.len()).expect("definition count exceeds u32::MAX"),
+        );
+        entry.id = def;
+        entry.name = name.clone();
+        entry.scope = ScopeId::ROOT;
+        self.defs.push(signature);
+        self.resolutions.defs.push(entry);
+        if let Some(holder) = self.scopes.last_mut() {
+            holder.names.entry(name).or_default().push(def);
+        }
+        let _ = (block, span);
+    }
+
+    /// The definition a block publishes under `module.member`, if the block is
+    /// one of this file's.
+    ///
+    /// A block's members answer under their qualified name, because that is
+    /// what the resolver declared in `collect_module_names`; a `use` of one is
+    /// a short name for that same definition, not a second declaration.
+    fn published_definition(&self, module: &str, member: &str) -> Option<DefId> {
+        if !self.module_names.contains(module) {
+            return None;
+        }
+        let qualified = format!("{module}.{member}");
+        self.resolutions
+            .defs
+            .iter()
+            .find(|def| def.name == qualified)
+            .map(|def| def.id)
+    }
+
+    /// The definition that stands for a block's own name, creating it if the
+    /// block has not been published yet.
+    ///
+    /// A block's name is declared before its members, in `collect_module_names`,
+    /// so the definition is there by the time a `use` is read; this exists for
+    /// the one case where it is not, and keeps the answer in one place.
+    fn block_definition(&mut self, module: &str, span: Span) -> DefId {
+        if let Some(existing) = self.lookup(module)
+            && self
+                .resolutions
+                .def(existing)
+                .is_some_and(|def| def.kind == DefKind::Module)
+        {
+            return existing;
+        }
+        let def = DefId(
+            u32::try_from(self.resolutions.defs.len()).expect("definition count exceeds u32::MAX"),
+        );
+        self.defs.push(None);
+        self.resolutions.defs.push(Def {
+            id: def,
+            kind: DefKind::Module,
+            name: module.to_owned(),
+            node: None,
+            name_span: span,
+            span,
+            scope: self.current_scope(),
+            signature: None,
+            emitted_as: None,
+            imported_as: None,
+            imported_via: None,
+            is_builtin: false,
+            is_overridable: false,
+        });
+        if let Some(holder) = self.scopes.last_mut() {
+            holder.names.entry(module.to_owned()).or_default().push(def);
+        }
+        def
+    }
+
+    fn apply_module_names(&mut self) {
+        let names = std::mem::take(&mut self.pending_names);
+        for PendingModuleName {
+            name,
+            span,
+            scope,
+            kind,
+            signature,
+            written_name,
+        } in names
+        {
+            let def = DefId(
+                u32::try_from(self.resolutions.defs.len())
+                    .expect("definition count exceeds u32::MAX"),
+            );
+            self.defs
+                .push(
+                    signature
+                        .clone()
+                        .map(|signature: FunctionSignature| FunctionSignature {
+                            written_name: written_name.clone(),
+                            ..signature
+                        }),
+                );
+            self.resolutions.defs.push(Def {
+                id: def,
+                kind,
+                name: name.clone(),
+                node: None,
+                name_span: span,
+                span,
+                scope,
+                signature,
+                emitted_as: None,
+                imported_as: None,
+                imported_via: None,
+                is_builtin: false,
+                is_overridable: false,
+            });
+            if let Some(holder) = self.scopes.last_mut() {
+                holder.names.entry(name).or_default().push(def);
+            }
+        }
+        // The aliases come second, because each of them copies a name the
+        // loop above has just installed.
+        let aliases = std::mem::take(&mut self.pending_alias_members);
+        for (block, alias, member, span) in aliases {
+            let source = self.published_definition(&block, &member);
+            self.publish_alias_member(&block, &alias, &member, span, source);
+        }
+        // Then the `use block.*;` names, for the same reason: each stands for
+        // a name the loop above has just installed.
+        let star = std::mem::take(&mut self.pending_star_names);
+        for (block, member, span) in star {
+            if let Some(definition) = self.published_definition(&block, &member) {
+                self.pending_uses.push(PendingUse {
+                    local: member.clone(),
+                    module: block.clone(),
+                    member: Some(member),
+                    span,
+                    definition: Some(definition),
+                    target: None,
+                    exported: false,
+                });
+            }
+        }
+    }
+
     fn apply_imports(&mut self) {
         let imports = std::mem::take(&mut self.imports);
         for binding in imports {
@@ -2496,6 +3231,41 @@ impl Resolver {
                 // `std.__init__String`. Without this, no imported type could be
                 // constructed at all.
                 if let Some(module) = self.external.get(&binding.module).cloned() {
+                    // A block of this file has no symbols of its own: its
+                    // members are declarations of this tree, and the names it
+                    // publishes are installed by `apply_module_names`.
+                    //
+                    // The definition is made under the *qualified* name, and
+                    // nothing else. A bare name here would be a name of this
+                    // file, and a name written in another module's signature is
+                    // that module's to resolve: `std.bytes` writes `Bytes`,
+                    // which is its own type and not a name this file has. What
+                    // a bare name is written for is `from M import x` and
+                    // `use M.x`, which are bindings and come with the export
+                    // table. Method dispatch reads the last segment of a
+                    // definition's name, so `std.bytes.push` is still found by
+                    // `push`.
+                    // Only what this file's *own* names need: a special
+                    // method, which is found by its bound name rather than
+                    // through the module (`String s = "hi";` looks for
+                    // `__init__String`). An ordinary function is reached as
+                    // `M.f`, and defining every symbol under a bare name made
+                    // every module's names this file's -- including the names
+                    // its signatures write, which belong to the module that
+                    // wrote them.
+                    // A method is reached through the definition table rather
+                    // than through a name in scope, so every *method* the
+                    // module publishes is defined here -- a free function is
+                    // still only reachable as `M.f`. Which is which is what
+                    // the signature says: a method's first parameter is named
+                    // `this`.
+                    // Every symbol is defined, as it always was: a special
+                    // method is reached by its bound name (`__im_init__String`
+                    // rather than `std.__im_init__String`), so an importer must
+                    // have the definition even though it cannot write the name.
+                    // This is *not* a visibility grant: `resolve_external`
+                    // files each definition under its qualified name, and a
+                    // program cannot write `M.f` unless it imported `M`.
                     let names: Vec<String> = module.symbols.keys().cloned().collect();
                     for name in names {
                         let _ = self.resolve_external(&binding.module, &name, binding.span);
@@ -2567,6 +3337,34 @@ impl Resolver {
             return None;
         };
 
+        // A block of this file publishes *names*, not symbols: the export
+        // table says which names a program may reach, and the declaration --
+        // the one `apply_module_names` installed -- is what stands behind them.
+        // Answering from the declaration keeps the signature and the symbol in
+        // agreement with the code that was emitted.
+        // A block of this file publishes *names*, not symbols: the export table
+        // says which names a program may reach, and the declaration -- the one
+        // `apply_module_names` installed -- is what stands behind them.
+        // A name a block of this file does not shadow is a loaded module's,
+        // and the loader's answer is the one that stands.
+        let block_here = self.blocks.contains(module);
+        if block_here {
+            if let Some(existing) = self.lookup(&format!("{module}.{member}")) {
+                self.resolutions.bind(span, existing);
+                return Some(existing);
+            }
+            // A member the block does not publish is private to it, and the
+            // export table is what says so. `shapes.sides` inside the block is
+            // a name; outside it, the member is not there at all -- which is
+            // the whole point of `export`.
+            self.diagnostics.push(
+                Diagnostic::error(format!("module `{module}` does not export `{member}`"))
+                    .with_code(DiagnosticCode::sema(4))
+                    .with_span(span)
+                    .with_note("a module block's members are private unless marked `export`"),
+            );
+            return None;
+        }
         // Cloned so the borrow of `self.external` ends before `self` is
         // mutated below. Every overload of the member is taken: which one a
         // call means is decided by its arguments, and that decision needs all
@@ -2704,6 +3502,215 @@ impl Resolver {
         (entry.imported_as.as_deref() == Some(member)
             && entry.imported_via.as_deref() == Some(module))
         .then_some(def)
+    }
+
+    /// The names a module block exports.
+    ///
+    /// Two spellings of each: the bare one (`get`) and the qualified one
+    /// (`foo.get`). Which applies is decided by what is open, and both are
+    /// here because `use foo.get;` opens `foo` for a block written in this
+    /// file while `use a.get;` opens an imported module by its own name.
+    ///
+    /// A nested block contributes to the enclosing one: a program reaches it
+    /// through the enclosing block, since that is the file it came from.
+    fn module_export_names(
+        &self,
+        ast: &Ast,
+        module: &fallc_ast::ModuleItem,
+    ) -> std::collections::HashSet<String> {
+        let mut names = std::collections::HashSet::new();
+        let module_name = module.name.name.as_str();
+        for &member in &module.items {
+            self.collect_export_names(ast, member, module_name, &mut names);
+        }
+        names
+    }
+
+    /// Adds one member's export to `names`, if it is exported.
+    fn collect_export_names(
+        &self,
+        ast: &Ast,
+        item: fallc_ast::ItemId,
+        module: &str,
+        names: &mut std::collections::HashSet<String>,
+    ) {
+        let member = ast.item(item);
+        let (name, exported) = match &member.kind {
+            ItemKind::Function(function) => (definition_name(function), function.exported),
+            ItemKind::Variable(variable) => (variable.name.clone(), variable.exported),
+            ItemKind::ExternVariable(variable) => (variable.name.clone(), variable.exported),
+            ItemKind::Const(constant) => (constant.name.clone(), constant.exported),
+            ItemKind::TypeDeclaration(declaration) => {
+                (declaration.name.clone(), declaration.exported)
+            }
+            ItemKind::EnumDeclaration(declaration) => {
+                (declaration.name.clone(), declaration.exported)
+            }
+            ItemKind::Interface(declaration) => (declaration.name.clone(), declaration.exported),
+            ItemKind::Trait(declaration) => (declaration.name.clone(), declaration.exported),
+            ItemKind::Module(inner) => {
+                for &child in &inner.items {
+                    self.collect_export_names(ast, child, module, names);
+                }
+                return;
+            }
+            _ => return,
+        };
+        // `@export` is the attribute spelling of the same visibility.
+        let exported = exported || member.attrs.iter().any(|attr| attr.name == "export");
+        if !exported {
+            return;
+        }
+        names.insert(name.clone());
+        if !module.is_empty() {
+            names.insert(format!("{module}.{name}"));
+        }
+    }
+
+    /// Declares a block's name, and each export under it, in `scope`.
+    ///
+    /// The block is registered as an external module under its own name, and
+    /// each export as `block.member`: `use foo;` binds the first and
+    /// `use foo.get;` the second, and they are the same table an imported
+    /// module is registered in. From the resolver's point of view a block and
+    /// a file are one thing, and the only difference -- that one is written
+    /// here and one was loaded -- is invisible once the export table exists.
+    /// The signature of a block's member, by the names it is written under.
+    ///
+    /// The declaration is in this same tree -- a block is flattened rather than
+    /// loaded -- so the signature can be read here, at the point the block's
+    /// names are published. What comes out is the signature as the declaration
+    /// writes it: `written_name` is the member's own name, because that is the
+    /// name its definition was emitted under.
+    fn member_signature(&self, ast: &Ast, module: &str, member: &str) -> Option<FunctionSignature> {
+        fn find(ast: &Ast, items: &[fallc_ast::ItemId], member: &str) -> Option<FunctionSignature> {
+            for &item in items {
+                let found = match &ast.item(item).kind {
+                    ItemKind::Module(inner) => find(ast, &inner.items, member),
+                    ItemKind::Function(function) if definition_name(function) == member => {
+                        function_signature(function, &ast.item(item).attrs)
+                    }
+                    _ => None,
+                };
+                if found.is_some() {
+                    return found;
+                }
+            }
+            None
+        }
+        // The block the name belongs to is looked for first, and only then any
+        // block at all: two blocks may declare the same member name, and each
+        // call must find the one its own block published.
+        // The block is found by name first, and only then any block at all:
+        // two blocks may declare the same member name, and each call must find
+        // the one its own block published.
+        fn block<'a>(
+            ast: &'a Ast,
+            items: &'a [fallc_ast::ItemId],
+            module: &str,
+        ) -> Option<&'a [fallc_ast::ItemId]> {
+            for &item in items {
+                if let ItemKind::Module(inner) = &ast.item(item).kind {
+                    if inner.name.name == module {
+                        return Some(&inner.items);
+                    }
+                    if let Some(found) = block(ast, &inner.items, module) {
+                        return Some(found);
+                    }
+                }
+            }
+            None
+        }
+        if let Some(items) = block(ast, &ast.items, module)
+            && let Some(found) = find(ast, items, member)
+        {
+            return Some(found);
+        }
+        find(ast, &ast.items, member)
+    }
+
+    fn declare_module_name(
+        &mut self,
+        scope: ScopeId,
+        name: &fallc_ast::ModuleName,
+        exports: &std::collections::HashSet<String>,
+        ast: &Ast,
+    ) {
+        if name.name.is_empty() {
+            return;
+        }
+        if let Some(existing) = self.lookup(&name.name)
+            && self
+                .resolutions
+                .def(existing)
+                .is_some_and(|def| def.kind == DefKind::Module)
+        {
+            return;
+        }
+        // A block shadows a loaded module of the same name, which is what a
+        // `module foo { .. }` beside `import foo;` means: the file is loaded
+        // under `foo` by the loader, and the block is what `foo` names here.
+        // The loaded one stays reachable by its own dotted spelling, and is no
+        // longer answered as a block.
+        self.module_names.insert(name.name.clone());
+        self.blocks.insert(name.name.clone());
+        let mut table = ExternalModule::default();
+        let mut qualified: Vec<String> = Vec::new();
+        for export in exports.iter().cloned() {
+            if export.starts_with(&format!("{}.", name.name)) {
+                qualified.push(export);
+            } else {
+                // Only the *names* are needed here: which signature a member
+                // has is read from its declaration, which is in the same file.
+                table.add_constant(export, 0);
+            }
+        }
+
+        self.external.insert(name.name.clone(), table);
+        self.pending_names.push(PendingModuleName {
+            name: name.name.clone(),
+            span: name.span,
+            scope,
+            kind: DefKind::Module,
+            signature: None,
+            written_name: name.name.clone(),
+        });
+        for export in qualified {
+            // A qualified member is a name that stands for the declaration, and
+            // the signature is what makes it callable: `use foo.get;` binds
+            // `get`, and a call to it has to find the declaration the block
+            // wrote.
+            let member = export
+                .rsplit_once('.')
+                .map_or(export.as_str(), |(_, member)| member)
+                .to_owned();
+            let sig = self.member_signature(ast, &name.name, &member);
+            let Some(signature) = sig else {
+                // A member that is not a function -- a type, a constant, a
+                // variable -- still answers to `block.member`: `shapes.Square`
+                // is how a reader outside the block names the type, and a name
+                // that only exists under its own spelling would be invisible
+                // there.
+                self.pending_names.push(PendingModuleName {
+                    name: export,
+                    span: name.span,
+                    scope,
+                    kind: DefKind::Type,
+                    signature: None,
+                    written_name: member,
+                });
+                continue;
+            };
+
+            self.pending_names.push(PendingModuleName {
+                name: export,
+                span: name.span,
+                scope,
+                kind: DefKind::Function,
+                signature: Some(signature),
+                written_name: member,
+            });
+        }
     }
 
     /// Attaches a signature to an already-declared definition.

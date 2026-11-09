@@ -315,7 +315,7 @@ export fn __im_init__(this &String, text_ptr *const char) void {
         return;
     }
     this._cap = len + 1;
-    this._data = util.allocate(this._cap) as *char;
+    this._data = allocate(this._cap) as *char;
     this._len = len;
     c_memcpy(this._data as *byte, text_ptr as *const byte, len);
     this._data[len] = ZERO;
@@ -360,7 +360,7 @@ export fn __init__(this &String, other &const String) void {
         return;
     }
     this._cap = len + 1;
-    this._data = util.allocate(this._cap) as *char;
+    this._data = allocate(this._cap) as *char;
     this._len = len;
     source *const char = other.text();
     index usize = 0;
@@ -446,7 +446,7 @@ export fn __assign__(this &String, other &const String) void {
     if (len <= INLINE_CAPACITY) {
         // Short: copy into the object and give back whatever buffer this held.
         if (!this.inline_q()) {
-            util.free(this._data);
+            free(this._data);
         }
         this.set_inline(len);
         bytes *char = this.text_mut();
@@ -460,9 +460,9 @@ export fn __assign__(this &String, other &const String) void {
     }
     if (this.inline_q() || this.cap_of() < len + 1) {
         if (!this.inline_q()) {
-            util.free(this._data);
+            free(this._data);
         }
-        this._data = util.allocate(len + 1) as *char;
+        this._data = allocate(len + 1) as *char;
         this._cap = len + 1;
     }
     this._len = len;
@@ -495,7 +495,7 @@ export fn __assign__(this &String, other &&String) void {
     }
     if (other.inline_q()) {
         if (!this.inline_q()) {
-            util.free(this._data);
+            free(this._data);
         }
         len usize = other.len_of();
         this.set_inline(len);
@@ -510,7 +510,7 @@ export fn __assign__(this &String, other &&String) void {
         return;
     }
     if (!this.inline_q()) {
-        util.free(this._data);
+        free(this._data);
     }
     this._data = other._data;
     this._len = other._len;
@@ -533,7 +533,7 @@ buffer twice.
 ```
 export fn __drop__(this &String) void {
     if (!this.inline_q() && this._data != nullptr) {
-        util.free(this._data);
+        free(this._data);
     }
     this._data = nullptr;
     this._len = 0;
@@ -603,7 +603,7 @@ the buffer.
 ```
 export fn __getitem__(this &String, index usize) &char {
     if (index >= this.len_of()) {
-        util.panic("String index out of range");
+        panic("String index out of range");
     }
     return this.text_mut()[index];
 }
@@ -625,7 +625,7 @@ the buffer.
 ```
 export fn __getitem__(this &const String, index usize) &const char {
     if (index >= this.len_of()) {
-        util.panic("String index out of range");
+        panic("String index out of range");
     }
     return this.text()[index];
 }
@@ -668,20 +668,20 @@ export fn shrink_to_fit(this &String) void {
             bytes[index] = buffer[index];
             index += 1;
         }
-        util.free(buffer as *byte);
+        free(buffer as *byte);
         return;
     }
     wanted usize = len + 1;
     if (this._cap <= wanted) {
         return;
     }
-    tight *char = util.allocate(wanted) as *char;
+    tight *char = allocate(wanted) as *char;
     index usize = 0;
     while (index <= len) {
         tight[index] = this._data[index];
         index += 1;
     }
-    util.free(this._data);
+    free(this._data);
     this._data = tight;
     this._cap = wanted;
 }
@@ -827,7 +827,7 @@ case.
 export fn insert(this &String, index usize, ch char) void {
     start usize = this.len_of();
     if (index > start) {
-        util.panic("String insert past the end");
+        panic("String insert past the end");
     }
     this.resize(start + 1, ZERO);
     // Backwards, including the terminator: each byte moves into the space the
@@ -856,7 +856,7 @@ the terminator both move, and the argument is copied in as well.
 export fn insert(this &String, index usize, text_value &const String) void {
     start usize = this.len_of();
     if (index > start) {
-        util.panic("String insert past the end");
+        panic("String insert past the end");
     }
     added usize = text_value.len_of();
     if (added == 0) {
@@ -901,7 +901,7 @@ is the natural thing to have when the program computed one.
 export fn insert(this &String, at *char, ch char) void {
     offset isize = at - this.text_mut();
     if (offset < 0) {
-        util.panic("String insert past the end");
+        panic("String insert past the end");
     }
     this.insert(offset as usize, ch);
 }
@@ -915,7 +915,7 @@ Inserts a string at a position.
 export fn insert(this &String, at *char, text_value &const String) void {
     offset isize = at - this.text_mut();
     if (offset < 0) {
-        util.panic("String insert past the end");
+        panic("String insert past the end");
     }
     this.insert(offset as usize, text_value);
 }
@@ -927,7 +927,7 @@ export fn insert(this &String, at *char, text_value &const String) void {
 export fn erase(this &String, index usize) char {
     len usize = this.len_of();
     if (index >= len) {
-        util.panic("String erase past the end");
+        panic("String erase past the end");
     }
     bytes *char = this.text_mut();
     removed char = bytes[index];
@@ -950,7 +950,7 @@ Removes the character at a position, returning it.
 export fn erase(this &String, at *char) char {
     offset isize = at - this.text_mut();
     if (offset < 0) {
-        util.panic("String erase past the end");
+        panic("String erase past the end");
     }
     return this.erase(offset as usize);
 }

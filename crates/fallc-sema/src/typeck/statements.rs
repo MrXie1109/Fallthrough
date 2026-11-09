@@ -989,6 +989,10 @@ impl TypeChecker {
         self.require_complete(&declared, node.name_span, "a variable");
         // Record the type so later passes can read it.
         self.binding_types.insert(node.name_span, declared.clone());
+        // The name is recorded beside the span so that a later question about
+        // the *name* -- is `node` in `node->value` a local? -- has an answer
+        // without walking the tree.
+        self.binding_types.record_name(&node.name);
         // A binding with no initialiser is *constructed* when its type has a
         // constructor that takes nothing else. Doing nothing would leave the
         // storage as zero bytes, which is the empty value of some types and a

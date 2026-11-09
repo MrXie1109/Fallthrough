@@ -24,6 +24,7 @@
 
 import std.bytes;
 from std.bytes import *;
+from std.bytes import Bytes;
 
 // The largest length a stored block may declare.
 MAX_STORED const usize = 65535usize;

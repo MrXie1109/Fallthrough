@@ -111,7 +111,6 @@ fn main() int except {
 该程序输出 `-1 1`：这个 `if` 就是 `sign` 返回的值，每个分支的块给出其中写下的那个数。
 
 ### 编译期断言
-### 编译期断言
 
 3.3.1 `static_assert(cond)` 或 `static_assert(cond, message)` 在编译期检查
 `bool` 常量；条件为假时实现**必须**报告诊断，并在有 `message` 时将其写入诊断。
@@ -254,6 +253,7 @@ fn begin(this &const [N]const T) *const T {
 ```ft
 import C;
 import std;
+from std import String;
 
 fn main() int except {
     for (ch c8 : "abc") {
@@ -268,6 +268,10 @@ fn main() int except {
 
 5.1.6 定长数组的元素连续排列，因此迭代器是指向它的指针，`end()` 就是
 `begin() + N`。具名数组就地遍历；字面量先绑定到临时对象，这是 5.1.2 的要求。
+
+5.1.6a 定长数组自己提供 `begin()` 与 `end()`，遍历它不需要任何库：编译器为 `[N]T`
+给出 `*T`，为 `[N]const T` 给出 `*const T`。上面例子中的字符串字面量正是
+`[4]const c8`，也就是这一情形。
 
 ### 以范围为被遍历对象
 

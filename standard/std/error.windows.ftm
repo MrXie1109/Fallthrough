@@ -9,9 +9,9 @@ import C;
 
 link kernel32 dynamic from default;
 
-@extern_C fn _errno() *int;
-@extern_C fn strerror(code int) *const char;
-@extern_C fn GetLastError() uint;
+@cabi fn _errno() *int;
+@cabi fn strerror(code int) *const char;
+@cabi fn GetLastError() uint;
 
 // The C runtime's error number for this thread.
 export fn last_error() int {

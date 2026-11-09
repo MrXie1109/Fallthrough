@@ -251,10 +251,20 @@ impl TypeChecker {
                 // value is never split further: `std.out.flush()` on the
                 // umbrella's `out` is a method call, not a lookup of `flush` in
                 // `std`.
+                // A name is a module whether or not a definition answers for
+                // it. The old test also required the object half to resolve to
+                // nothing, which was right while only imported modules existed:
+                // their names are bound by the import, and a *local* of the same
+                // spelling hides the module. A `module` block of this file
+                // publishes its own name as a definition, so the object half
+                // resolves and the call was read as a method on a value. What
+                // decides is the kind of the definition: a module is a module.
                 while !self.imported_variables.contains_key(module) {
-                    if self.is_module(module)
-                        && resolutions.resolve(ast.expr(field.object).span).is_none()
-                    {
+                    let hidden_by_value = resolutions
+                        .resolve(ast.expr(field.object).span)
+                        .and_then(|def| resolutions.def(def))
+                        .is_some_and(|def| def.kind != crate::resolve::DefKind::Module);
+                    if self.is_module(module) && !hidden_by_value {
                         prefix = Some(module.to_owned());
                         break;
                     }
@@ -1190,6 +1200,28 @@ impl TypeChecker {
         if publishes_function {
             return self.type_of_named_call(ast, resolutions, types, &qualified, node, span);
         }
+        // A name a `module` block of this file publishes carries no symbol of
+        // its own: the block is flattened, so the declaration that answers is
+        // in this same tree, and the name `block.member` is the one the resolver
+        // published with that declaration's signature. The call is checked
+        // against the signature and recorded under the member's own symbol --
+        // the one the definition was emitted under.
+        if let Some(published) = resolutions
+            .defs
+            .iter()
+            .find(|def| def.name == qualified && def.kind == crate::resolve::DefKind::Function)
+        {
+            let published = published.clone();
+            return self.type_of_published_call(
+                ast,
+                resolutions,
+                types,
+                &published,
+                &qualified,
+                node,
+                span,
+            );
+        }
         // Not a function: a member value called through its type -- `std.out(..)`
         // is the file's `__call__` -- or a type's constructor.
         if self.imported_variables.contains_key(&qualified)
@@ -1219,6 +1251,95 @@ impl TypeChecker {
             );
         }
         None
+    }
+
+    /// Types a call to a function a `module` block of this file publishes.
+    ///
+    /// The work is the same as for a bare name -- match the arguments against
+    /// the parameters, fill the omitted defaults, record the symbol -- with two
+    /// names to keep straight: the call wrote `block.member`, and the symbol is
+    /// the member's own, because that is the name the definition was emitted
+    /// under.
+    fn type_of_published_call(
+        &mut self,
+        ast: &Ast,
+        resolutions: &Resolutions,
+        types: &mut TypeTable,
+        published: &crate::resolve::Def,
+        qualified: &str,
+        node: &CallExpr,
+        span: fallc_span::Span,
+    ) -> Option<Type> {
+        let signature = published.signature.clone()?;
+        // A block's member is a free function: it takes no receiver, so every
+        // argument it was given has to fill a parameter.
+        let declared = signature.param_types.len();
+        let given = node.args.len() + node.named.len();
+        let required = signature.required_params;
+        if signature.variadic {
+            if given < required {
+                self.diagnostics.push(
+                    Diagnostic::error(format!(
+                        "`{qualified}` takes at least {required} argument(s), but {given} were given"
+                    ))
+                    .with_code(DiagnosticCode::sema(36))
+                    .with_span(span),
+                );
+                return None;
+            }
+        } else if given < required || given > declared {
+            self.diagnostics.push(
+                Diagnostic::error(format!(
+                    "`{qualified}` takes {declared} argument(s), but {given} were given"
+                ))
+                .with_code(DiagnosticCode::sema(36))
+                .with_span(span)
+                .with_note("the members of a module block take no receiver"),
+            );
+            return None;
+        }
+        let arguments = self.match_named_arguments(&signature, node, 0, qualified, span)?;
+        let mut filled = vec![false; signature.param_types.len()];
+        for &(index, _) in &arguments {
+            if let Some(slot) = filled.get_mut(index) {
+                *slot = true;
+            }
+        }
+        for index in 0..signature.param_types.len() {
+            if filled.get(index).copied().unwrap_or(false)
+                || signature.defaults.get(index).copied().flatten().is_none()
+            {
+                continue;
+            }
+            if !self.record_omitted_default(qualified, &signature, index, span) {
+                return None;
+            }
+        }
+        for &(index, argument) in &arguments {
+            let Some(written) = signature.param_types.get(index) else {
+                continue;
+            };
+            let expected = self.resolve_type_syntax(written, true);
+            let previous = self.expected.replace(expected.clone());
+            let found = self.infer_expr(ast, resolutions, types, argument);
+            self.expected = previous;
+            if let Some(found) = found {
+                self.types_must_match(&expected, &found, ast.expr(argument).span, "argument");
+            }
+        }
+        // The symbol the definition was emitted under, built the way every
+        // function's is: the written name, then the parameter types mangled.
+        let params: Vec<String> = signature
+            .param_types
+            .iter()
+            .map(|written| crate::types::mangle_type(&self.resolve_type_syntax(written, true)))
+            .collect();
+        self.call_symbols.insert(
+            span,
+            fallc_ast::special::symbol_for(&signature.written_name, &params),
+        );
+        self.note_throwing_call(span, &signature, ast, None);
+        Some(self.resolve_type_syntax(&signature.return_type, false))
     }
 
     /// Returns `true` if `name` is an imported module.

@@ -18,15 +18,15 @@
 
 import C;
 
-@extern_C fn AcquireSRWLockExclusive(lock *byte) void;
-@extern_C fn ReleaseSRWLockExclusive(lock *byte) void;
-@extern_C fn SleepConditionVariableSRW(condition *byte, lock *byte, milliseconds u32, flags u32) u32;
-@extern_C fn WakeConditionVariable(condition *byte) void;
-@extern_C fn WakeAllConditionVariable(condition *byte) void;
-@extern_C fn CreateThread(attributes *byte, stack_size usize, start *fn(*byte) u32, argument *byte, flags u32, thread_id *u32) *byte;
-@extern_C fn WaitForSingleObject(handle *byte, milliseconds u32) u32;
-@extern_C fn CloseHandle(handle *byte) u32;
-@extern_C fn Sleep(milliseconds u32) void;
+@cabi fn AcquireSRWLockExclusive(lock *byte) void;
+@cabi fn ReleaseSRWLockExclusive(lock *byte) void;
+@cabi fn SleepConditionVariableSRW(condition *byte, lock *byte, milliseconds u32, flags u32) u32;
+@cabi fn WakeConditionVariable(condition *byte) void;
+@cabi fn WakeAllConditionVariable(condition *byte) void;
+@cabi fn CreateThread(attributes *byte, stack_size usize, start *fn(*byte) u32, argument *byte, flags u32, thread_id *u32) *byte;
+@cabi fn WaitForSingleObject(handle *byte, milliseconds u32) u32;
+@cabi fn CloseHandle(handle *byte) u32;
+@cabi fn Sleep(milliseconds u32) void;
 
 // `SleepConditionVariableSRW` waits forever (rather than timing out), and takes
 // exclusive ownership back before it returns.

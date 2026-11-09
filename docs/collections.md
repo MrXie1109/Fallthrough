@@ -17,9 +17,13 @@ document is about **who is responsible for which piece of memory**.
 ## Getting hold of them
 
 ```ft
-import std;              // umbrella module: std.Array<T>, std.String, std.Box<T>
+import std;
+from std.string import Exception;
+from std import String;              // umbrella module: std.Array<T>, std.String, std.Box<T>
 import std.array;        // only Array
+from std.array import Array;
 import std.string;       // only String (Exception is here as well)
+from std.memory import Box;
 import std.memory;       // memory, panic, Box, and the fake/move probes
 import std.algorithm;    // algorithms: sort, reverse, find, fill...
 ```
@@ -27,19 +31,35 @@ import std.algorithm;    // algorithms: sort, reverse, find, fill...
 The examples below print with `C.printf`, so they also need `import C;`: `std` does not
 forward the C bindings -- the two libraries are separate.
 
-The **type names** an umbrella re-exports can be written short:
+**Nothing is written short.** `import std;` binds the module name and nothing else, and
+**no kind of declaration is exempt**: a type, a function, a constant, a variable, an enum,
+an interface and a trait are all reached the same way.
 
 ```ft
 import std;
+from std import Array, String;
+
 fn main() int {
-    xs Array<int>;       // the same type as std.Array<int>
+    xs std.Array<int>;   // not `Array<int>`
+    s std.String;        // not `String`
+    return 0;
+}
+```
+
+A bare name has to be bound, and `from` or `use` is what binds it:
+
+```ft
+import std;
+from std import Array, String;   // or: use std.Array; use std.String;
+
+fn main() int {
+    xs Array<int>;               // bound by the line above
     s String;
     return 0;
 }
 ```
 
-**Functions cannot**: after `import std;` write `std.out.print(s)`, not `print(s)`. Why is
-in [09 Modules](language/09-modules.md#short-names-type-names-and-value-names-are-not-the-same).
+The rule is 2.2.2 of [09 Modules](language/09-modules.md#how-a-name-of-another-module-is-written).
 
 ### The other entry points
 
@@ -73,6 +93,8 @@ use a name with a directory such as `import geom.math;`.
 
 ```ft
 import std;
+from std import Array;
+
 fn main() int {
     xs Array<int>;
     xs.push(3);
@@ -94,7 +116,11 @@ fn main() int {
 The layout of `Array<T>` is "buffer pointer + length + capacity", so
 
 ```ft
+import std.array;
+from std.array import Array;
+
 sizeof(Array<int>)      // 24
+
 sizeof(*int)            // 8, one pointer
 ```
 
@@ -130,6 +156,9 @@ positions, a `String`'s bytes and a `Deque`'s iterator all call the same
 
 ```ft
 import std;
+from std.tree import Greater;
+from std import Array;
+
 fn main() int {
     values Array<int>;
     values.push(3);
@@ -182,6 +211,8 @@ has its own buffer, and changing the source does not affect the element.
 
 ```ft
 import std;
+from std import Array, String;
+
 fn main() int {
     a String = "hello";
     xs Array<String>;
@@ -222,6 +253,8 @@ itself provides (24, terminator included).
 
 ```ft
 import std;
+from std import String;
+
 fn main() int {
     small String = "hi";                 // inline, no malloc
     large String = "this text is long enough to allocate for sure";
@@ -253,6 +286,8 @@ Built-in operators:
 
 ```ft
 import std;
+from std import String;
+
 fn main() int {
     a String = "ab";
     b String = "cd";
@@ -274,6 +309,8 @@ name and a temporary both work:
 
 ```ft
 import std;
+from std import String;
+
 fn main() int {
     text String = "  hello world  ";
     where isize = text.find(String("world"));      // 8
@@ -298,7 +335,11 @@ two separators, before the first, and after the last all count as pieces, even w
 so `"a,b,"` is three pieces and the empty string is one:
 
 ```ft
+import std.array;
+from std.array import Array;
+
 parts Array<String>;
+
 String("a,b,,c").split(',', parts);    // ["a", "b", "", "c"]
 ```
 
@@ -320,6 +361,149 @@ real f64 = String("2.5e2") as f64??;       // 250.0
 `std.in.input(n)` uses the same conversion, so a failed input raises `ValueError`.
 To ask *whether* the text is a number instead of requiring one, catch the
 `ValueError` with `try`/`except`, or check the text before converting.
+
+## `BasicString<Char>`, `String16` and `String32`
+
+`String` is the library's `char` string, with small strings held inside the object (see
+the section above). `BasicString<Char>` is the **general form** of that same shape: a run
+of `Char`, a length, and the operations that read, append and compare
+([`std/basic_string.ftm`](../../standard/std/basic_string.ftm)):
+
+```ft
+import std.basic_string;
+from std.basic_string import BasicString;
+
+text BasicString<char> = BasicString<char>("hello");
+
+text.push('!');                 // hello!
+joined BasicString<char> = text + BasicString<char>(" world");
+```
+
+It has one buffer and no small-string form. Construction, `push`, `length`, `[]`,
+`begin`/`end`, `+`, comparison and `find`/`contains` are all there; the `char` form can
+also be constructed from a C string literal, and converts to `String` through `__str__`.
+
+Wider characters use aliases: `String16 = BasicString<u16>` and `String32 =
+BasicString<u32>` (exported by the `std` umbrella). They have no literal syntax, and are
+constructed from an `Array<u16>` or `Array<u32>`:
+
+```ft
+import std.array;
+from std.array import Array;
+
+units Array<u16> = Array<u16>();
+
+units.push(72 as u16);
+wide String16 = String16(units);
+wide.push(33 as u16);
+```
+
+## `Pair`, `Triple` and `Variant2`
+
+`Pair<A, B>` and `Triple<A, B, C>` are fixed small groups whose fields — `first`,
+`second` and `third` — are public and read directly. Construction, copy, move,
+destruction and `==` all work element by element, so copying a `Pair<String, int>`
+duplicates the text rather than sharing one buffer
+([`std/tuple.ftm`](../../standard/std/tuple.ftm)):
+
+```ft
+import std.tuple;
+from std.tuple import Pair;
+
+point Pair<int, int> = Pair<int, int>(3, 4);
+
+text Pair<String, int> = Pair<String, int>(String("hi"), 7);
+```
+
+`Variant2<A, B>` is "one of the two": `is_first()`/`is_second()` say which one it is,
+`first()`/`second()` take the value out, and taking the wrong one throws `TypeError`.
+Each of the two alternatives is stored behind a pointer and allocated only when it is
+selected, so the unselected side is a null pointer rather than uninitialised bytes
+([`std/variant.ftm`](../../standard/std/variant.ftm)):
+
+```ft
+import std.variant;
+from std.variant import Variant2;
+
+value Variant2<int, String> = Variant2<int, String>(5);
+```
+
+## `Any`: a value of any type
+
+`Any` holds one value of another type in a holder: the value is stored as **text**
+together with its type name, and taking it back is checked against that name, with a
+wrong question throwing `TypeError` ([`std/any.ftm`](../../standard/std/any.ftm)):
+
+```ft
+a Any = Any(42);
+std.print("{} {}\n", a.type_name(), a as int??)??;    // int 42
+b Any = Any(String("hi"));
+std.print("{}\n", b as String??)??;                   // hi
+```
+
+`bool`, `int`, `f64` and `String` are supported, along with literals and C strings;
+`present()`/`if (a)`, `type_name()`, `text()`, `reset()` and `==` are there too. It suits
+configuration values and JSON nodes — places where the type of a value is known only at
+run time. The cost is that equality compares rendered text, and that no more of the type
+is kept than its name.
+
+## `Bitset`, `Ring` and `List`
+
+Three containers of fixed shape:
+
+- **`Bitset`** ([`std/bitset.ftm`](../../standard/std/bitset.ftm)): a fixed number of
+  bits packed into `u64` words. `set(i)` returns the bit's previous value;
+  `test`/`clear_bit`/`toggle`, `count_ones`/`count_zeros`/`any`/`none`,
+  `merge`/`intersect` and `clear`/`set_all` are the rest. Out of range panics, exactly as
+  `Array`'s `[]` does.
+
+  ```ft
+  import std.bitset;
+  from std.bitset import Bitset;
+
+  bits Bitset = Bitset(70usize);
+
+  bits.set(3);
+  n usize = bits.count_ones();      // 1
+  ```
+
+- **`Ring<T>`** ([`std/ring.ftm`](../../standard/std/ring.ftm)): a first-in-first-out
+  buffer of fixed capacity. `push` reports whether the value fitted and does **not**
+  overwrite the oldest when full; `pop()` returns `?T`; `front`/`back`/`get`/`length`/
+  `capacity`/`empty`/`full`/`clear` are the rest. Slots are raw storage: an element is
+  constructed on push and destroyed on pop.
+
+- **`List<T>`** ([`std/list.ftm`](../../standard/std/list.ftm)): a doubly linked list
+  whose nodes are allocated one at a time, so positions stay valid and both ends insert
+  in O(1) — but it cannot be indexed. `push_back`/`push_front`, `pop_front`/`pop_back`
+  returning `?T`, `front`/`back`, `length`/`empty` and `clear`; it is walked with
+  `for (value &const T : list)`, through the `begin`/`end` of `ListIterator<T>`.
+
+## `Bytes`: a sequence of bytes
+
+The untyped sibling of `String`: the same contiguous run of bytes, without the promise
+that the bytes are text. A file, a hash, a protocol buffer and a copy of a `String` are
+all sequences of bytes, and `Bytes` is the type that says "bytes" and not "text"
+([`std/bytes.ftm`](../../standard/std/bytes.ftm)):
+
+```ft
+import std.bytes;
+from std.bytes import Bytes;
+
+data Bytes = "hello";         // copy the bytes of a literal
+
+data.push(33 as byte);
+n usize = data.length();      // 6
+first u8 = data[0];           // 'h'
+```
+
+- The storage and its growth are `Array<u8>`'s: `length`/`empty`/`push`/`reserve`/
+  `resize`/`clear`/`begin`/`end` are forwarded to it. `data()` gives `*byte` and
+  `const_data()` gives `*const byte`.
+- Converting to and from text goes through `as`: `b as String` copies the bytes into text
+  without decoding, and `s as Bytes` copies the other way.
+- Comparison is byte by byte: `==` and `!=` hold only when the lengths are equal and
+  every byte agrees.
 
 ## Iteration
 
@@ -363,7 +547,11 @@ yields, so `rbegin()` is where a forward walk ends, `*it` is the previous elemen
 subtraction.
 
 ```ft
+import std.array;
+from std.array import Array;
+
 it Array<int>.ReverseIterator = a.rbegin();
+
 for (; it != a.rend(); ++it) {
     C.printf("%d ", *it);
 }
@@ -401,6 +589,7 @@ a call's result and a constructed temporary are dying; a named variable is not.
 
 ```ft
 import std;
+from std import String;
 
 fn make() String {
     s String = "hello, this is long enough to need a heap buffer";
@@ -440,6 +629,8 @@ accordingly:
 
 ```ft
 import std;
+from std import Array;
+
 fn main() int {
     xs Array<int>;
     xs.push(1);
@@ -457,6 +648,8 @@ compiler arranges temporary storage:
 
 ```ft
 import std;
+from std import Array, String;
+
 fn main() int {
     xs Array<String>;
     a String = "hello";
@@ -470,6 +663,8 @@ itself, not a copy of it:
 
 ```ft
 import std;
+from std import Array;
+
 type Point { x int; y int; }
 fn main() int {
     ps Array<Point>;
@@ -495,9 +690,12 @@ export fn __drop__(this &Thing) void { }
 ```
 
 ```ft
-// main.ft
+// PHONY: `thing` is a module this book describes but does not ship -- the
+// example shows how an imported module's type is reached, not a real library.
 import C;
 import thing;
+
+// main.ft
 fn main() int {
     t Thing = thing.make_thing(9);
     C.printf("%d\n", t.v);

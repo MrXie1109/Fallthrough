@@ -69,7 +69,7 @@ export fn __init__(this &Matrix, other &&Matrix) void {
     this._rows = other._rows;
     this._columns = other._columns;
     (&this._values)->__init__();
-    this._values = util.move(other._values);
+    this._values = move(other._values);
 }
 ```
 
@@ -93,7 +93,7 @@ Takes a matrix's storage.
 export fn __assign__(this &Matrix, other &&Matrix) void {
     this._rows = other._rows;
     this._columns = other._columns;
-    this._values = util.move(other._values);
+    this._values = move(other._values);
 }
 ```
 

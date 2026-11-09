@@ -53,6 +53,7 @@ import std.error;
 from std.error import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 // The constructor is named in the bodies below, and an imported type is a name
 // a body can only call when the import binds it.
 

@@ -4,16 +4,16 @@
 // are `SOCKET`s, which fit a 64-bit integer; the module keeps them as `i64` and
 // the portable layer works with the same number. `closesocket` is the close.
 
-@extern_C fn WSAStartup(version u16, data *WsaData) i32;
-@extern_C fn socket(domain i32, kind i32, protocol i32) u64;
-@extern_C fn connect(fd u64, address *const byte, length i32) i32;
-@extern_C fn bind(fd u64, address *const byte, length i32) i32;
-@extern_C fn listen(fd u64, backlog i32) i32;
-@extern_C fn accept(fd u64, address *byte, length *i32) u64;
-@extern_C fn send(fd u64, buffer *const byte, length i32, flags i32) i32;
-@extern_C fn recv(fd u64, buffer *byte, length i32, flags i32) i32;
-@extern_C fn closesocket(fd u64) i32;
-@extern_C fn getsockname(fd u64, address *byte, length *i32) i32;
+@cabi fn WSAStartup(version u16, data *WsaData) i32;
+@cabi fn socket(domain i32, kind i32, protocol i32) u64;
+@cabi fn connect(fd u64, address *const byte, length i32) i32;
+@cabi fn bind(fd u64, address *const byte, length i32) i32;
+@cabi fn listen(fd u64, backlog i32) i32;
+@cabi fn accept(fd u64, address *byte, length *i32) u64;
+@cabi fn send(fd u64, buffer *const byte, length i32, flags i32) i32;
+@cabi fn recv(fd u64, buffer *byte, length i32, flags i32) i32;
+@cabi fn closesocket(fd u64) i32;
+@cabi fn getsockname(fd u64, address *byte, length *i32) i32;
 
 // The `WSADATA` block; only its size matters to `WSAStartup` here.
 type WsaData {

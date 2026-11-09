@@ -5,6 +5,8 @@
 `...` 在模板里有三种用法，同一个名字 `values` 三处都能读：
 
 ```ft
+import C;
+
 @constexpr
 template <values ...int>
 fn sum() int {
@@ -22,8 +24,6 @@ template <values ...int>
 fn second() int {
     return values[1];               // 取元素：下标必须是常量
 }
-
-import C;
 
 fn main() int {
     C.printf("%d %zu %d\n", sum<1, 2, 3>(), count<1, 2, 3>(), second<10, 20, 30>());
@@ -70,6 +70,8 @@ fn main() int {
 因为结果是编译期常量，它能直接当数组长度：
 
 ```ft
+import C;
+
 @constexpr
 template <values ...int>
 fn buffer() int {
@@ -77,8 +79,6 @@ fn buffer() int {
     a[2] = 5;
     return a[2];
 }
-
-import C;
 
 fn main() int {
     C.printf("%d\n", buffer<1, 2, 3>());   // 5
@@ -144,14 +144,14 @@ fn main() int {
 一个名字代表一串。函数还能有**形参包**，它是一串**运行期的实参**：
 
 ```ft
+import C;
+
 template <Ts ...type>
 fn total(values ...Ts) int {
     sum int = 0;
     (sum += values, ...);
     return sizeof...(values) as int + sum;
 }
-
-import C;
 
 fn main() int {
     C.printf("%d\n", total(1, 2, 3));   // 9：三个实参，加上 1 + 2 + 3

@@ -4,11 +4,11 @@
 // program with an argument vector; `waitpid` is how the parent learns its exit
 // status. Linux and macOS share these calls, so one file serves both.
 
-@extern_C fn fork() i32;
-@extern_C fn execvp(file *const char, argv *const *const char) i32;
-@extern_C fn waitpid(pid i32, status *i32, options i32) i32;
-@extern_C fn kill(pid i32, signal i32) i32;
-@extern_C fn _exit(code i32) void;
+@cabi fn fork() i32;
+@cabi fn execvp(file *const char, argv *const *const char) i32;
+@cabi fn waitpid(pid i32, status *i32, options i32) i32;
+@cabi fn kill(pid i32, signal i32) i32;
+@cabi fn _exit(code i32) void;
 
 // The option for "wait until the child changes state".
 WAIT const i32 = 0;

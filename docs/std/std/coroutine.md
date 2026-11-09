@@ -1,0 +1,150 @@
+# `std.coroutine`
+
+Coroutines: functions that can suspend and be resumed.
+
+A function marked `@coroutine` returns one of these. Calling it creates the
+coroutine and runs it at once, as far as its first `yield`; after that the
+caller decides when it runs again, with `resume`, and asks for its answer
+with `result`:
+
+    @coroutine
+    fn echo(n int) std.Coroutine<int, int, int> {
+        i int = 0;
+        while (i < n) {
+            i += yield i;
+        }
+        return i;
+    }
+
+    c auto = echo(3);
+    y ?int = c.resume(3);     // 0
+    y = c.resume(4);          // 3
+    r int = c.result()??;     // 7
+
+# The three types
+
+`Coroutine<Send, Yield, Return>` are the answers the function gives to three
+questions: what a `resume` hands in (`Send`), what a `yield` hands out
+(`Yield`), and what the body returns (`Return`).
+
+A `yield` is an *expression*: `i += yield i` hands `i` to the resumer and
+continues with whatever the next `resume` sends, so a coroutine that sends
+values back is written as one loop rather than as a state machine in the
+source.
+
+# Resuming
+
+`resume(send)` runs the coroutine to its next `yield` and answers the value
+it yielded, as `?Yield`: it answers `none` when there is nothing to hand
+back, which is the case after the coroutine has finished.
+
+It never raises. Running a coroutine is not a failure-prone operation, and
+the one thing that can go wrong -- there being no value to hand back -- is
+what `?Yield` already says. A failure inside the body is not `resume`'s:
+it leaves through `result`, which is where a caller asks for the answer.
+
+A coroutine whose `Send` is `void` takes `resume()` with no argument: there
+is nothing to hand in. The two spellings are one name with two `@enable_if`
+conditions, which is what makes the argument optional rather than absent.
+
+# The result
+
+`result()` is the body's `return` value, and it is always `except`: asking a
+coroutine that has not finished has no answer, so it raises. A coroutine that
+ended by raising re-raises that exception from `result()`, so the failure
+reaches the caller where the answer would have.
+
+# Where the coroutine lives
+
+The coroutine's own variables live in a frame on the heap, owned by this
+object and freed when it is destroyed. That is what lets a coroutine outlive
+the call that created it, which is the whole reason it is an object rather
+than a stackful thread.
+
+# The members the compiler provides
+
+A coroutine has exactly two members, `resume` and `result`, and both belong
+to the compiler. Every `@coroutine` function has its own frame layout and its
+own machine, and only the compiler that built them knows how to read them --
+so neither member is declared here. The compiler answers both on a
+`Coroutine` receiver, reading their shape off the three types:
+
+    c.resume(v)   runs to the next yield; `?Yield`, or nothing when Yield is void
+    c.result()    the body's Return, always `except`
+
+What `resume` takes is decided by `Send` and what it answers by `Yield`; the
+two are independent of each other.
+
+## Declarations
+
+### `type Coroutine {`
+
+A coroutine: the frame it runs in, and the machine that runs it.
+
+- `Send`: what a `resume` hands in, and what a `yield` produces
+- `Yield`: what a `yield` hands out, which a `resume` returns
+- `Return`: what the body's `return` gives, which `result` answers
+
+```
+export
+template <Send type, Yield type, Return type>
+type Coroutine {
+    // The frame the compiler built.
+    _frame *byte;
+    // The machine: one function of the frame, resumed with different states.
+    _body *byte;
+}
+```
+
+### `fn __init__(this &Coroutine<Send, Yield, Return>, other &&Coroutine<Send, Yield, Return>) void`
+
+Takes another coroutine's frame.
+
+A coroutine cannot be copied: two objects holding one frame would run one
+machine, and both would free it. It moves instead, and the source is left
+holding nothing -- which is what makes `go(fetch(..))` and `return c;`
+possible.
+
+- `other`: the coroutine to take from; it owns nothing afterwards
+
+```
+export
+template <Send type, Yield type, Return type>
+fn __init__(this &Coroutine<Send, Yield, Return>, other &&Coroutine<Send, Yield, Return>) void
+```
+
+### `fn __drop__(this &Coroutine<Send, Yield, Return>) void`
+
+Releases the frame the coroutine owns.
+
+The frame is the coroutine's own variables, so it is what the body allocated
+on its behalf. Releasing it is the end of the coroutine whether it finished
+or not: a coroutine that is dropped mid-way is one that will never be resumed
+again, and its bindings are released with the frame.
+
+```
+export
+template <Send type, Yield type, Return type>
+fn __drop__(this &Coroutine<Send, Yield, Return>) void
+```
+
+### `fn asleep(milliseconds int) Coroutine<void, void, void>`
+
+Sleeps for `milliseconds`, suspending this coroutine rather than the thread.
+
+It is a coroutine, so a caller waits for it with `yield from`:
+
+    yield from asleep(100);
+
+The wait is a poll: each turn hands the coroutine on, and the clock is what
+says when to stop. A program with nothing else to run therefore spins until
+the deadline; the executor has one queue and no timers to be woken by.
+
+`asleep(0)` suspends once and returns, which is what a coroutine uses to let
+the others have their turn.
+
+```
+@coroutine
+export
+fn asleep(milliseconds int) Coroutine<void, void, void>
+```

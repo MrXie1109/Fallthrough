@@ -39,7 +39,7 @@ fn an_import_is_recorded_in_the_tree() {
 
 #[test]
 fn an_extern_declaration_parses_with_an_abi_and_export() {
-    let source = "@extern_C export fn puts(text *const c8) int;\n";
+    let source = "@cabi export fn puts(text *const c8) int;\n";
     let (_, output) = compile_text("test.ftm", source, &[EmitKind::Ast]);
     assert!(output.contains("extern \"C\""), "{output}");
     assert!(output.contains("export"), "{output}");
@@ -48,7 +48,7 @@ fn an_extern_declaration_parses_with_an_abi_and_export() {
 
 #[test]
 fn a_variadic_declaration_records_the_ellipsis() {
-    let source = "@extern_C export fn printf(fmt *const c8, ...) int;\n";
+    let source = "@cabi export fn printf(fmt *const c8, ...) int;\n";
     let (_, output) = compile_text("test.ftm", source, &[EmitKind::Ast]);
     assert!(output.contains(", ..."), "{output}");
 }
@@ -56,7 +56,7 @@ fn a_variadic_declaration_records_the_ellipsis() {
 #[test]
 fn a_function_may_omit_its_return_type() {
     // A C `void` function writes its return type, like any declaration.
-    let source = "@extern_C export fn abort() void;\n";
+    let source = "@cabi export fn abort() void;\n";
     let (_, output) = compile_text("test.ftm", source, &[EmitKind::Ast]);
     assert!(output.contains("abort"), "{output}");
 }

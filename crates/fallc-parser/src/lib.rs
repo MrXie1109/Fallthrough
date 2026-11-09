@@ -31,6 +31,6 @@ pub mod parser;
 pub mod precedence;
 pub mod stream;
 
-pub use parser::{ParseResult, Parser, ParserConfig};
+pub use parser::{ParseResult, Parser, ParserConfig, parse_type_source};
 pub use precedence::{Assoc, BindingPower, Fixity};
 pub use stream::TokenStream;

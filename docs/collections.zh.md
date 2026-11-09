@@ -16,9 +16,13 @@
 ## 拿到它们
 
 ```ft
-import std;              // 伞模块：std.Array<T>、std.String、std.Box<T>
+import std;
+from std.string import Exception;
+from std import String;              // 伞模块：std.Array<T>、std.String、std.Box<T>
 import std.array;        // 只要 Array
+from std.array import Array;
 import std.string;       // 只要 String（Exception 也在这里）
+from std.memory import Box;
 import std.memory;       // 内存、panic、Box、以及 fake/move 探针
 import std.algorithm;    // 算法：sort、reverse、find、fill…
 ```
@@ -26,19 +30,37 @@ import std.algorithm;    // 算法：sort、reverse、find、fill…
 下面的例子用 `C.printf` 打印，所以它们还要 `import C;`：`std` 不会转发 C 的绑定，
 两套库是分开的。
 
-伞模块导出的**类型名**可以直接写短：
+**没有任何东西可以写短。** `import std;` 只绑定模块名，而且**没有任何种类的声明是
+例外**：类型、函数、常量、变量、枚举、接口与 trait 都同样取得。
 
 ```ft
 import std;
+from std import Array, String;
+
 fn main() int {
-    xs Array<int>;       // 与 std.Array<int> 是同一个类型
+    xs std.Array<int>;   // 不是 `Array<int>`
+    s std.String;        // 不是 `String`
+    return 0;
+}
+```
+
+裸名必须先被绑定，绑定它的是 `from` 或 `use`：
+
+```ft
+import std;
+from std import Array, String;   // 或：use std.Array; use std.String;
+
+fn main() int {
+    xs Array<int>;               // 由上面那行绑定
     s String;
     return 0;
 }
 ```
 
-**函数不能**写短：`import std;` 之后要写 `std.out.print(s)`，不能写 `print(s)`。理由
-见 [09 模块](language/09-modules.zh.md#短名类型名字和值名字不一样)。
+规则见 [09 模块 §2.2.2](language/09-modules.zh.md#另一个模块的名字怎么写)。
+
+下文示例为便于阅读，统一写 `from std import Array;`（或 `use std.Array;`）之后再使用
+裸名 `Array<T>`；也可以在任何地方改写成限定写法 `std.Array<T>`，两者等价。
 
 ### 其余入口
 
@@ -70,6 +92,8 @@ fn main() int {
 
 ```ft
 import std;
+from std import Array;
+
 fn main() int {
     xs Array<int>;
     xs.push(3);
@@ -91,7 +115,11 @@ fn main() int {
 `Array<T>` 的布局是「buffer 指针 + 长度 + 容量」，所以
 
 ```ft
+import std.array;
+from std.array import Array;
+
 sizeof(Array<int>)      // 24
+
 sizeof(*int)            // 8，一个指针
 ```
 
@@ -125,6 +153,9 @@ sizeof(*int)            // 8，一个指针
 
 ```ft
 import std;
+from std.tree import Greater;
+from std import Array;
+
 fn main() int {
     values Array<int>;
     values.push(3);
@@ -176,6 +207,8 @@ buffer，改源不影响元素。
 
 ```ft
 import std;
+from std import Array, String;
+
 fn main() int {
     a String = "hello";
     xs Array<String>;
@@ -207,6 +240,8 @@ fn main() int {
 
 ```ft
 import std;
+from std import String;
+
 fn main() int {
     small String = "hi";                 // 内联，没有 malloc
     large String = "this text is long enough to allocate for sure";
@@ -237,6 +272,8 @@ fn main() int {
 
 ```ft
 import std;
+from std import String;
+
 fn main() int {
     a String = "ab";
     b String = "cd";
@@ -257,6 +294,8 @@ fn main() int {
 
 ```ft
 import std;
+from std import String;
+
 fn main() int {
     text String = "  hello world  ";
     where isize = text.find(String("world"));      // 8
@@ -279,7 +318,11 @@ fn main() int {
 一段：
 
 ```ft
+import std.array;
+from std.array import Array;
+
 parts Array<String>;
+
 String("a,b,,c").split(',', parts);    // ["a", "b", "", "c"]
 ```
 
@@ -307,7 +350,11 @@ real f64 = String("2.5e2") as f64??;       // 250.0
 （[`std/basic_string.ftm`](../../standard/std/basic_string.ftm)）：
 
 ```ft
+import std.basic_string;
+from std.basic_string import BasicString;
+
 text BasicString<char> = BasicString<char>("hello");
+
 text.push('!');                 // hello!
 joined BasicString<char> = text + BasicString<char>(" world");
 ```
@@ -320,7 +367,11 @@ joined BasicString<char> = text + BasicString<char>(" world");
 （在 `std` 伞模块里导出）。它们没有字面量语法，从 `Array<u16>`/`Array<u32>` 构造：
 
 ```ft
+import std.array;
+from std.array import Array;
+
 units Array<u16> = Array<u16>();
+
 units.push(72 as u16);
 wide String16 = String16(units);
 wide.push(33 as u16);
@@ -334,7 +385,11 @@ wide.push(33 as u16);
 （[`std/tuple.ftm`](../../standard/std/tuple.ftm)）：
 
 ```ft
+import std.tuple;
+from std.tuple import Pair;
+
 point Pair<int, int> = Pair<int, int>(3, 4);
+
 text Pair<String, int> = Pair<String, int>(String("hi"), 7);
 ```
 
@@ -344,7 +399,11 @@ text Pair<String, int> = Pair<String, int>(String("hi"), 7);
 （[`std/variant.ftm`](../../standard/std/variant.ftm)）：
 
 ```ft
+import std.variant;
+from std.variant import Variant2;
+
 value Variant2<int, String> = Variant2<int, String>(5);
+
 if (value.is_first()) {
     std.print("{}\n", value.first()??)??;
 }
@@ -377,7 +436,11 @@ std.print("{}\n", b as String??)??;                   // hi
   的 `[]` 一样会 panic。
 
   ```ft
+import std.bitset;
+from std.bitset import Bitset;
+
   bits Bitset = Bitset(70usize);
+
   bits.set(3);
   n usize = bits.count_ones();      // 1
   ```
@@ -399,7 +462,11 @@ std.print("{}\n", b as String??)??;                   // hi
 说“字节”而不是“文本”的那个类型（[`std/bytes.ftm`](../../standard/std/bytes.ftm)）：
 
 ```ft
+import std.bytes;
+from std.bytes import Bytes;
+
 data Bytes = "hello";         // 复制字面量的字节
+
 data.push(33 as byte);
 n usize = data.length();      // 6
 first u8 = data[0];           // 'h'
@@ -448,7 +515,11 @@ RandomAccessIterator` 这条链的最上层。
 时的位置，`*it` 是前一个元素，`++it` 向开头走。它只有十几个字节和一次指针减法。
 
 ```ft
+import std.array;
+from std.array import Array;
+
 it Array<int>.ReverseIterator = a.rbegin();
+
 for (; it != a.rend(); ++it) {
     C.printf("%d ", *it);
 }
@@ -482,6 +553,7 @@ gone int = a.erase(a.begin()); // 删掉第一个，返回它
 
 ```ft
 import std;
+from std import String;
 
 fn make() String {
     s String = "hello, this is long enough to need a heap buffer";
@@ -516,6 +588,8 @@ fn main() int {
 
 ```ft
 import std;
+from std import Array;
+
 fn main() int {
     xs Array<int>;
     xs.push(1);
@@ -531,6 +605,8 @@ fn main() int {
 
 ```ft
 import std;
+from std import Array, String;
+
 fn main() int {
     xs Array<String>;
     a String = "hello";
@@ -543,6 +619,8 @@ fn main() int {
 
 ```ft
 import std;
+from std import Array;
+
 type Point { x int; y int; }
 fn main() int {
     ps Array<Point>;
@@ -567,9 +645,12 @@ export fn __drop__(this &Thing) void { }
 ```
 
 ```ft
-// main.ft
+// PHONY：`thing` 是本书用来说明问题的模块，并不存在；本例演示的是
+// 怎样取用被导入模块的类型，而不是某个真实库。
 import C;
 import thing;
+
+// main.ft
 fn main() int {
     t Thing = thing.make_thing(9);
     C.printf("%d\n", t.v);

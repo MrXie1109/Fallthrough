@@ -10,8 +10,10 @@
 
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // Joins `parts` with `separator` between them.
 export fn join(parts &const Array<String>, separator &const String) String {

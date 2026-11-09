@@ -24,6 +24,7 @@ import std.os;
 from std.os import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 import std.internal.time_sys;
 from std.internal.time_sys import *;
 

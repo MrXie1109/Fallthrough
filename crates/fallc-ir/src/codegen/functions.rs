@@ -6,6 +6,25 @@
 
 use super::*;
 
+/// Every top-level item, with each module block replaced by its members.
+///
+/// A block is a container: what it holds declares names and produces code
+/// exactly as if it stood at the top level, so the passes that walk a file walk
+/// through its blocks rather than around them.
+pub(super) fn flat_items(ast: &Ast) -> Vec<fallc_ast::ItemId> {
+    fn collect(ast: &Ast, items: &[fallc_ast::ItemId], out: &mut Vec<fallc_ast::ItemId>) {
+        for &item in items {
+            match &ast.item(item).kind {
+                ItemKind::Module(module) => collect(ast, &module.items, out),
+                _ => out.push(item),
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(ast.items.len());
+    collect(ast, &ast.items, &mut out);
+    out
+}
+
 impl<'ctx> Lowerer<'ctx> {
     /// Lowers every top-level item.
     ///
@@ -27,7 +46,9 @@ impl<'ctx> Lowerer<'ctx> {
         // function body lowered later can read or write it however the source
         // orders them: `fn read() { return value; }` before `value int = 7;` is
         // legal, as every declaration is order-independent.
-        for &item in &ast.items {
+        // Both passes reach a module block's members too: a block is a
+        // container, so its declarations are this file's declarations.
+        for &item in &flat_items(ast) {
             match &ast.item(item).kind {
                 ItemKind::Variable(variable) => self.lower_global(ast, bindings, variable),
                 // A name whose storage is elsewhere: the module gets a
@@ -36,7 +57,7 @@ impl<'ctx> Lowerer<'ctx> {
                 _ => {}
             }
         }
-        for &item in &ast.items {
+        for &item in &flat_items(ast) {
             let ItemKind::Function(function) = &ast.item(item).kind else {
                 continue;
             };
@@ -73,67 +94,90 @@ impl<'ctx> Lowerer<'ctx> {
             self.declare_function(function, &ast.item(item).attrs);
         }
 
-        for &item in &ast.items {
-            let item_ref = ast.item(item);
-            match &item_ref.kind {
-                // A top-level `if @constexpr` is flattened before checking;
-                // its selected declarations appear in the item list directly.
-                ItemKind::Conditional(_) => {}
-                ItemKind::Function(function) => {
-                    // A template's body is emitted once per instantiation, not
-                    // here; its own declaration names types that do not exist.
-                    // A method of a templated type is the same case: the `T` in
-                    // its receiver is a family's parameter, and the member is
-                    // the instantiation.
-                    if function.template_params.is_empty()
-                        && !function.has_pack()
-                        && !self.templated_methods.contains(&function.name_span)
-                        && !self.disabled_functions.contains(&function.name_span)
-                    {
-                        self.lower_function(ast, types, bindings, function);
-                    }
+        for &item in &flat_items(ast) {
+            self.lower_item_body(ast, types, bindings, item);
+        }
+    }
+
+    /// Lowers one top-level item's code.
+    ///
+    /// A module block recurses into this: its members are this file's code, so
+    /// they are emitted by the same pass that emits the file's own items.
+    fn lower_item_body(
+        &mut self,
+        ast: &Ast,
+        types: &TypeTable,
+        bindings: &BindingTypes,
+        item: fallc_ast::ItemId,
+    ) {
+        let item_ref = ast.item(item);
+        match &item_ref.kind {
+            // A top-level `if @constexpr` is flattened before checking;
+            // its selected declarations appear in the item list directly.
+            ItemKind::Conditional(_) => {}
+            ItemKind::Function(function) => {
+                // A template's body is emitted once per instantiation, not
+                // here; its own declaration names types that do not exist.
+                // A method of a templated type is the same case: the `T` in
+                // its receiver is a family's parameter, and the member is
+                // the instantiation.
+                if function.template_params.is_empty()
+                    && !function.has_pack()
+                    && !self.templated_methods.contains(&function.name_span)
+                    && !self.disabled_functions.contains(&function.name_span)
+                {
+                    self.lower_function(ast, types, bindings, function);
                 }
-                // An assertion is checked by the checker; nothing is emitted
-                // for it.
-                ItemKind::StaticAssert(_) => {}
-                // A `__setup__` block is emitted by `lower_setup_blocks`, once
-                // every item exists: it may call anything in the program.
-                ItemKind::Setup(_) => {}
-                // An interface declares signatures and nothing to run.
-                ItemKind::Interface(_) => {}
-                // An import names another module; its contents are lowered as
-                // part of that module, not here.
-                ItemKind::Import(_) => {}
-                // A link instruction produces no code at all: it is consumed
-                // by the driver, which is the part that links.
-                ItemKind::Link(_) => {}
-                // A type declaration has no code of its own: its layout is
-                // produced on demand by the type mapper.
-                ItemKind::TypeDeclaration(_) => {}
-                // A module-level variable is storage for the whole run, so it
-                // becomes a global. Its initialiser is a constant -- the image
-                // is laid out before the program runs -- and the checker already
-                // folded it into `constant_values`.
-                // Emitted in the declaring pass above, so that a body lowered
-                // earlier in this pass can still reach it.
-                ItemKind::Variable(_) | ItemKind::ExternVariable(_) => {}
-                // A constant produces no code either: every use of it was
-                // folded into its value while the types were being checked, so
-                // there is nothing left to compute at run time. A constant that
-                // could not be folded was already reported.
-                ItemKind::Const(_) => {}
-                // An enum produces no code for the same reason a constant
-                // does: each member was folded to its value while the types
-                // were being checked, so `Color.RED` is already a number.
-                ItemKind::EnumDeclaration(_) => {}
-                // A trait declares no code: its requirements are checked where
-                // a type is asked about it, and nothing is emitted.
-                ItemKind::Trait(_) => {}
-                // `Unresolved` is the parser's placeholder for an item it
-                // could not parse. The diagnostic was reported there, so there
-                // is nothing here to emit.
-                ItemKind::Unresolved(_) => {}
             }
+            // An assertion is checked by the checker; nothing is emitted
+            // for it.
+            ItemKind::StaticAssert(_) => {}
+            // A `__setup__` block is emitted by `lower_setup_blocks`, once
+            // every item exists: it may call anything in the program.
+            ItemKind::Setup(_) => {}
+            // An interface declares signatures and nothing to run.
+            ItemKind::Interface(_) => {}
+            // An import names another module; its contents are lowered as
+            // part of that module, not here.
+            ItemKind::Import(_) => {}
+            // A `use` binds names at compile time and emits nothing.
+            ItemKind::Use(_) => {}
+            // A module block is a container: its members are emitted here,
+            // by the same pass, exactly as the file's own declarations are.
+            ItemKind::Module(module) => {
+                for &member in &module.items {
+                    self.lower_item_body(ast, types, bindings, member);
+                }
+            }
+            // A link instruction produces no code at all: it is consumed
+            // by the driver, which is the part that links.
+            ItemKind::Link(_) => {}
+            // A type declaration has no code of its own: its layout is
+            // produced on demand by the type mapper.
+            ItemKind::TypeDeclaration(_) => {}
+            // A module-level variable is storage for the whole run, so it
+            // becomes a global. Its initialiser is a constant -- the image
+            // is laid out before the program runs -- and the checker already
+            // folded it into `constant_values`.
+            // Emitted in the declaring pass above, so that a body lowered
+            // earlier in this pass can still reach it.
+            ItemKind::Variable(_) | ItemKind::ExternVariable(_) => {}
+            // A constant produces no code either: every use of it was
+            // folded into its value while the types were being checked, so
+            // there is nothing left to compute at run time. A constant that
+            // could not be folded was already reported.
+            ItemKind::Const(_) => {}
+            // An enum produces no code for the same reason a constant
+            // does: each member was folded to its value while the types
+            // were being checked, so `Color.RED` is already a number.
+            ItemKind::EnumDeclaration(_) => {}
+            // A trait declares no code: its requirements are checked where
+            // a type is asked about it, and nothing is emitted.
+            ItemKind::Trait(_) => {}
+            // `Unresolved` is the parser's placeholder for an item it
+            // could not parse. The diagnostic was reported there, so there
+            // is nothing here to emit.
+            ItemKind::Unresolved(_) => {}
         }
     }
 

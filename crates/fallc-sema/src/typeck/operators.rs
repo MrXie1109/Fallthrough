@@ -2067,6 +2067,16 @@ impl TypeChecker {
     /// A type named through the module that declares it -- `lib.Color` -- is
     /// written as a field access, so the spelling is rebuilt from the
     /// expression rather than taken from one identifier.
+    /// Whether an expression names a value rather than a module.
+    ///
+    /// One case this separates: a module and a local of the same name in one
+    /// scope, where `name.member` means the variable's field. A module has no
+    /// value, so a name whose definition was bound to a type in a body is not a
+    /// module here.
+    fn names_a_value(&self, name: &str) -> bool {
+        self.binding_types.has_binding_named(name)
+    }
+
     fn written_type_name(ast: &Ast, expr: ExprId) -> Option<String> {
         match &ast.expr(expr).kind {
             ExprKind::Name(name) => Some(name.clone()),
@@ -2181,6 +2191,37 @@ impl TypeChecker {
                     );
                     return None;
                 }
+            }
+        }
+        // A module's name is not a value, so `shapes.sides` cannot be read as
+        // a field: what the reader wrote is a member of a module, and the
+        // module either publishes it or does not. Saying which of the two it is
+        // -- rather than letting the object half fail silently -- is what makes
+        // a private member the diagnostic it is.
+        if let Some(object_name) = Self::written_type_name(ast, node.object)
+            && self.is_module(&object_name)
+            // A module and a local may share a name -- a module `node` and a
+            // variable `node *Node` -- so the module reading is taken only
+            // where the name is not a value here: `node->value` inside a
+            // function that binds `node` is a field of that pointer.
+            && !self.names_a_value(&object_name)
+        {
+            let published = resolutions.defs.iter().any(|def| {
+                def.name == format!("{object_name}.{}", node.field)
+                    || def.name.rsplit_once('.').is_some_and(|(module, member)| {
+                        module == object_name && member == node.field
+                    })
+            });
+            if !published {
+                self.diagnostics.push(
+                    Diagnostic::error(format!(
+                        "module `{object_name}` does not export `{}`",
+                        node.field
+                    ))
+                    .with_code(DiagnosticCode::sema(4))
+                    .with_span(span)
+                    .with_note("a module block's members are private unless marked `export`"),
+                );
             }
         }
         let previous = self.expected.take();

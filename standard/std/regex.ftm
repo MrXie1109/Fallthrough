@@ -31,6 +31,7 @@ import std.optional;
 from std.optional import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // The result of a search: a half-open range of the text.
 export type Match {

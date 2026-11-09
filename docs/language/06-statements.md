@@ -276,6 +276,7 @@ used directly as the range of a range loop:
 ```ft
 import C;
 import std;
+from std import String;
 
 fn main() int except {
     for (ch c8 : "abc") {
@@ -291,6 +292,11 @@ This program prints `a b c`.
 5.1.6 The elements of a fixed-length array are in line, so the iterators are pointers
 into it and `end()` is `begin() + N`. A named array is walked in place; a literal is
 bound to a temporary first, as 5.1.2 requires.
+
+5.1.6a A fixed-length array supplies `begin()` and `end()` itself, so no library is
+needed to walk one: the compiler answers both for `[N]T`, giving `*T`, and for
+`[N]const T`, giving `*const T`. The string literal of the example above is
+`[4]const c8`, which is exactly that case.
 
 ### Ranges as the subject
 

@@ -33,7 +33,7 @@ impl Parser {
         // A definition may leave the return type out: it then means `auto`,
         // deduced from the body's `return` statements. A declaration has no body
         // to deduce from, so it must write its type -- `void` included, as
-        // `@extern_C fn exit(status int) void;` does. That is also what a
+        // `@cabi fn exit(status int) void;` does. That is also what a
         // defaulted or deleted function is: a declaration.
         let return_type = if stream.at(TokenKind::Punct(Punctuation::OpenBrace)) {
             TypeSyntax::Auto(stream.current_span())

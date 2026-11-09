@@ -18,8 +18,10 @@
 
 import std.random;
 from std.random import *;
+from std.random import Random;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // A universally unique identifier.
 export type Uuid {

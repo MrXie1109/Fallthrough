@@ -40,8 +40,8 @@ arrives, the corresponding code is filled in and the row is marked done. The
 
 | # | Question | Blocks |
 | - | -------- | ------ |
-| 2.1 | Top-level constructs | **Partly answered.** Functions (with `@extern_C` and `export`), `import`, `link`, `type`, macros (`define` / `export define`), attributes (`@name` / `@name(args)`), module-level variables (including `@extern_C` external variables), constants, and `traits` are specified, as are templates (2.12). |
-| 2.2 | Visibility/export syntax | **Answered.** `export` before a module-level declaration makes it visible to importers; without it the declaration is private to the module. |
+| 2.1 | Top-level constructs | **Answered.** Functions (with `@cabi` and `export`), `import`, `use`, `module`, `link`, `type`, macros (`define` / `export define`), attributes (`@name` / `@name(args)`), module-level variables (including `@cabi` external variables), constants, and `traits` are specified, as are templates (2.12). |
+| 2.2 | Visibility/export syntax | **Answered.** `export` before a module-level declaration — or before a member of a `module` block — makes it visible from outside; without it the declaration is private to its module or block. A member function is found by its receiver's type and published by `export`. |
 | 2.3 | Attributes and where they may appear | **Answered.** Written before the declaration they describe, one or more of them: `@inline` and `@noreturn` on a function, `@deprecated` on a function or a module-level variable, `@align(...)` on a variable. A `@noreturn` function may not declare a return value. |
 | 2.4 | **Control flow** (if/while/for/for-each/switch/break/continue/return/raise/try) | **Answered** — see below |
 | 2.5 | **`fallthrough`**: statement form and position | **Answered.** `fallthrough;`, inside `switch`; falls to the next case |
@@ -259,7 +259,7 @@ body uses travel with it, and a local `define` shadows an imported one). A
 importing file first, then in `standard/`. Imports are followed **transitively**,
 so a module that imports another has its own imports available.
 
-There are three spellings, and they differ in *what the importing file can
+There are seven spellings, and they differ in *what the importing file can
 name*, not in what is loaded:
 
 | Spelling | What the file may write |
@@ -268,6 +268,62 @@ name*, not in what is loaded:
 | `import C as Libc;` | `Libc.printf` |
 | `from C import printf, puts;` | `printf`, `puts` |
 | `from C import *;` | every export of `C` |
+| `use C;` | `C.printf` |
+| `use C as Libc;` | `Libc.printf` |
+| `use C.printf;` / `use C.*;` | `printf` / every export of `C` |
+
+`use` is the same act under another word: both read the module, and the
+difference is what the importing file may then write.
+
+**A plain `import C;` binds the module name and nothing else.** No kind of
+declaration is exempt: a type, a function, a constant, a variable, an enum, an
+interface and a trait are all reached as `C.name`. `String` after `import std;`
+names nothing; `std.String` does. A bare name exists only where `from` or `use`
+bound it.
+
+#### Module blocks, as specified
+
+`module Name { … }` is a `.ftm` file written inside a file. It is a container and
+a visibility boundary and nothing else: its members are declarations of the
+enclosing file, checked exactly as if they stood at the top level, and `export`
+on a member decides what a name from outside the block reaches.
+
+A type declared inside a block answers both spellings — its own name within the
+file, and `Name.Type` from outside it — because the two names are one
+declaration.
+
+Importing does not nest: `import M;` takes the whole of `M` as one flat module
+named `M`. Each module is therefore parsed once and named once, and two paths to
+one module meet the same module.
+
+#### Member functions, as specified
+
+A member function is **published by `export`** and **found by its receiver's
+type**. A call `x.f(…)` looks for `f` in the module that declares the type of
+`x`, whether or not that module's functions were imported. This is
+argument-dependent lookup applied to member functions, and it is why a type and
+its methods travel together: exporting `Array` is enough for `xs.length()` to
+resolve.
+
+Argument-dependent lookup decides **where to look**, not **what may be found**: a
+method that is not `export`ed is private to its module and is not a candidate,
+however the receiver's type names it.
+
+#### The compiled-module cache
+
+A module's export table may be cached to a file and read back instead of
+repeating the parse, the resolution and the declaration check. The cache is an
+optimisation: a program's meaning must not depend on whether the file was
+present. It is refused, and the module compiled from source, when the file was
+written by another compiler build or format version, names another pointer
+width, no longer matches the module's own source hash, or does not decode.
+
+The table is keyed on the module's **own** source, not on its dependencies: what
+a module exports is a property of its own text. The record carries the set of
+modules it was compiled against, and a reader loads those before using it.
+
+The object cache's key is a function of the **set** of modules, not of the order
+they were loaded in.
 
 An alias is only a local spelling: the module is still loaded under its own
 name, so two files may give it different local names.
@@ -346,10 +402,10 @@ anything itself.
 An external function is declared with an ABI:
 
 ```text
-@extern_C export fn printf(fmt *const c8, ...) int;
+@cabi export fn printf(fmt *const c8, ...) int;
 ```
 
-`@extern_C` selects the C calling convention, `export` makes it importable,
+`@cabi` selects the C calling convention, `export` makes it importable,
 and `...` makes it variadic. A declaration with a semicolon and no braces has
 no body: it is implemented elsewhere, and code generation emits an LLVM
 declaration for it. Omitting the return type means the function returns nothing,
@@ -631,7 +687,7 @@ construct becomes LLVM IR. Directory: `crates/fallc-ir/src/codegen/`.
 | 5.2 | The LLVM type each Fallthrough type maps to | **Answered.** A struct maps to the LLVM struct its fields give, and `sizeof`/`alignof` agree with that layout including padding. Integers map to `iN`, `float`/`double` to `f32`/`f64`, and `[N]T` to an LLVM array. |
 | 5.3 | Whether integers are signed, and where signedness selects the instruction (`sdiv` vs `udiv`) | types.rs, codegen |
 | 5.4 | Aggregate passing/returning conventions (by value vs by pointer) | types.rs, codegen |
-| 5.5 | Globals and constants | **Answered.** A module-level variable is one object initialised once and emitted as a global; an external variable (`@extern_C`) is emitted as a declaration of the library's symbol, not a definition; a `const` binding supplies a compile-time constant where one is required. |
+| 5.5 | Globals and constants | **Answered.** A module-level variable is one object initialised once and emitted as a global; an external variable (`@cabi`) is emitted as a declaration of the library's symbol, not a definition; a `const` binding supplies a compile-time constant where one is required. |
 | 5.6 | **`fallthrough`** and control-flow lowering | **Answered.** if/else → blocks and `br`; loop `else` = normal-termination edge, `break` = end block; `switch` arms get an automatic break, `fallthrough` branches to the next arm. |
 | 5.7 | Calling conventions and the `main` ABI | codegen |
 | 5.8 | Evaluation order and short-circuit semantics (LLVM guarantees no evaluation order, so if Fallthrough does, lowering must encode it) | codegen |
@@ -744,7 +800,7 @@ observe.
 | 2 | Default arguments from earlier parameters | A function's default argument may use the parameters before it and is evaluated only when the argument is omitted; a template's default argument may use the template parameters before it. |
 | 3 | Keyword arguments | `.name = value` after every positional argument, in any order, skipping defaulted parameters; the same form is accepted by `.{..}` initialisers and by `T(...)` constructor calls, and the parameter names of a function in another module travel with its signature. |
 | 4 | `type(auto)` | `decltype(auto)`: the expression's own type, so a place stays a `&T` and `const` is kept; allowed for a binding and for a return type. |
-| 5 | Omitted return type | A definition without one means `auto`; a declaration (including `@extern_C`) must write its type, `void` included. |
+| 5 | Omitted return type | A definition without one means `auto`; a declaration (including `@cabi`) must write its type, `void` included. |
 | 6 | Lambdas and closures | `lambda(args) -> expr` and `lambda(args) { ... }`; `lambda` is reserved; a parameter may omit its type and is instantiated per call; a call of a lambda needs parentheses around it; names are captured by reference; a lambda that captures nothing and does not raise *is* a function and decays to `*fn(...) ...`; any other lambda used as a value is a **closure** -- a value of an anonymous aggregate type whose fields are the captured addresses -- which may be stored in an `auto` binding, passed to a template, returned, captured by another closure, and called wherever it is visible, and whose body has its own locals; a lambda body may raise, which makes its calls throwing calls that have to be handled. |
 | 7 | `interface` | Declared exactly like `traits` -- the same parenthesised parameter list (`interface ICount(it T)`, the first parameter is the subject, later ones are type parameters), and the same body of restrictions. A restriction that states a result type (`it.next() -> int`) is a method-table entry: its name is the member called, its parameter types are the types the arguments name (`it.add(*int)`), and `??` marks a method that may raise (`it.save(int)?? -> void`); a restriction with no result type (`it.begin() -> !void`) is a check and not callable through the box. Boxing checks the same restrictions a trait query checks (one body, two uses), reports S0177 naming the restriction and the reason, and a value is a heap copy plus a method table, so a method that writes its receiver writes the copy; virtual calls are by name and by position (parameters have types, not names); `interface I;` is a forward declaration. An interface value may also become a narrower interface (methods matched by name, the table rebuilt from the source's entries), interfaces work inside template bodies, an interface method may return an aggregate passed out of line, and a throwing entry makes every virtual call of it a throwing call. A reference to an interface is an interface value for the purpose of a call -- it dispatches through the box behind it -- while a concrete value is *not* a reference to a box: `&value` where `&ICount` is wanted is refused, and the program boxes first (`b ICount = value; f(&b)`). |
 | 8 | Template specialisation | `template <> type xxx<int> { ... }` and partial `template <T type> type xxx<*T> { ... }`, with the pattern written after the family's name; a specialisation replaces the type's fields; the most specific match wins, an ambiguous one is reported, and a specialisation travels with its exported family, so an importer builds the specialised member and uses it in methods written against the family's parameter; a method written for one concrete member is callable across a module too. |
@@ -805,7 +861,7 @@ observe.
 | 15 | 内建类型特征（`IsInteger`/`IsFloating`/`IsSame` 等）与 `@enable_if` 类型分派 | 完成（`crates/fallc/tests/type_traits.rs`） |
 | 16 | `uniform` 按实参类型分派、`os.system`、`CondVar.wait` 谓词形式 | 完成（random/os/sync 测试） |
 | 14 | Platform files | A module may have one implementation per platform, named `name.<platform>.ftm`; the loader prefers it for the target platform while the module name stays the same. It is how threads, the entropy source and the process calls are POSIX on Unix and Win32 on Windows without a preprocessor. `FALLC_TARGET_OS` overrides the platform for checking another system's files. |
-| 67 | 声明关键字由属性表达：`alignas`/`constexpr`/`export`/`extern`/`thread_local`/`static` 是普通标识符，存储类、对齐、导出、常量性、ABI 与分支权重分别由函数属性（`@inline`/`@noreturn`/`@deprecated`/`@enable_if`/`@constexpr`/`export`/`@extern_C`）、变量属性（`@inline`/`@deprecated`/`@align(N)`/`@constexpr`/`export`/`@static`/`@thread_local`/`@uninitialized`/`@maybe_unused`）与分支属性（`@likely`/`@unlikely`、`if (cond) @constexpr`）表达；另有 `@must_use`/`@noinline`/`@cold`；`export` 覆盖全部可导出实体（含伞模块与宏）；`@constexpr` 变量要求常量初始化器，局部 `const` 允许运行期初始化 | 完成（`attribute_semantics` 测试、关键字测试、`import std` 与 C 互操作探针） |
+| 67 | 声明关键字由属性表达：`alignas`/`constexpr`/`export`/`extern`/`thread_local`/`static` 是普通标识符，存储类、对齐、导出、常量性、ABI 与分支权重分别由函数属性（`@inline`/`@noreturn`/`@deprecated`/`@enable_if`/`@constexpr`/`export`/`@cabi`）、变量属性（`@inline`/`@deprecated`/`@align(N)`/`@constexpr`/`export`/`@static`/`@thread_local`/`@uninitialized`/`@maybe_unused`）与分支属性（`@likely`/`@unlikely`、`if (cond) @constexpr`）表达；另有 `@must_use`/`@noinline`/`@cold`；`export` 覆盖全部可导出实体（含伞模块与宏）；`@constexpr` 变量要求常量初始化器，局部 `const` 允许运行期初始化 | 完成（`attribute_semantics` 测试、关键字测试、`import std` 与 C 互操作探针） |
 | 68 | 协程：`@coroutine` 标记的函数返回 `std.Coroutine<Send, Yield, Return>`，`yield expr` 是表达式（交出 `Yield`、产出下一次 `resume` 送进的 `Send`），`resume` 把协程运行到下一次挂起并返回 `?Yield`（`Send` 为 `void` 时不带参数），`result()` 总是 `except`（未结束时抛 `NoneError`，因抛异常结束时重抛该异常）。无栈实现：入口函数建帧（`malloc` + 零初始化 + 标记"未启动"）、把参数复制进帧，机器是一个以帧为唯一参数的状态机，`yield` 存 payload、记下一状态号并返回，`resume` 每次从帧记录的状态继续；变量存放在帧里，因此跨挂起存活；`yield` 的值按 `Return` 相同的隐构/隐转规则检查。`resume`/`result` 由标准库声明、编译器按协程类型各生成一份实现 | 完成（`examples/`、`docs/language/05-coroutines.md` 的实测示例：`echo(12)` 依次得 0/3/7/none 与 12；`String`、结构体、`u64`→`f64` 载荷均已实测） |
 | 69 | 析构修正：一个类型声明了 `__drop__` 时，它的字段由它自己释放，不再补一遍逐字段析构（此前 `?String`、`Optional<T>` 等会把同一个缓冲区释放两次）；`Optional<T>` 的移动构造与移动赋值改为真正转移（`util.move`），不再"深拷贝后把源标记为空" | 完成（`String` 协程与 `?String` 程序实测） |
 | 70 | `Coroutine` 改为内建类型：库里只剩类型定义，`resume`/`result` 不再声明，由编译器在 `Coroutine` 接收者上按 `Send`/`Yield`/`Return` 直接回答并记录到 `coroutine_calls`。`Yield` 为 `void` 时 `resume` 返回 `bool`（`true ≡ ?Yield 的 Some(())`，`false ≡ none`），因为 `?void` 无法表示；`Send` 决定是否带实参、`Yield` 决定回答什么，两者正交；`Return` 可为 `void`，此时 `result()` 仍 `except` 但不带值 | 完成（12 个用例：`final`/`early2`/`str4`/`nt1`/`nt3`/`v2`/`vy3`/`vy4`/`rv2`/`rv3` 及 `std.go` 三个） |

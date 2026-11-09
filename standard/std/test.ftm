@@ -25,6 +25,7 @@ import std.error;
 from std.error import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // Raises when `condition` is false.
 //

@@ -44,8 +44,8 @@
 alignof  as       auto     break    case     const    continue default
 defer    define   delete   else     enum     except   export   fallthrough
 false    finally  fn       for      from     if       import   interface
-lambda   link     mutable  nullptr  raise    return   sizeof   static_assert
-switch   template this     traits   true     try      type     union
+lambda   link     module   mutable  nullptr  raise    return   sizeof   static_assert
+switch   template this     traits   true     try      type     union    use
 volatile while
 ```
 
@@ -56,7 +56,13 @@ volatile while
 
 5.3 `export` **是**保留字：它引导一个可被导入者看见的声明，写在属性表之前而不是作为
 属性，见 [03 声明 §9](03-declarations.zh.md#属性)与
-[08 模块](09-modules.zh.md#导出表)。
+[09 模块](09-modules.zh.md#导出表)。
+
+5.3a `module` **是**保留字：它引导一个既是容器又是可见性边界的块，块内成员本身是声明，
+见 [09 模块 §1](09-modules.zh.md#模块是什么)。
+
+5.3b `use` **是**保留字：它把模块或它的某个成员绑定到导入文件中的一个名字，
+见 [09 模块 §2.3](09-modules.zh.md#use)。
 
 5.4 `delete` 保留给将来的删除表达式，目前没有含义。`define` 引导逻辑行起始处的宏定义；
 它被保留，是为了让定义始终就是它写的样子——只靠读标识符来识别它的预处理器，会让程序

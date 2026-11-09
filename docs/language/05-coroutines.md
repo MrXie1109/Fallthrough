@@ -51,7 +51,7 @@ one position:
 | `Return` | the body returns nothing; `result` answers nothing |
 
 2.5 A coroutine takes no other attributes that change its shape, and may not be
-`@extern_C`: a coroutine object is a language value, not a C ABI type.
+`@cabi`: a coroutine object is a language value, not a C ABI type.
 
 ## The `yield` expression
 
@@ -202,10 +202,10 @@ destroyed leaks its frame, which is the same rule every other owning value follo
 
 ```ft
 import std;
-from std.go import go, settle;
+from std.go import Task, go, settle;
 
 @coroutine
-fn worker(n int) std.Coroutine<void, void, void> {
+fn worker(n int) Task {
     i int = 0;
     while (i < n) {
         yield;
@@ -248,10 +248,10 @@ value and the fact that it has arrived:
 import C;
 import std;
 from std.reply import Reply;
-from std.go import go, settle;
+from std.go import Task, go, settle;
 
 @coroutine
-fn compute(n int, reply &Reply<int>) std.Coroutine<void, void, void> {
+fn compute(n int, reply &Reply<int>) Task {
     reply.set(n * 2);
 }
 

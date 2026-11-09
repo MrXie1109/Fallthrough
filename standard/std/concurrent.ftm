@@ -22,6 +22,7 @@
 
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.memory;
 from std.memory import *;
 import std.optional;
@@ -30,6 +31,7 @@ import std.string;
 from std.string import *;
 import std.sync;
 from std.sync import *;
+from std.sync import Atomic, CondVar, Mutex, Thread;
 import std.util;
 from std.util import *;
 

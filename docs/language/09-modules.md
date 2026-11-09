@@ -4,11 +4,71 @@
 
 ## Scope
 
-This volume specifies the importing and exporting of modules, the contents of the export
-table, the rules of name identity, the module lookup order, multi-file compilation and
-linking.
+This volume specifies the importing and exporting of modules, the `module` block and the
+`use` declaration, the contents of the export table, the rules of name identity, the
+module lookup order, multi-file compilation and linking.
 
-## Importing
+## Modules and importing
+
+### What a module is
+
+A `.ftm` file is a module. A `module` block is the same thing written inside a file:
+
+```ft
+// counter.ftm
+internal int = 0;
+
+export fn get() int {
+    return internal;
+}
+
+export fn set(i int) void {
+    internal = i;
+}
+
+export type Point {
+    x int;
+    y int;
+}
+
+export fn sum(this &Point) int {
+    return this.x + this.y;
+}
+```
+
+```ft
+// main.ft
+module shapes {
+    sides int = 4;
+
+    export fn count() int {
+        return sides;
+    }
+
+    export type Square {
+        side int;
+    }
+
+    export fn area(this &Square) int {
+        return this.side * this.side;
+    }
+}
+```
+
+1.1.1 A module is a container and a visibility boundary. It declares no scope beyond that
+boundary: the members of a `module` block are declarations of the file that contains the
+block and are subject to the same rules as declarations outside it.
+
+1.1.2 A member of a `module` block declared without `export` **must not** be accessible by
+a name written outside that block.
+
+1.1.3 Importing does not nest. `import M;` makes the whole of `M` available as one flat
+module named `M`; it does not place the contents of `M` inside a block that refers to `M`.
+A module **must** be parsed once, however many files import it.
+
+1.1.4 A declaration of a module **must** be accessible within that module by its own name
+and without qualification. This applies to the module's signatures, which an importer
+reads from the declaring module.
 
 ### Forms
 
@@ -25,12 +85,15 @@ export type Point {
 ```
 
 ```ft
-// main.ft
+// PHONY: `geom` is the module this section describes; the two files it is
+// split across cannot be compiled as one block.
 import C;
 import geom;
 import geom as g;
 from geom import area;
 from geom import Point;
+
+// main.ft
 
 fn main() int {
     p Point = .{1, 2};
@@ -74,6 +137,10 @@ nothing else does. Only two spellings exist:
 | `import M;` | `M.name` — `M.String`, `M.print`, `M.IsInteger(T)` |
 | `from M import name;` | `name` |
 | `from M import *;` | `name` |
+| `use M;` | `M.name` |
+| `use M as A;` | `A.name` |
+| `use M.name;` | `name` |
+| `use M.*;` | `name` |
 
 `M.name` is the qualified spelling of 2.1.5: the part before the dot is the module's
 name, so it is a *module* name, not a short name of a member.
@@ -91,7 +158,47 @@ two modules is a diagnostic.
 2.2.4 A dotted module name is written whole, in both columns: with `import std.string;`
 the type is `std.string.String`, never `string.String`.
 
-## The export table
+### `use`
+
+2.3.1 `use` and `import` read the module the same way and differ only in what they bind. A
+`use` declaration has one of the following forms, and the module it names is loaded by each
+of them:
+
+| Declaration | Names bound in the file |
+| ----------- | ----------------------- |
+| `use M;` | `M` |
+| `use M as A;` | `A` |
+| `use M.name;` | `name` |
+| `use M.*;` | every name `M` exports |
+
+2.3.2 A `use` declaration **must** name a module. The module name **must** be written in
+`use M;`, `use M as A;` and `use M.*;`, and in the module part of `use M.name;`.
+
+2.3.3 `use M as A;` **must not** bind `M`. The alias `A` **must** denote the module the
+declaration names.
+
+2.3.4 `use M.*;` **must** bind every name `M` exports and no other name. Clause 2.1.2
+applies to this form.
+
+2.3.5 The name bound by `use` **must** denote the member as exported by `M`, of whatever
+kind: a function, a type, an enum, an interface, a trait, a constant or a variable.
+
+2.3.6 A `use` declaration without `export` **must** affect only the file that writes it;
+the export table of that file is unchanged.
+
+2.3.7 A `use` declaration with `export` **must** also add the bound names to the export
+table of the file. The names published are:
+
+| Declaration | Names published |
+| ----------- | --------------- |
+| `export use M.name;` | `name` |
+| `export use M.*;` | every name `M` exports |
+| `export use M;` | none |
+| `export use M as A;` | none |
+
+2.3.8 `export use M.name;` and `export from M import name;` **must** publish the same entry
+in the export table.
+
 ## The export table
 
 ### Contents
@@ -112,15 +219,24 @@ Every kind of declaration may be exported:
 | `export traits X(it T) { … }` | the name; the requirements follow the defining module's syntax tree |
 | `export NAME const T = v;` | the value and the type |
 | `export name T = v;` | the module-level variable itself |
-| `@extern_C export fn f(…) T;` | an external function: the ABI and the symbol |
-| `export name T @extern_C;` | an external variable: the name, the type and the linkage symbol |
+| `@cabi export fn f(…) T;` | an external function: the ABI and the symbol |
+| `export name T @cabi;` | an external variable: the name, the type and the linkage symbol |
 | `export define NAME …` | the macro definition |
 
 3.1.1 Exporting is not transitive: only `export from` puts a name into this module's
 export table.
 
-3.1.2 A type's methods **must** be `export`ed separately; when only the fields are
-exported, an importer cannot call the member functions.
+3.1.2 A call `x.f(…)` **must** resolve `f` among the functions declared by the module
+that declares the type of `x`. The functions imported by the file containing the call
+**must not** be consulted for this resolution, and the qualifier with which the type of
+`x` is written **must not** affect it.
+
+3.1.2a A member function **must** be callable from outside its module only if it is
+declared `export`. A member function not declared `export` **must not** be a candidate
+for 3.1.2.
+
+3.1.2b A member function declared `export` **must** be callable from any file in which
+the type of its receiver can be named.
 
 3.1.3 A macro definition travels with the export table; macros referenced in its body but
 not exported are also available with the definition.
@@ -171,9 +287,14 @@ same module name, the implementation **must** report a diagnostic.
 
 6.1 One module name corresponds to one file.
 
+6.1.1 A module name is also stable across the paths that reach it: the module `std.array`
+reached from `std` and from a program is one module, loaded once, with one export table.
+
 6.2 A short name belongs to the direct importer.
 
-6.3 A local value may shadow a module name with the same spelling.
+6.3 A local value may shadow a module name with the same spelling. Where a name is both,
+`name.member` reads the member of the value: a module has no value, so a name that is
+bound to one is not read as a module.
 
 6.4 A type introduced by the same module declaration is the same type in every
 translation unit; types with the same name declared separately are different types.
@@ -201,6 +322,37 @@ repeated.
 
 8.4 An `.ftm` file takes part in compilation through `import`; it **must not** be linked
 as a program on its own.
+
+## Compiled module files
+
+10.1 An implementation **may** cache a module's export table in a file and read it back
+instead of repeating the parse, the name resolution and the declaration check. The cache
+is an optimisation: a program's meaning must not depend on whether a file was present.
+
+10.2 A cached table **must** be refused, and the module compiled from its source, when any
+of the following holds:
+
+- the file was written by a different compiler build or a different format version;
+- the file names a different pointer width or object model;
+- the module's own source hash differs from the recorded one;
+- the table does not decode.
+
+10.3 A module's cached table **must** be keyed on that module's own source, and **not** on
+its dependencies. What a module exports is a property of its own text; a dependency that
+changed underneath it matters only where this module was edited to match.
+
+10.4 The record **must** carry the set of modules the table was compiled against, and a
+reader **must** load those modules before using the table: the table names their types.
+
+10.5 A table **must** carry the key its object was compiled under. Code generation keys a
+module library on the set of modules it holds, and that set is not derivable from a table
+alone.
+
+10.6 The object cache's key is a function of the **set** of modules, not of the order they
+were loaded in. Two ways of reaching the same set must not produce two libraries.
+
+10.7 The cache **must** be switchable off for a caller that edits its sources between
+compilations.
 
 ## External libraries
 

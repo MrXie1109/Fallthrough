@@ -138,6 +138,15 @@ pub fn walk_item_kind<V: Visitor + ?Sized>(ast: &Ast, kind: &ItemKind, visitor: 
         }
         // An import names a module; it has no children.
         ItemKind::Import(_) => {}
+        // A `use` path names a module and a member; neither is an expression.
+        ItemKind::Use(_) => {}
+        // A module's members are declarations, so a walker that cares about
+        // items has to reach them exactly as it reaches a file's own.
+        ItemKind::Module(module) => {
+            for &item in &module.items {
+                walk_item(ast, item, visitor);
+            }
+        }
         // A link instruction names a library, not an expression, so there is
         // nothing for the expression walker to reach.
         ItemKind::Link(_) => {}

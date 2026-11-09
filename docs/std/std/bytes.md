@@ -102,7 +102,7 @@ The member is initialised before the move assignment: an uninitialised
 ```
 export fn __init__(this &Bytes, other &&Bytes) void {
     (&this._data)->__init__();
-    this._data = util.move(other._data);
+    this._data = move(other._data);
 }
 ```
 
@@ -122,7 +122,7 @@ Moves another byte sequence's storage into this one.
 
 ```
 export fn __assign__(this &Bytes, other &&Bytes) void {
-    this._data = util.move(other._data);
+    this._data = move(other._data);
 }
 ```
 

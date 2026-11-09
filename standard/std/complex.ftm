@@ -11,6 +11,7 @@ import std.math;
 from std.math import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // A complex number `real + imaginary * i`.
 export type Complex {

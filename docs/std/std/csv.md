@@ -68,7 +68,7 @@ export fn parse_rows(text &const String) Array<Array<String>> except {
         }
         if (character == '\n') {
             row.push(field);
-            rows.push(util.move(row));
+            rows.push(move(row));
             row = Array<String>();
             field = String();
             index += 1;
@@ -90,7 +90,7 @@ export fn parse_rows(text &const String) Array<Array<String>> except {
     // already dropped by the loop, because it never started a field.
     if (!field.empty() || !row.empty()) {
         row.push(field);
-        rows.push(util.move(row));
+        rows.push(move(row));
     }
     return rows;
 }

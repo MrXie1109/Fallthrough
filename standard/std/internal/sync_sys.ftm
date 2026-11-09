@@ -9,17 +9,17 @@
 // because their layout belongs to the C library. `std.sync` sizes the bytes;
 // nothing here copies them.
 
-@extern_C fn pthread_mutex_lock(mutex *byte) int;
-@extern_C fn pthread_mutex_unlock(mutex *byte) int;
-@extern_C fn pthread_cond_wait(condition *byte, mutex *byte) int;
-@extern_C fn pthread_cond_signal(condition *byte) int;
-@extern_C fn pthread_cond_broadcast(condition *byte) int;
+@cabi fn pthread_mutex_lock(mutex *byte) int;
+@cabi fn pthread_mutex_unlock(mutex *byte) int;
+@cabi fn pthread_cond_wait(condition *byte, mutex *byte) int;
+@cabi fn pthread_cond_signal(condition *byte) int;
+@cabi fn pthread_cond_broadcast(condition *byte) int;
 // The handle is one word on both sides, so the storage is a `*byte` and the
 // value is passed as it stands: `pthread_t` is an unsigned long, which is the
 // same word a pointer is.
-@extern_C fn pthread_create(thread *byte, attr *byte, start *fn(*byte) u32, argument *byte) int;
-@extern_C fn pthread_join(thread *byte, result *byte) int;
-@extern_C fn usleep(microseconds u32) int;
+@cabi fn pthread_create(thread *byte, attr *byte, start *fn(*byte) u32, argument *byte) int;
+@cabi fn pthread_join(thread *byte, result *byte) int;
+@cabi fn usleep(microseconds u32) int;
 
 // Prepares newly zeroed storage as a mutex.
 //

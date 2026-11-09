@@ -59,16 +59,20 @@
 
 import std.deque;
 from std.deque import *;
+from std.deque import Queue;
 import std.coroutine;
 from std.coroutine import *;
+from std.coroutine import Coroutine;
 import std.string;
 from std.string import *;
+from std.string import Exception;
 import std.memory;
 from std.memory import *;
 import std.util;
 from std.util import *;
 import std.sync;
 from std.sync import *;
+from std.sync import CondVar, Mutex, Thread;
 import C;
 
 // The one kind of task this executor runs: a coroutine with nothing to send,

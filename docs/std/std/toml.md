@@ -101,7 +101,7 @@ Takes a value's storage.
 export fn __init__(this &TomlValue, other &&TomlValue) void {
     this._kind = other._kind;
     (&this._text)->__init__();
-    this._text = util.move(other._text);
+    this._text = move(other._text);
     this._integer = other._integer;
     this._real = other._real;
     this._boolean = other._boolean;
@@ -228,9 +228,9 @@ export fn __init__(this &TomlEntry, other &&TomlEntry) void {
     (&this._table)->__init__();
     (&this._key)->__init__();
     (&this._value)->__init__();
-    this._table = util.move(other._table);
-    this._key = util.move(other._key);
-    this._value = util.move(other._value);
+    this._table = move(other._table);
+    this._key = move(other._key);
+    this._value = move(other._value);
 }
 ```
 
@@ -274,7 +274,7 @@ Moves a document's storage.
 ```
 export fn __init__(this &TomlDocument, other &&TomlDocument) void {
     (&this._entries)->__init__();
-    this._entries = util.move(other._entries);
+    this._entries = move(other._entries);
 }
 ```
 

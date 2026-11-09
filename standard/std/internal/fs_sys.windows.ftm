@@ -3,16 +3,18 @@
 import C;
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 link kernel32 dynamic from default;
 
-@extern_C fn CreateDirectoryA(path *const char, security *byte) int;
-@extern_C fn FindFirstFileA(pattern *const char, data *byte) *byte;
-@extern_C fn FindNextFileA(search *byte, data *byte) int;
-@extern_C fn FindClose(search *byte) int;
-@extern_C fn GetFileAttributesExA(path *const char, level u32, data *byte) int;
+@cabi fn CreateDirectoryA(path *const char, security *byte) int;
+@cabi fn FindFirstFileA(pattern *const char, data *byte) *byte;
+@cabi fn FindNextFileA(search *byte, data *byte) int;
+@cabi fn FindClose(search *byte) int;
+@cabi fn GetFileAttributesExA(path *const char, level u32, data *byte) int;
 
 FIND_DATA_SIZE const usize = 320;
 FILE_ATTRIBUTE_DIRECTORY const u32 = 16u32;

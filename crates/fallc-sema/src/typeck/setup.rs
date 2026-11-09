@@ -26,6 +26,8 @@ impl TypeChecker {
     pub fn new(pointer_bits: u32) -> Self {
         TypeChecker {
             diagnostics: DiagnosticBag::new(),
+            module_functions: std::collections::HashMap::new(),
+            published: Vec::new(),
             declarations_only: false,
             expected: None,
             in_trait_requirement: false,
@@ -297,6 +299,7 @@ impl TypeChecker {
             modules: self.modules.clone(),
         };
         TypeCheckResult {
+            published: std::mem::take(&mut self.published),
             coroutine_calls: self.coroutine_calls.clone(),
             environment,
             type_of_types: std::mem::take(&mut self.type_of_types),
@@ -908,6 +911,7 @@ impl TypeChecker {
         self.nominal_types
             .entry(declaration.name.clone())
             .or_insert_with(|| crate::types::NominalType {
+                declared_in: None,
                 template_arguments: None,
                 name: declaration.name.clone(),
                 fields: Vec::new(),
@@ -967,30 +971,39 @@ impl TypeChecker {
         // Which type names this file declares itself, so that an imported
         // family of the same name cannot take the name away: a `type Box` in a
         // file that imported `std` is *that* program's `Box`.
-        for &item in &ast.items {
-            match &ast.item(item).kind {
-                fallc_ast::ItemKind::TypeDeclaration(declaration) => {
-                    self.local_type_names.insert(declaration.name.clone());
-                    if !declaration.template_params.is_empty() {
-                        self.local_families.insert(declaration.name.clone());
+        // A module block is a container, so the walk goes through blocks rather
+        // than around them: a type declared inside one is a type of this file.
+        fn collect(checker: &mut TypeChecker, ast: &Ast, items: &[fallc_ast::ItemId]) {
+            for &item in items {
+                match &ast.item(item).kind {
+                    fallc_ast::ItemKind::TypeDeclaration(declaration) => {
+                        checker.local_type_names.insert(declaration.name.clone());
+                        if !declaration.template_params.is_empty() {
+                            checker.local_families.insert(declaration.name.clone());
+                        }
                     }
-                }
-                fallc_ast::ItemKind::EnumDeclaration(declaration) => {
-                    self.local_type_names.insert(declaration.name.clone());
-                }
-                fallc_ast::ItemKind::Interface(interface) => {
-                    self.local_type_names.insert(interface.name.clone());
-                    if !interface.template_params.is_empty() {
-                        self.local_families.insert(interface.name.clone());
+                    fallc_ast::ItemKind::EnumDeclaration(declaration) => {
+                        checker.local_type_names.insert(declaration.name.clone());
                     }
+                    fallc_ast::ItemKind::Interface(interface) => {
+                        checker.local_type_names.insert(interface.name.clone());
+                        if !interface.template_params.is_empty() {
+                            checker.local_families.insert(interface.name.clone());
+                        }
+                    }
+                    fallc_ast::ItemKind::Module(module) => {
+                        collect(checker, ast, &module.items);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
+        collect(self, ast, &ast.items);
         // An interface's value is a heap copy of a concrete value plus a table
         // of the methods that act on it: two pointers, and nothing else. It is
-        // registered as a type so that `IIterator<int>` names that pair.
-        for &item in &ast.items {
+        // registered as a type so that `IIterator<int>` names that pair. A block
+        // is a container, so the walk goes through it.
+        for item in crate::typeck::flat_items(ast) {
             let fallc_ast::ItemKind::Interface(interface) = &ast.item(item).kind else {
                 continue;
             };
@@ -1035,8 +1048,9 @@ impl TypeChecker {
         }
         // Imported types first, so that a local declaration of the same name
         // replaces one rather than being shadowed by it, and so that a type
-        // from another module resolves exactly like one declared here.
-        for &item in &ast.items {
+        // from another module resolves exactly like one declared here. The walk
+        // is flat: a type inside a `module` block is a type of this file.
+        for (item, block) in crate::typeck::flat_items_with_block(ast) {
             // An enum declares a type too -- `Color` may be named wherever a
             // type is -- so it is registered here with no fields. Its members
             // are constants and are folded when the item is checked.
@@ -1079,6 +1093,7 @@ impl TypeChecker {
                 self.nominal_types
                     .entry(declaration.name.clone())
                     .or_insert_with(|| crate::types::NominalType {
+                        declared_in: None,
                         template_arguments: None,
                         name: declaration.name.clone(),
                         fields: Vec::new(),
@@ -1099,6 +1114,7 @@ impl TypeChecker {
             self.nominal_types.insert(
                 declaration.name.clone(),
                 crate::types::NominalType {
+                    declared_in: None,
                     template_arguments: None,
                     name: declaration.name.clone(),
                     fields: Vec::new(),
@@ -1111,6 +1127,13 @@ impl TypeChecker {
                     union_storage: None,
                 },
             );
+            // The block's own spelling, `block.Name`, which is how a reader
+            // outside the block names the type. It is the same declaration, so
+            // the two keys are filled with the same shape at the end of this
+            // iteration.
+            let qualified = block
+                .as_ref()
+                .map(|block| format!("{block}.{}", declaration.name));
             let mut fields = Vec::with_capacity(declaration.fields.len());
             let mut mutable_fields = Vec::new();
             for field in &declaration.fields {
@@ -1163,19 +1186,23 @@ impl TypeChecker {
             } else {
                 None
             };
-            self.nominal_types.insert(
-                declaration.name.clone(),
-                crate::types::NominalType {
-                    template_arguments: None,
-                    name: declaration.name.clone(),
-                    fields,
-                    mutable_fields,
-                    field_alignments,
-                    is_union,
-                    is_incomplete: false,
-                    union_storage,
-                },
-            );
+            let shape = crate::types::NominalType {
+                declared_in: block.clone(),
+                template_arguments: None,
+                name: declaration.name.clone(),
+                fields,
+                mutable_fields,
+                field_alignments,
+                is_union,
+                is_incomplete: false,
+                union_storage,
+            };
+            self.nominal_types
+                .insert(declaration.name.clone(), shape.clone());
+            // `block.Name` is the same declaration seen from outside the block.
+            if let Some(qualified) = qualified {
+                self.nominal_types.insert(qualified, shape);
+            }
             self.register_nested_types(&declaration.name.clone(), declaration);
         }
     }
@@ -2083,6 +2110,19 @@ impl TypeChecker {
     /// it, and an imported one is no different. Only exported types arrive
     /// here, because a module's declarations are private unless published.
     #[allow(clippy::too_many_arguments)]
+    /// Records every function a module declares, for argument-dependent lookup.
+    ///
+    /// `x.f()` looks for `f` in the module that declares `x`'s type, and that
+    /// is this table. A method is not a name in scope: it is an answer to a
+    /// receiver, and the receiver's type says where to ask.
+    pub fn add_module_functions(
+        &mut self,
+        module: impl Into<String>,
+        functions: Vec<(String, Vec<FunctionSignature>)>,
+    ) {
+        self.module_functions.insert(module.into(), functions);
+    }
+
     pub fn add_exported_type(
         &mut self,
         name: impl Into<String>,
@@ -2208,9 +2248,15 @@ impl TypeChecker {
             self.aliases
                 .insert(format!("{name}.{nested_name}"), resolved);
         }
+        // ADL: a member function is looked for in the module that declares the
+        // receiver's type. `exported_types` files each type under its own
+        // module's name, so the qualifier before the last dot is that module,
+        // and a bare name is a type of the file being checked.
+        let declared_in = name.rsplit_once('.').map(|(module, _)| module.to_owned());
         self.nominal_types.insert(
             name.clone(),
             crate::types::NominalType {
+                declared_in,
                 template_arguments: None,
                 name,
                 fields,
@@ -2442,6 +2488,7 @@ impl TypeChecker {
             self.nominal_types.insert(
                 interface.name.clone(),
                 crate::types::NominalType {
+                    declared_in: None,
                     template_arguments: None,
                     name: interface.name.clone(),
                     fields: Vec::new(),
@@ -2460,6 +2507,7 @@ impl TypeChecker {
             self.nominal_types.insert(
                 interface.name.clone(),
                 crate::types::NominalType {
+                    declared_in: None,
                     template_arguments: None,
                     name: interface.name.clone(),
                     fields: resolved,
@@ -2668,11 +2716,33 @@ impl TypeChecker {
         resolutions: &Resolutions,
         types: &mut TypeTable,
     ) {
+        for &item in &ast.items {
+            self.check_items_of(ast, item, resolutions, types);
+        }
+    }
+
+    /// Checks one top-level item.
+    ///
+    /// A module block recurses into this rather than into a second checker: a
+    /// block's members are this file's code, and checking them anywhere else
+    /// would be a second set of rules.
+    fn check_items_of(
+        &mut self,
+        ast: &Ast,
+        item: fallc_ast::ItemId,
+        resolutions: &Resolutions,
+        types: &mut TypeTable,
+    ) {
         // A method written against a type family's parameters is a *template*
         // too -- `fn __init__(this &Box<T>, v T)` -- and there is no member for
         // it to be checked against until one is used. Where its body is is
         // recorded now, so that the instantiation can find it later.
-        for &item in &ast.items {
+        //
+        // The loop runs once per call. It exists so that the `continue`s the
+        // item checks use -- "this declaration needs no further checking" --
+        // still mean that after the body was split out into a function of its
+        // own, without a second copy of this prologue.
+        loop {
             let item_ref = ast.item(item);
             match &item_ref.kind {
                 // A top-level `if @constexpr` keeps one branch, decided before
@@ -2748,7 +2818,7 @@ impl TypeChecker {
                     // per instantiation instead, with the parameters replaced
                     // by what they stand for; see `check_instantiation`.
                     if !function.template_params.is_empty() || function.has_pack() {
-                        continue;
+                        return;
                     }
                     // An `@overridable` default that a program has replaced is
                     // not this program's function at all: it is not checked,
@@ -2765,7 +2835,7 @@ impl TypeChecker {
                         })
                     {
                         self.disabled_functions.insert(function.name_span);
-                        continue;
+                        return;
                     }
                     // A declaration whose `@enable_if` condition is false does
                     // not exist for this program: its body is not checked, and
@@ -2789,7 +2859,7 @@ impl TypeChecker {
                         ) == Some(false)
                     {
                         self.disabled_functions.insert(function.name_span);
-                        continue;
+                        return;
                     }
 
                     // A method of a type family has the same problem with a
@@ -2801,7 +2871,7 @@ impl TypeChecker {
                         // declaration itself: it names the family's `T`, and
                         // the member is emitted from its instantiation.
                         self.templated_methods.insert(function.name_span);
-                        continue;
+                        return;
                     }
                     // Record each parameter's declared type under its name
                     // span, so a reference to a parameter resolves exactly the
@@ -2954,10 +3024,22 @@ impl TypeChecker {
                     let saved_auto = (self.throws_auto, self.auto_seen_raise);
                     self.throws_auto = throws_auto;
                     self.auto_seen_raise = false;
+                    // A function returning `auto` has its result in its body,
+                    // so that body is read even in a declarations-only pass:
+                    // the type *is* the signature, and an importer that reuses
+                    // this module's cached object never sees the body.
+                    let reads_body = !self.declarations_only || auto_span.is_some();
                     if let Some(body) = function.body
-                        && (!self.declarations_only || auto_span.is_some())
+                        && reads_body
                     {
+                        let saved_only = self.declarations_only;
+                        if auto_span.is_some() {
+                            // The rest of the body is implementation; only the
+                            // `return` statements decide the result type.
+                            self.declarations_only = false;
+                        }
                         self.check_block(ast, resolutions, types, body);
+                        self.declarations_only = saved_only;
                     }
                     let deduced_throws = self.auto_seen_raise;
                     self.throws_auto = saved_auto.0;
@@ -2976,14 +3058,31 @@ impl TypeChecker {
                     // A function that promised `auto` and never returned a
                     // value returns nothing: `void` is what "no value" is
                     // spelled as, and it is the answer rather than a mistake.
+                    // A declaration-only check does not read the body, so a
+                    // function whose return type is `auto` has nothing deduced
+                    // yet. Recording "no value" here would publish a wrong
+                    // signature: the module's interface is written from this
+                    // pass when its object is already cached, and every caller
+                    // would see the function as returning nothing.
                     if let Some(pending) = self.pending_auto_returns.pop()
                         && let Some((span, _)) = pending
                     {
-                        let nothing = Type::unspecified(String::new(), span);
-                        if let Some((_, expected)) = self.return_types.last_mut() {
-                            *expected = nothing.clone();
+                        // A function whose body was not read here has deduced
+                        // nothing; "no value" would be a claim about the
+                        // program rather than a result. It is recorded only
+                        // when the body really was checked.
+                        // The body is read whenever the function returns
+                        // `auto` -- that is how the type is deduced -- so what
+                        // decides is whether a `return` with a value was found,
+                        // which is recorded by clearing the pending entry.
+                        let deduced_something = !self.type_of_types.contains_key(&span);
+                        if !deduced_something {
+                            let nothing = Type::unspecified(String::new(), span);
+                            if let Some((_, expected)) = self.return_types.last_mut() {
+                                *expected = nothing.clone();
+                            }
+                            self.type_of_types.insert(span, nothing);
                         }
-                        self.type_of_types.insert(span, nothing);
                     }
                     self.return_types.pop();
                     if coroutine {
@@ -3181,6 +3280,8 @@ impl TypeChecker {
                     self.check_enum(declaration);
                 }
                 fallc_ast::ItemKind::Import(_) => {}
+                // A `use` binds names; there is no declaration of its own.
+                fallc_ast::ItemKind::Use(_) => {}
                 // A link instruction declares no value and no type.
                 fallc_ast::ItemKind::Link(_) => {}
                 // A trait's requirements are checked where the trait is
@@ -3189,7 +3290,30 @@ impl TypeChecker {
                 // with no query has nothing to check them against.
                 fallc_ast::ItemKind::Trait(_) => {}
                 fallc_ast::ItemKind::Unresolved(_) => {}
+                // A module block's members are this file's code, so they are
+                // checked by the same walk -- that is what makes a block a
+                // container rather than a second kind of compilation unit.
+                fallc_ast::ItemKind::Module(module) => {
+                    self.check_module_members(ast, module, resolutions, types)
+                }
             }
+            // One item is checked per call, so the loop body runs once: the
+            // `break` is what makes the `continue`s above mean "this item is
+            // done" without a second copy of the function's prologue.
+            break;
+        }
+    }
+
+    /// Checks the members of one module block.
+    fn check_module_members(
+        &mut self,
+        ast: &Ast,
+        module: &fallc_ast::ModuleItem,
+        resolutions: &Resolutions,
+        types: &mut TypeTable,
+    ) {
+        for &member in &module.items {
+            self.check_items_of(ast, member, resolutions, types);
         }
     }
 

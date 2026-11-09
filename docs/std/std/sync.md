@@ -106,7 +106,7 @@ allow.
 ```
 export fn lock(this &Mutex) void {
     if (!sync_sys.mutex_lock(&this._first as *byte)) {
-        util.panic("Mutex lock failed");
+        panic("Mutex lock failed");
     }
 }
 ```
@@ -118,7 +118,7 @@ Unlocks the mutex.
 ```
 export fn unlock(this &Mutex) void {
     if (!sync_sys.mutex_unlock(&this._first as *byte)) {
-        util.panic("Mutex unlock failed");
+        panic("Mutex unlock failed");
     }
 }
 ```
@@ -173,7 +173,7 @@ releases and reacquires exactly the one it is given.
 ```
 export fn wait(this &CondVar, mutex *Mutex) void {
     if (!sync_sys.cond_wait(&this._first as *byte, &mutex->_first as *byte)) {
-        util.panic("CondVar wait failed");
+        panic("CondVar wait failed");
     }
 }
 ```
@@ -201,7 +201,7 @@ Wakes one waiter.
 ```
 export fn notify_one(this &CondVar) void {
     if (!sync_sys.cond_signal(&this._first as *byte)) {
-        util.panic("CondVar signal failed");
+        panic("CondVar signal failed");
     }
 }
 ```
@@ -213,7 +213,7 @@ Wakes every waiter.
 ```
 export fn notify_all(this &CondVar) void {
     if (!sync_sys.cond_broadcast(&this._first as *byte)) {
-        util.panic("CondVar broadcast failed");
+        panic("CondVar broadcast failed");
     }
 }
 ```
@@ -760,6 +760,104 @@ export fn wait(this &Barrier) void {
     }
     while (generation == this._generation) {
         this._round.wait(&this._mutex);
+    }
+    this._mutex.unlock();
+}
+```
+
+### `export type Event {`
+
+A flag one thread sets and others wait on.
+
+This is Python's `asyncio.Event`: `set` raises the flag and wakes everyone
+waiting, `clear` lowers it again, and `wait` returns at once while the flag is
+up. It stays up until something clears it -- it does not reset itself when a
+waiter takes it -- so one event may release any number of waiters, in any
+order, and a waiter that arrives after `set` does not block at all.
+
+    ready Event;
+    // one side:
+    ready.set();
+    // another:
+    ready.wait();
+
+A waiter that must not miss the event waits under a lock it shares with the
+setter, or checks a condition that the event stands for: `wait` says the flag
+was raised at some point, not that it was raised after the call began.
+
+```
+export type Event {
+    // Guards `_set`.
+    _mutex Mutex;
+    // Wakes the waiters of `set`.
+    _raised CondVar;
+    // Whether the flag is up.
+    _set bool;
+}
+```
+
+### `export fn __init__(this &Event) void {`
+
+Creates a lowered event: `wait` blocks until something sets it.
+
+```
+export fn __init__(this &Event) void {
+    (&this._mutex)->__init__();
+    (&this._raised)->__init__();
+    this._set = false;
+}
+```
+
+### `export fn set(this &Event) void {`
+
+Raises the flag, waking every waiter.
+
+```
+export fn set(this &Event) void {
+    this._mutex.lock();
+    this._set = true;
+    this._mutex.unlock();
+    this._raised.notify_all();
+}
+```
+
+### `export fn clear(this &Event) void {`
+
+Lowers the flag.
+
+A waiter already inside `wait` stays there: lowering takes nothing back from
+a wake that has been sent.
+
+```
+export fn clear(this &Event) void {
+    this._mutex.lock();
+    this._set = false;
+    this._mutex.unlock();
+}
+```
+
+### `export fn is_set(this &const Event) bool {`
+
+Whether the flag is up.
+
+```
+export fn is_set(this &const Event) bool {
+    return this._set;
+}
+```
+
+### `export fn wait(this &Event) void {`
+
+Waits until the flag is up, and returns at once when it already is.
+
+The flag is read under the mutex and the wait happens on the same mutex, so a
+`set` that races this call is either seen before the wait or wakes it.
+
+```
+export fn wait(this &Event) void {
+    this._mutex.lock();
+    while (!this._set) {
+        this._raised.wait(&this._mutex);
     }
     this._mutex.unlock();
 }

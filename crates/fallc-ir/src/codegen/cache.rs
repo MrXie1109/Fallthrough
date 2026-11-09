@@ -137,12 +137,17 @@ mod tests {
 
 /// Returns the key an imported-module library is cached under.
 ///
-/// The modules are taken in load order: it decides the order their setups run
-/// in and which definition of a duplicated symbol wins, so another order is
-/// another library.
+/// The modules are *sorted* by name first. Load order was in the key once,
+/// because it decides which definition of a duplicated symbol wins -- but two
+/// ways of reaching the same set of modules then produced two libraries, and a
+/// cache that misses on the second build of an unchanged program caches
+/// nothing. What the key has to say is which modules the library holds, and a
+/// name set says that.
 pub fn library_hash<'a>(modules: impl IntoIterator<Item = (&'a str, u64)>) -> u64 {
+    let mut entries: Vec<(&str, u64)> = modules.into_iter().collect();
+    entries.sort();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    for (name, hash) in modules {
+    for (name, hash) in entries {
         name.hash(&mut hasher);
         hash.hash(&mut hasher);
     }

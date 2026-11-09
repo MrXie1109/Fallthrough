@@ -303,6 +303,30 @@ impl<'ctx> Lowerer<'ctx> {
         Ok(())
     }
 
+    /// Gives this module a `__builtin_panic` to define, whether or not it
+    /// calls one itself.
+    ///
+    /// A library object carries the library's code and not the runtime it calls:
+    /// the body of `__builtin_panic` is generated per module rather than
+    /// linked, so a program that links the library without panicking itself
+    /// would reference a symbol nothing defines. Declaring it here is what lets
+    /// `define_panic` fill it in.
+    pub(super) fn declare_panic_stub(&mut self) {
+        let context = self.backend.context();
+        let module = self.backend.module();
+        if module.get_function("__builtin_panic").is_some() {
+            return;
+        }
+        let void = context.void_type();
+        let i8_ptr = context.ptr_type(inkwell::AddressSpace::default());
+        let signature = void.fn_type(&[i8_ptr.into()], false);
+        let function = module.add_function("__builtin_panic", signature, None);
+        // No linkage override: the body is emitted by `define_panic` right
+        // after, and a `LinkOnceODR` declaration with no body is rejected by
+        // LLVM's verifier.
+        let _ = function;
+    }
+
     /// Emits the body of `__builtin_panic`, if the module calls it.
     ///
     /// `fputs("panic: ", stderr)`, the message, a newline, `fflush`, `abort`.

@@ -52,8 +52,8 @@ identifiers with different code-point sequences are different names.
 alignof  as       auto     break    case     const    continue default
 defer    define   delete   else     enum     except   export   fallthrough
 false    finally  fn       for      from     if       import   interface
-lambda   link     mutable  nullptr  raise    return   sizeof   static_assert
-switch   template this     traits   true     try      type     union
+lambda   link     module   mutable  nullptr  raise    return   sizeof   static_assert
+switch   template this     traits   true     try      type     union    use
 volatile while
 ```
 
@@ -66,6 +66,13 @@ as a word rather than as a keyword; see [03 Declarations §9](03-declarations.md
 5.3 `export` **is** reserved: it introduces a declaration that importers may see, and it
 is written before the attribute list rather than as an attribute; see
 [03 Declarations §9](03-declarations.md#attributes).
+
+5.3a `module` **is** reserved: it introduces a container that is also a visibility
+boundary, and its members are declarations in their own right; see
+[09 Modules §1](09-modules.md#what-a-module-is).
+
+5.3b `use` **is** reserved: it binds a module or one of its members to a name in the
+importing file; see [09 Modules §2.3](09-modules.md#use).
 
 5.4 `delete` is reserved for a future deletion expression and has no meaning yet. `define`
 introduces a macro definition at the start of a logical line; it is reserved so that a

@@ -1207,6 +1207,46 @@ pub struct OperatorCall {
 /// the parameters before it with their types. The expression names the declaring
 /// module's tree, and the parameters are bound to the call's arguments while it
 /// is lowered.
+/// Every top-level item, with each `module` block replaced by its members.
+///
+/// A block is a container: what it holds declares names and is checked exactly
+/// as if it stood at the top level, so a pass that walks a file walks through
+/// its blocks rather than around them.
+#[must_use]
+pub fn flat_items(ast: &Ast) -> Vec<fallc_ast::ItemId> {
+    flat_items_with_block(ast)
+        .into_iter()
+        .map(|(item, _)| item)
+        .collect()
+}
+
+/// The same walk, keeping the name of the block each item was written in.
+///
+/// A type declared inside `module foo { .. }` answers to two spellings: `T`
+/// within the block, and `foo.T` from outside it. Which block an item belongs
+/// to is the only way to know the second one, so the walk reports it.
+#[must_use]
+pub fn flat_items_with_block(ast: &Ast) -> Vec<(fallc_ast::ItemId, Option<String>)> {
+    fn collect(
+        ast: &Ast,
+        items: &[fallc_ast::ItemId],
+        block: Option<&str>,
+        out: &mut Vec<(fallc_ast::ItemId, Option<String>)>,
+    ) {
+        for &item in items {
+            match &ast.item(item).kind {
+                fallc_ast::ItemKind::Module(module) => {
+                    collect(ast, &module.items, Some(&module.name.name), out);
+                }
+                _ => out.push((item, block.map(str::to_owned))),
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(ast.items.len());
+    collect(ast, &ast.items, None, &mut out);
+    out
+}
+
 pub type ExpressionDefault = (usize, ExprId, String, Vec<(String, crate::types::Type)>);
 
 /// Every such default, by the span of the call that left it.
@@ -1215,6 +1255,15 @@ pub type ExpressionDefaults = std::collections::HashMap<Span, Vec<ExpressionDefa
 /// The output of running the type checker.
 #[derive(Clone, Debug)]
 pub struct TypeCheckResult {
+    /// The definitions the checker published while checking.
+    ///
+    /// A `module` block exports names rather than signatures, and a call to a
+    /// member has to reach a definition that answers to the name the call
+    /// wrote. Those definitions are made while the call is typed -- the checker
+    /// is where the export table and the declaration meet -- and handed back
+    /// here rather than written into the table the caller lent, which is
+    /// shared by every module and is not the checker's to change.
+    pub published: Vec<crate::resolve::Def>,
     /// The calls whose callee may raise, so that code generation can check for
     /// a pending exception after each one.
     pub throwing_calls: std::collections::HashSet<Span>,
@@ -1512,6 +1561,16 @@ struct PendingMethodInstantiation {
 #[derive(Debug)]
 pub struct TypeChecker {
     diagnostics: DiagnosticBag,
+    /// Every function this checker knows, by the module that declares it.
+    ///
+    /// Argument-dependent lookup reads this: `x.f()` looks for `f` in the
+    /// module that declares `x`'s type, whether or not that module's functions
+    /// were imported. Filled by the driver from the loaded modules' export
+    /// tables, and from this file's own declarations.
+    module_functions: std::collections::HashMap<String, Vec<(String, Vec<FunctionSignature>)>>,
+    /// The definitions published while checking; see
+    /// [`TypeCheckResult::published`].
+    published: Vec<crate::resolve::Def>,
     /// Whether function bodies are checked at all.
     ///
     /// A module imported by a program contributes its *declarations*: types,

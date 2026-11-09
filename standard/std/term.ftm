@@ -14,6 +14,7 @@ import std.os;
 from std.os import *;
 import std.string;
 from std.string import *;
+from std.string import String;
 import std.internal.term_sys;
 from std.internal.term_sys import *;
 

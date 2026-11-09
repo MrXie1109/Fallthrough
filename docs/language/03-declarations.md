@@ -118,15 +118,21 @@ defines it; the rules for `export` are given in
 
 ### External variables and functions
 
-5.5 A module-level variable marked `@extern_C` declares an object provided by an external
+5.5 A module-level variable marked `@cabi` declares an object provided by an external
 library; an analogous function declaration is marked the same way. There is no `extern`
 keyword: the attribute says the name comes from elsewhere, and it is written after the
 type in the same place as every other declaration attribute.
 
+The word is **`cabi`**, not the name of a language: what the attribute specifies is the
+**C calling convention** — `abi` for the convention, `c` for which one — and a C library is
+the overwhelmingly common case rather than the definition. An attribute named for C would
+claim more than it says, and would have to be renamed the day a second convention arrives
+with an attribute of its own.
+
 ```ft
 import C;
 
-@extern_C
+@cabi
 fn getenv(name *const c8) *c8;
 
 fn main() int {
@@ -137,12 +143,12 @@ fn main() int {
 ```
 
 This program prints `1` where `PATH` is set in the environment: `getenv` is looked up in
-the C library by its own name, with the C calling convention, because `@extern_C` says so.
+the C library by its own name, with the C calling convention, because `@cabi` says so.
 
 5.6 An external variable **must not** have an initializer; reading or writing the name
 accesses the storage provided by the library.
 
-5.7 `@extern_C` specifies both the calling convention and the source of the symbol: the
+5.7 `@cabi` specifies both the calling convention and the source of the symbol: the
 name is passed to the linker unmangled, and no definition is emitted. A function declared
 without a body is external for the same reason.
 
@@ -276,7 +282,7 @@ attribute, or a wrong number or kind of arguments is an error; an implementation
 | `@deprecated`, `@deprecated("message")` | warn at each use |
 | `@enable_if(cond)` | the declaration does not exist when the condition is false; the condition **must** be a compile-time constant |
 | `@constexpr` | the function may be called in a constant position (section 14) |
-| `@extern_C` | use the C ABI; the symbol is not mangled |
+| `@cabi` | use the C ABI; the symbol is not mangled |
 
 ### Variable and constant attributes
 
@@ -431,7 +437,11 @@ specialisation for the types that satisfy the predicate answers `true`.
 
 ```ft
 import C;
+import std.type_traits;
 
+// A family of this file's own, so the name is `IsInteger` here and
+// `std.type_traits.IsInteger` is the one in the standard library -- two
+// declarations, two names.
 template <T type>
 type IsInteger {
     VALUE const bool = false;

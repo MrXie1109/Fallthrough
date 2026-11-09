@@ -113,7 +113,7 @@ Sets the bit at `index` and returns its previous value.
 ```
 export fn set(this &Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     word usize = word_of(index);
     mask u64 = bit_of(index);
@@ -130,7 +130,7 @@ Clears the bit at `index` and returns its previous value.
 ```
 export fn clear_bit(this &Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     word usize = word_of(index);
     mask u64 = bit_of(index);
@@ -147,7 +147,7 @@ Flips the bit at `index` and returns its previous value.
 ```
 export fn toggle(this &Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     word usize = word_of(index);
     mask u64 = bit_of(index);
@@ -164,7 +164,7 @@ Whether the bit at `index` is set.
 ```
 export fn test(this &const Bitset, index usize) bool {
     if (index >= this._bits) {
-        util.panic("Bitset index out of range");
+        panic("Bitset index out of range");
     }
     return (this._words[word_of(index)] & bit_of(index)) != 0u64;
 }

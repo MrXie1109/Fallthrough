@@ -4,7 +4,7 @@
 // so reaching the Unix epoch means subtracting the interval between the two
 // dates -- a constant, which is what `EPOCH_OFFSET` is.
 
-@extern_C fn GetSystemTimeAsFileTime(file_time *FileTime) void;
+@cabi fn GetSystemTimeAsFileTime(file_time *FileTime) void;
 
 // A `FILETIME`: two 32-bit halves of one 64-bit count, low part first.
 type FileTime {

@@ -194,7 +194,7 @@ fn main() int {
     // An `extern` function has no body, so its parameters are never read and
     // never could be: that is not a remark about this program.
     let external =
-        "@extern_C fn puts(text *const c8) int;\n\nfn main() int {\n    return puts(\"hi\");\n}\n";
+        "@cabi fn puts(text *const c8) int;\n\nfn main() int {\n    return puts(\"hi\");\n}\n";
     let (outcome, printed) = compile(external);
     assert_eq!(outcome, Outcome::Success, "{printed}");
     assert!(!printed.contains("S0142"), "{printed}");

@@ -18,6 +18,7 @@
 
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.util;
 from std.util import *;
 

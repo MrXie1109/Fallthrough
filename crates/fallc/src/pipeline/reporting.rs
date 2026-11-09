@@ -296,12 +296,18 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
     for module in &module_names {
         checker.add_module(module.clone());
     }
+    // The blocks this file declares are modules too: `foo.get(..)` on a
+    // `module foo { .. }` is a member of a module, and the checker has to be
+    // told so that it is not read as a method called on a value named `foo`.
+    for module in resolver.module_names() {
+        checker.add_module(module);
+    }
     register_imported_types(&mut checker, &imported_types);
     register_imported_constants(&mut checker, &imported_constants);
     register_imported_enums(&mut checker, &imported_enums);
     register_imported_interfaces(&mut checker, &imported_interfaces);
     // The third field says whether the object is one per thread; an
-    // `@extern_C` variable is a plain global.
+    // `@cabi` variable is a plain global.
     let mut external_globals: std::collections::HashMap<String, (fallc_sema::Type, String, bool)> =
         register_imported_variables(&mut checker, &imported_variables)
             .into_iter()
@@ -373,7 +379,11 @@ pub(super) fn compile_text_in_mode_opt_with_warnings(
             body.release_check_tables();
         }
     }
+    let mut resolved = resolved;
     let checked = checker.check(&ast, &resolved.resolutions);
+    for definition in &checked.published {
+        resolved.resolutions.publish(definition.clone());
+    }
     session.report_all(checked.diagnostics.clone());
     if emit_kinds.contains(&EmitKind::Types) {
         output.push_str(&emit::types(&checked.types, session.sources()));

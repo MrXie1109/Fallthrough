@@ -13,12 +13,15 @@
 import C;
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.internal.fs_sys;
 from std.internal.fs_sys import *;
 import std.io;
 from std.io import *;
+from std.io import File;
 import std.string;
 from std.string import *;
+from std.string import String;
 
 // A path to a file or a directory.
 export type Path {

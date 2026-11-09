@@ -550,7 +550,7 @@ Whether `value` is even.
 - `value`: the integer to test
 
 ```
-@enable_if(IsInteger(T))
+@enable_if(std.type_traits.IsInteger(T))
 export
 template <T type>
 fn is_even(value T) bool
@@ -563,7 +563,7 @@ Whether `value` is odd.
 - `value`: the integer to test
 
 ```
-@enable_if(IsInteger(T))
+@enable_if(std.type_traits.IsInteger(T))
 export
 template <T type>
 fn is_odd(value T) bool
@@ -580,7 +580,7 @@ that could overflow for the most negative value.
 - `second`: the other integer
 
 ```
-@enable_if(IsInteger(T))
+@enable_if(std.type_traits.IsInteger(T))
 export
 template <T type>
 fn gcd(first T, second T) T
@@ -594,7 +594,7 @@ The least common multiple of two integers.
 - `second`: the other integer
 
 ```
-@enable_if(IsInteger(T))
+@enable_if(std.type_traits.IsInteger(T))
 export
 template <T type>
 fn lcm(first T, second T) T
@@ -607,7 +607,7 @@ Whether `value` is a power of two (zero is not).
 - `value`: the integer to test
 
 ```
-@enable_if(IsInteger(T))
+@enable_if(std.type_traits.IsInteger(T))
 export
 template <T type>
 fn is_power_of_two(value T) bool
@@ -620,7 +620,7 @@ The integer square root: the largest `r` with `r * r <= value`.
 - `value`: the number whose root is wanted
 
 ```
-@enable_if(IsInteger(T))
+@enable_if(std.type_traits.IsInteger(T))
 export
 template <T type>
 fn isqrt(value T) T

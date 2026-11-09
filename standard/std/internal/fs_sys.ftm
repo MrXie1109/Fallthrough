@@ -6,14 +6,16 @@
 import C;
 import std.array;
 from std.array import *;
+from std.array import Array;
 import std.string;
 from std.string import *;
+from std.string import String;
 
-@extern_C fn mkdir(path *const char, mode u32) int;
-@extern_C fn opendir(path *const char) *byte;
-@extern_C fn readdir(directory *byte) *byte;
-@extern_C fn closedir(directory *byte) int;
-@extern_C fn stat(path *const char, buffer *byte) int;
+@cabi fn mkdir(path *const char, mode u32) int;
+@cabi fn opendir(path *const char) *byte;
+@cabi fn readdir(directory *byte) *byte;
+@cabi fn closedir(directory *byte) int;
+@cabi fn stat(path *const char, buffer *byte) int;
 
 // Makes one directory, returning whether it worked.
 export fn mkdir_one(path *const char) bool {

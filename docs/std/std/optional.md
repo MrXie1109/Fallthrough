@@ -23,9 +23,23 @@ travels the same path as every other failure in the program.
 
 The comparison is structural: two optionals are equal when both are absent,
 or when both are present and their values are equal.
-A value that may be absent.
 
 ## Declarations
+
+### `type Optional {`
+
+A value that may be absent.
+
+```
+export
+template <T type>
+type Optional {
+    // Whether there is a value at all.
+    _present bool;
+    // The value; meaningless when `_present` is false.
+    _value T;
+}
+```
 
 ### `fn __init__(this &Optional<T>) void`
 
@@ -42,7 +56,7 @@ fn __init__(this &Optional<T>) void
 Creates a present optional holding `value`.
 
 - `value`: the value to store; it starts out copied rather than taken, so a
-  caller that is done with it writes `Optional<T>(util.move(value))`
+  caller that is done with it writes `Optional<T>(move(value))`
 
 ```
 export

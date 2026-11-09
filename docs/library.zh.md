@@ -27,10 +27,23 @@ import std.hash;     // 只要 HashTable 与 HSet/HMap
 import std.io;       // 只要设备与格式化 I/O
 ```
 
-和 `collections.zh.md` 说的一样：伞模块导出的**类型名**可以写短（`RBTree<int, int>`
-就是 `std.RBTree<int, int>`），**函数**要写全名（`std.min(..)`）。容器模板的
-默认参数（比较器、哈希器、分配器）只在模块内部按短名写，伞模块下也一样：
-`TMap<String, int>` 用的是 `std.Less<String>`，不用写出来。
+和 `collections.zh.md` 说的一样，裸 `import std;` 之后**没有任何东西可以写短**：
+类型写 `std.RBTree<int, int>`，函数写 `std.min(..)`。裸名必须先被绑定，绑定它的是
+`from` 或 `use`：
+
+```ft
+import std;
+from std import RBTree, TMap, TSet;   // 或：use std.RBTree; …
+
+fn main() int {
+    tree RBTree<int, int>;       // 由上面那行绑定；与 std.RBTree<int, int> 是同一类型
+    return 0;
+}
+```
+
+容器模板的默认参数（比较器、哈希器、分配器）只在**声明它的模块内部**按短名写，使用该
+类型时沿用的也是那里的写法：`std.TMap<std.String, int>` 用 `std.Less<std.String>`，
+调用方不必写出来。那是声明模块自己的拼写，不是调用方可以写的名字。
 
 ## 内存：分配器、`Box`、`Rc`、`Arc`
 
@@ -43,6 +56,7 @@ import std.io;       // 只要设备与格式化 I/O
 
 ```ft
 import std.allocators;
+from std.allocators import Arena;
 
 arena Arena = Arena(64usize);
 block *byte = arena.alloc(8usize);   // 未初始化，构造值仍要 __init__
@@ -63,7 +77,13 @@ traits Allocator(it A) {
 `Rc`/`Arc` 把分配器作为**模板参数**接收，默认是它（`Array` 只用默认分配器）：
 
 ```ft
+import std.array;
+from std.array import Array;
+import std.deque;
+from std.deque import Deque;
+
 type MyAllocator { };              // 两个方法各自实现
+
 xs Deque<int, MyAllocator>;        // 用别的方式分配；Array 只收元素类型
 ```
 
@@ -88,7 +108,11 @@ xs Deque<int, MyAllocator>;        // 用别的方式分配；Array 只收元素
 堆上的一个值，析构时释放。
 
 ```ft
+import std.memory;
+from std.memory import Box;
+
 b Box<int> = 7;        // 从值构造
+
 b.get() = 9;           // get() 返回 &T
 c Box<int> = b;        // 拷贝：两份独立的值
 ```
@@ -100,7 +124,11 @@ c Box<int> = b;        // 拷贝：两份独立的值
 引用计数，单线程共享所有权：
 
 ```ft
+import std.memory;
+from std.memory import Rc, RcWeak;
+
 first Rc<String> = String("text");
+
 second Rc<String> = first;        // 计数 2
 weak RcWeak<String> = first.downgrade();
 std.out.println(weak.upgrade().get());  // 活着的强引用在，就拿到一份
@@ -143,7 +171,11 @@ std.out.println(weak.upgrade().get());  // 活着的强引用在，就拿到一�
 查询写成 `InputIterator(MyIterator)`，结果是编译期 `bool`：
 
 ```ft
+import std.tree;
+from std.tree import SetIterator;
+
 static_assert(InputIterator(SetIterator<int>));
+
 static_assert(BidirectionalIterator(SetIterator<int>));
 ```
 
@@ -171,6 +203,9 @@ traits Compare(it C, value E) {
 `__call__` 的类型，作为模板参数传入：
 
 ```ft
+import std.tree;
+from std.tree import Greater, TMap;
+
 TMap<int, String, Greater<int>> descending;
 ```
 
@@ -193,7 +228,11 @@ TMap<int, String, Greater<int>> descending;
 是 `*TreeNode<K, V>` 而不是 `*byte`，所以顺着树走不需要转换：
 
 ```ft
+import std.tree;
+from std.tree import TreeNode;
+
 node *TreeNode<int, String> = tree.find(3);
+
 if (node != nullptr) {
     std.out.println(node.value);
 }
@@ -216,7 +255,11 @@ if (node != nullptr) {
 顺序，由比较器决定：
 
 ```ft
+import std.tree;
+from std.tree import MapIterator, TMap;
+
 ages TMap<String, int>;
+
 ages.insert(String("Ada"), 36);
 ages.insert(String("Grace"), 85);
 it MapIterator<String, int> = ages.begin();
@@ -249,6 +292,9 @@ traits Hashable(it T) {
 哈希就是加一个 `__hash__`：
 
 ```ft
+import std.hash;
+from std.hash import Hash;
+
 type Point { x int; y int; }
 
 export fn __hash__(this &const Point) usize {
@@ -403,6 +449,7 @@ die int = std.random.uniform(1, 6);   // 1..=6，两端都含
 
 ```ft
 import std.os;
+from std.fs import Path;
 
 os.pid();                 // 进程 ID
 os.getenv("HOME");        // 环境变量；没有时抛 KeyError（has_env 是问句形式）
@@ -448,7 +495,11 @@ os.arch();                // "x86_64" / "aarch64"：同上
 `std.io` 只有一个类型 `File`：一个 C 流加上打开方向。标准流、磁盘文件、别的 C 库交过来的流，全都是它。
 
 ```ft
+import std.io;
+from std.io import File;
+
 std.out    File   // 标准输出：File(C.stdout, OpenMode.WRITE)
+
 std.err    File   // 标准错误
 std.in     File   // 标准输入：File(C.stdin, OpenMode.READ)
 ```
@@ -465,7 +516,11 @@ std.out.writable()   // true
 ### 打开
 
 ```ft
+import std.io;
+from std.io import File;
+
 f    File = File("notes.txt", OpenMode.WRITE)??;   // "wb"，截断
+
 src  File = File("notes.txt", OpenMode.READ)??;    // "rb"
 both File = File("notes.txt", OpenMode.RW)??;      // "r+b"，文件必须存在
 ```
@@ -475,6 +530,9 @@ both File = File("notes.txt", OpenMode.RW)??;      // "r+b"，文件必须存在
 也可以包一个已经打开的 C 流——`std.out` 自己就是这么来的：
 
 ```ft
+import std.io;
+from std.io import File;
+
 log File = File(C.stderr, OpenMode.WRITE);
 ```
 
@@ -559,7 +617,11 @@ std.in.getline(&line, ';');     // 换一个终止字符
 ### `Mutex` 与 `Lock`
 
 ```ft
+import std.sync;
+from std.sync import Lock, Mutex;
+
 m Mutex;
+
 {
     guard Lock = &m;     // 构造时加锁
     ...
@@ -572,7 +634,11 @@ m Mutex;
 ### `CondVar`
 
 ```ft
+import std.sync;
+from std.sync import CondVar, Lock, Mutex;
+
 ready CondVar;
+
 m Mutex;
 guard Lock = &m;
 while (!ready_now) {
@@ -584,7 +650,11 @@ ready.notify_one();      // 或 notify_all()
 ### `Thread` 与 `sleep`
 
 ```ft
+import std.sync;
+from std.sync import Thread;
+
 fn work(argument *byte) u32 {
+
     std.sleep(10);       // 毫秒
     return 0;            // 线程的退出值；`join` 目前不收集它
 }
@@ -600,7 +670,11 @@ t.join();
 ### `Atomic<T>`
 
 ```ft
+import std.sync;
+from std.sync import Atomic;
+
 count Atomic<int> = 0;
+
 count.fetch_add(1);
 count.store(7);
 v int = count.load();
@@ -633,6 +707,7 @@ count.fetch_add(1, AtomicOrder.ACQ_REL);
 
 ```ft
 import std.sync;
+from std.sync import Barrier, Once;
 
 bar Barrier = Barrier(2u32);
 once Once = Once();
@@ -659,6 +734,9 @@ bar.wait();                 // 等到 2 方都到
 
 ```ft
 import std.concurrent;
+import std.sync;
+from std.sync import Thread;
+from std.concurrent import Channel, Future, Promise, ThreadPool;
 
 channel Channel<int> = Channel<int>();
 producer_thread = Thread(producer, &context as *byte)??;
@@ -685,6 +763,7 @@ pool.shutdown()??;
 
 ```ft
 import std;
+from std.time import DateTime, Duration, Instant, SystemTime;
 import std.time;
 
 start Instant = time.now();
@@ -804,7 +883,11 @@ UDP 是独立工作，本模块明确不做，而不是悄悄只处理一部分�
 文档活得久（[`std/json.ftm`](../../standard/std/json.ftm)）：
 
 ```ft
+import std.json;
+from std.json import JsonDocument, JsonValue;
+
 document JsonDocument = std.parse(&text)??;
+
 root JsonValue = document.root();
 key String = String("name");
 name String = root.member(&key).value()?? as String??;
@@ -822,7 +905,11 @@ written String = std.serialize(&root)??;
 文本，输入输出都是 `Bytes`（字节不一定是文本）：
 
 ```ft
+import std.bytes;
+from std.bytes import Bytes;
+
 hex String = std.hex_encode(&data);        // "4142"
+
 back Bytes = std.hex_decode(&hex)??;        // 解码失败抛 ValueError
 b64 String = std.base64_encode(&data);      // "QUI="
 pct String = std.percent_encode(&text);     // URL：字母数字 -_.~ 保留，其余 %XX
@@ -861,7 +948,11 @@ cursor *int = std.advance(values.begin(), values.end(), 2usize);
 （元素类型不一定有默认构造）：
 
 ```ft
+import std.grid;
+from std.grid import Grid;
+
 grid Grid<int> = Grid<int>(2usize, 3usize, 0);
+
 grid.set(1, 2, 7);
 v int = grid.at(1, 2);
 rows usize = grid.rows();
@@ -893,7 +984,11 @@ log.set_level(log.Level.OFF);                  // 全关
 ## 文件路径：`std.fs`
 
 ```ft
+import std.fs;
+from std.fs import Path;
+
 p Path = "/home/user/notes.txt";
+
 p.directory();     // "/home/user"
 p.file_name();     // "notes.txt"
 p.extension();     // "txt"
@@ -914,6 +1009,7 @@ p.file(OpenMode.READ);  // 打开这个路径命名的文件，得到一个 std.
 
 ```ft
 import meta;
+
 std.out.println("built from ", $meta.FILE, " on ", $meta.PLATFORM);
 if ($meta.WINDOWS) @constexpr { ... } else { ... }
 ```

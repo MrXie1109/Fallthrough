@@ -140,14 +140,14 @@ impl Parser {
     /// the parser used to set from those keywords.
     ///
     /// `@export` is the old `export` for every entity that could carry it;
-    /// `@constexpr` and `@extern_C` are the old `constexpr` and `extern "C"`
+    /// `@constexpr` and `@cabi` are the old `constexpr` and `extern "C"`
     /// for functions. Everything else is left for the checker: `@must_use`,
     /// `@unused`, `@deprecated`, `@enable_if`, `@likely` and so on have
     /// semantics of their own rather than a flag already in the tree.
     fn apply_declaration_attributes(&mut self, ast: &mut Ast, id: ItemId, attrs: &[Attr]) {
         let exported = attrs.iter().any(|attr| attr.name == "export");
         let constexpr = attrs.iter().any(|attr| attr.name == "constexpr");
-        let extern_c = attrs.iter().any(|attr| attr.name == "extern_C");
+        let extern_c = attrs.iter().any(|attr| attr.name == "cabi");
         match &mut ast.item_mut(id).kind {
             ItemKind::Function(function) => {
                 function.exported |= exported;
@@ -232,6 +232,24 @@ impl Parser {
             return self.parse_import(stream, ast);
         }
 
+        // `use foo.get;`, `use foo as f;`, `use foo.*;`, `export use foo.get;`
+        //
+        // `export` on a `use` publishes the binding: it is the general form of
+        // `export from M import x;`, so a module assembled from others is
+        // written with one spelling rather than two.
+        if stream.at(TokenKind::Keyword(Keyword::Use)) {
+            return self.parse_use(stream, ast, exported);
+        }
+
+        // `module foo { .. }`
+        if stream.at(TokenKind::Keyword(Keyword::Module)) {
+            if exported {
+                self.report_unexpected(stream, "a `module` block that is not exported");
+                return None;
+            }
+            return self.parse_module(stream, ast);
+        }
+
         // `from Name import a, b;` and `from Name import *;`
         if stream.at(TokenKind::Keyword(Keyword::From)) {
             return self.parse_from_import(stream, ast, false);
@@ -268,7 +286,7 @@ impl Parser {
         };
 
         // The rest of the declaration prefix is attributes: `@constexpr` and
-        // `@extern_C` were read before this point and are applied to the item
+        // `@cabi` were read before this point and are applied to the item
         // after it is parsed. Only `export` and `template <..>` are keywords
         // in prefix position.
         let abi: Option<String> = None;
@@ -361,14 +379,14 @@ impl Parser {
             // because there the keyword would silently do nothing.
             bind.exported |= exported;
             let span = start.to(bind.name_span);
-            // `stdin *c8 @extern_C;` declares a variable whose storage belongs
+            // `stdin *c8 @cabi;` declares a variable whose storage belongs
             // to another library: the old `extern "C" NAME Type;` written with
             // the attribute in its variable position.
-            if bind.attrs.iter().any(|attr| attr.name == "extern_C") {
+            if bind.attrs.iter().any(|attr| attr.name == "cabi") {
                 if bind.init.is_some() || bind.is_static || bind.is_thread_local {
                     self.push_diagnostic(
                         Diagnostic::error(
-                            "an `@extern_C` variable has no storage of its own, so it cannot \
+                            "an `@cabi` variable has no storage of its own, so it cannot \
                              have an initialiser or a storage class",
                         )
                         .with_code(DiagnosticCode::parser(2))
@@ -379,7 +397,7 @@ impl Parser {
                 let fallc_ast::BindingType::Written(ty) = bind.ty else {
                     self.push_diagnostic(
                         Diagnostic::error(
-                            "an `@extern_C` variable needs a written type: `auto` would have \
+                            "an `@cabi` variable needs a written type: `auto` would have \
                              nothing to deduce from",
                         )
                         .with_code(DiagnosticCode::parser(2))
@@ -1699,6 +1717,15 @@ impl Parser {
         // the loader turns them into directory separators.
         while stream.at(TokenKind::Punct(Punctuation::Dot)) {
             stream.advance();
+            // `foo.*` — the star ends the path rather than continuing it, and
+            // only a `use` reads a path that way. Written into the name so that
+            // the reader of the path can tell the two apart without a second
+            // lookbehind.
+            if stream.at_punct(Punctuation::Star) {
+                stream.advance();
+                name.push_str(".*");
+                return Some((name, span));
+            }
             let part = self.parse_ident(stream, "a module name")?;
             name.push('.');
             name.push_str(&self.token_text(stream, &part));
@@ -1739,6 +1766,171 @@ impl Parser {
                 members: None,
             }),
             start.to(semi.span),
+        ))
+    }
+
+    /// Parses `use path;`, where the path is a module and what to bind from it.
+    ///
+    /// The path is read as a dotted name -- a module, then optional members --
+    /// and what the last segment means is decided by the form:
+    ///
+    /// ```text
+    /// use foo;            // the module itself
+    /// use foo as f;       // the module under another name
+    /// use foo.get;        // one member, written bare
+    /// use foo.*;          // every export of foo, each bare
+    /// use std.string;     // the module `std.string`
+    /// use std.string.String;  // a member of that module
+    /// ```
+    ///
+    /// A dotted name is therefore ambiguous until the `as`, the `.*` and the
+    /// end of the statement are in hand: `std.string.Thing` binds `Thing` of
+    /// `std.string`, while `std.string` alone binds the module. What resolves
+    /// it is the rule that a module's name is what the loader finds a file for,
+    /// and the parser cannot know that -- so the whole path is kept and the
+    /// loader decides, treating the last segment as a member only when the
+    /// module part names a file.
+    pub(super) fn parse_use(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+        exported: bool,
+    ) -> Option<ItemId> {
+        let start = stream.current_span();
+        stream.advance(); // `use`
+        let (path, name_span) = self.parse_name_or_string(stream, "a module name")?;
+        // `path` is read before the trailing `.*` can be seen, so a star at the
+        // end of the name is taken back out and read as the form it is.
+        let mut path = path;
+        let name_span = name_span;
+        // `use foo.*;` — every name `foo` exports. The star arrives as part of
+        // the path, because a path is read as a run of names before anything
+        // else can be looked at.
+        if let Some(stripped) = path.strip_suffix(".*") {
+            let module = stripped.to_owned();
+            let semi = self.expect_punct(stream, Punctuation::Semi, "`;`")?;
+            return Some(ast.builder().alloc_item(
+                ItemKind::Use(UseItem {
+                    module,
+                    module_span: name_span,
+                    target: UseTarget::All,
+                    exported,
+                    span: start.to(semi.span),
+                }),
+                start.to(semi.span),
+            ));
+        }
+        // A path is a module or a module and a member: `use std.string;
+        // String;` binds `String` of the module `std.string`, and `use foo;`
+        // binds the module. Which one it is cannot be decided here -- only the
+        // loader knows whether a file answers for the path -- so both readings
+        // travel: the last segment is the candidate member, and everything
+        // before it the candidate module.
+        let mut member: Option<ImportedName> = None;
+        if let Some((module, last)) = path.rsplit_once('.') {
+            member = Some(ImportedName {
+                name: last.to_owned(),
+                span: Span::new(
+                    name_span.file,
+                    name_span.hi.saturating_sub(last.len() as u32),
+                    name_span.hi,
+                ),
+            });
+            path = module.to_owned();
+        }
+        if let Some(member) = member {
+            // The member reading. The loader decides which of the two the path
+            // really is; see `pipeline::imports::resolve_use_path`.
+            let semi = self.expect_punct(stream, Punctuation::Semi, "`;`")?;
+            return Some(ast.builder().alloc_item(
+                ItemKind::Use(UseItem {
+                    module: path,
+                    module_span: name_span,
+                    target: UseTarget::Member(member),
+                    exported,
+                    span: start.to(semi.span),
+                }),
+                start.to(semi.span),
+            ));
+        }
+        // `use foo as f;` — the module itself, under another name.
+        if stream.at(TokenKind::Keyword(Keyword::As)) {
+            stream.advance();
+            let alias_token = self.parse_ident(stream, "a name for the module")?;
+            let semi = self.expect_punct(stream, Punctuation::Semi, "`;`")?;
+            return Some(ast.builder().alloc_item(
+                ItemKind::Use(UseItem {
+                    module: path,
+                    module_span: name_span,
+                    target: UseTarget::Module {
+                        alias: Some(ImportedName {
+                            name: self.token_text(stream, &alias_token),
+                            span: alias_token.span,
+                        }),
+                    },
+                    exported,
+                    span: start.to(semi.span),
+                }),
+                start.to(semi.span),
+            ));
+        }
+        // `use foo;` — the module itself, under its own name.
+        let semi = self.expect_punct(stream, Punctuation::Semi, "`;`")?;
+        Some(ast.builder().alloc_item(
+            ItemKind::Use(UseItem {
+                module: path,
+                module_span: name_span,
+                target: UseTarget::Module { alias: None },
+                exported,
+                span: start.to(semi.span),
+            }),
+            start.to(semi.span),
+        ))
+    }
+
+    /// Parses `module Name { item .. }`.
+    ///
+    /// The block is a container: its members are declarations of this file,
+    /// and `export` on one of them says what a name from outside the block may
+    /// reach. A block with no name is the one an `import` stands for; it is
+    /// written only by the loader, never by hand, so the name here is always
+    /// present.
+    pub(super) fn parse_module(
+        &mut self,
+        stream: &mut TokenStream,
+        ast: &mut Ast,
+    ) -> Option<ItemId> {
+        let start = stream.current_span();
+        stream.advance(); // `module`
+        let name_token = self.parse_ident(stream, "a module name")?;
+        let name = self.token_text(stream, &name_token);
+        self.expect_punct(stream, Punctuation::OpenBrace, "`{`")?;
+        let mut items = Vec::new();
+        while !stream.at_punct(Punctuation::CloseBrace) && !stream.at_eof() {
+            let before = stream.position();
+            if let Some(member) = self.parse_item(stream, ast) {
+                items.push(member);
+            } else {
+                self.recover_to_item(stream);
+            }
+            // Recovery must make progress, or a block that fails to parse
+            // would spin forever inside the braces.
+            if stream.position() == before && !stream.at_eof() {
+                self.report_unexpected(stream, "a declaration");
+                stream.advance();
+            }
+        }
+        let close = self.expect_punct(stream, Punctuation::CloseBrace, "`}`")?;
+        Some(ast.builder().alloc_item(
+            ItemKind::Module(ModuleItem {
+                name: ModuleName {
+                    name,
+                    span: name_token.span,
+                },
+                items,
+                span: start.to(close.span),
+            }),
+            start.to(close.span),
         ))
     }
 

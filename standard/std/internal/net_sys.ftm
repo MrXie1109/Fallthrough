@@ -5,15 +5,15 @@
 // IPv4, whose first three fields are the only ones a connection needs: the
 // family, the port and the address, each in the byte order the network uses.
 
-@extern_C fn socket(domain i32, kind i32, protocol i32) i32;
-@extern_C fn connect(fd i32, address *const byte, length u32) i32;
-@extern_C fn bind(fd i32, address *const byte, length u32) i32;
-@extern_C fn listen(fd i32, backlog i32) i32;
-@extern_C fn accept(fd i32, address *byte, length *u32) i32;
-@extern_C fn send(fd i32, buffer *const byte, length usize, flags i32) isize;
-@extern_C fn recv(fd i32, buffer *byte, length usize, flags i32) isize;
-@extern_C fn close(fd i32) i32;
-@extern_C fn getsockname(fd i32, address *byte, length *u32) i32;
+@cabi fn socket(domain i32, kind i32, protocol i32) i32;
+@cabi fn connect(fd i32, address *const byte, length u32) i32;
+@cabi fn bind(fd i32, address *const byte, length u32) i32;
+@cabi fn listen(fd i32, backlog i32) i32;
+@cabi fn accept(fd i32, address *byte, length *u32) i32;
+@cabi fn send(fd i32, buffer *const byte, length usize, flags i32) isize;
+@cabi fn recv(fd i32, buffer *byte, length usize, flags i32) isize;
+@cabi fn close(fd i32) i32;
+@cabi fn getsockname(fd i32, address *byte, length *u32) i32;
 
 // `AF_INET`, `SOCK_STREAM`, `IPPROTO_TCP`.
 AF_INET const i32 = 2;

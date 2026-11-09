@@ -22,3 +22,11 @@ scratch/
 
 # Intermediate objects a compile leaves beside its input.
 *.fallc-tmp.o
+
+# Machine-local agent constitution: per-host working rules (memory floor,
+# conflict policy). Personal to this checkout, not part of the project.
+CONSTITUTION.md
+
+# Local working tools: memory guard, doc generators, one-off scripts. Machine
+# conveniences for building this checkout, not part of what the project ships.
+tools/

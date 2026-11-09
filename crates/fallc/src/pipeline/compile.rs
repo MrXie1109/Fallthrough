@@ -15,7 +15,7 @@ use super::*;
 /// A function merely *declared* in two files is fine, and is the whole point of
 /// a declaration: it says the definition lives somewhere else.
 ///
-/// A definition is an item with a body. `@extern_C export fn puts(text *const
+/// A definition is an item with a body. `@cabi export fn puts(text *const
 /// c8) int;` has none, so any number of files may declare it.
 ///
 /// Returns the first violation, with both places named.
@@ -548,9 +548,18 @@ pub(super) fn compile_file(
             mode,
             object_library.then_some(opt),
         );
+        if std::env::var_os("FALLC_STAGES").is_some() {
+            eprintln!("  looking for {:?} (mode {mode:?})", artifact.file_name());
+        }
         artifact.is_file() && manifest.is_file()
     });
     if std::env::var_os("FALLC_STAGES").is_some() {
+        let modules: Vec<(&str, u64)> = probe
+            .bodies
+            .iter()
+            .map(|body| (body.module.as_str(), body.cache_hash))
+            .collect();
+        eprintln!("  library modules: {modules:?}");
         eprintln!("  cached library: {cached_library}");
     }
     let imported = if cached_library {
@@ -603,6 +612,24 @@ pub(super) fn compile_file(
             links.push(link);
         }
     }
+    // ADL's answer, taken before the modules are moved into the resolver: a
+    // member function belongs to the module that declares its receiver's type.
+    let adl_tables: Vec<(String, Vec<(String, Vec<fallc_sema::FunctionSignature>)>)> = {
+        let mut tables: Vec<(String, Vec<(String, Vec<fallc_sema::FunctionSignature>)>)> = modules
+            .iter()
+            .map(|(name, external)| {
+                let mut functions: Vec<(String, Vec<fallc_sema::FunctionSignature>)> = external
+                    .symbols
+                    .iter()
+                    .map(|(member, signatures)| (member.clone(), signatures.clone()))
+                    .collect();
+                functions.sort_by(|left, right| left.0.cmp(&right.0));
+                (name.clone(), functions)
+            })
+            .collect();
+        tables.sort_by(|left, right| left.0.cmp(&right.0));
+        tables
+    };
     let module_names = install_imports(&mut resolver, modules, bindings, &aliases, &direct);
     // A trait used as a question rather than as a value: `Input(x)` is not a
     // call to an undeclared function.
@@ -637,12 +664,25 @@ pub(super) fn compile_file(
     for module in &module_names {
         checker.add_module(module.clone());
     }
+    // Argument-dependent lookup: a member function belongs to the module that
+    // declares its receiver's type, so each module's functions were filed
+    // under the module itself. `xs.length()` then finds `length` in
+    // `std.array` without that module exporting every method it writes.
+    for (name, functions) in adl_tables {
+        checker.add_module_functions(name, functions);
+    }
+    // The blocks this file declares are modules too: `foo.get(..)` on a
+    // `module foo { .. }` is a member of a module, and the checker has to be
+    // told so that it is not read as a method called on a value named `foo`.
+    for module in resolver.module_names() {
+        checker.add_module(module);
+    }
     register_imported_types(&mut checker, &imported_types);
     register_imported_constants(&mut checker, &imported_constants);
     register_imported_enums(&mut checker, &imported_enums);
     register_imported_interfaces(&mut checker, &imported_interfaces);
     // The third field says whether the object is one per thread; an
-    // `@extern_C` variable is a plain global.
+    // `@cabi` variable is a plain global.
     let mut external_globals: std::collections::HashMap<String, (fallc_sema::Type, String, bool)> =
         register_imported_variables(&mut checker, &imported_variables)
             .into_iter()
@@ -740,7 +780,16 @@ pub(super) fn compile_file(
     for body in &mut module_bodies {
         body.release_check_tables();
     }
+    // The table is the checker's to extend: a `module` block publishes names
+    // that only become definitions once a call writes them.
+    let mut resolutions = resolutions;
     let checked = checker.check(&ast, &resolutions);
+    // The checker publishes the names a `module` block lets out -- `foo.get` --
+    // as it types the calls that write them. They join the same table, so that
+    // everything downstream reads one list of definitions.
+    for definition in &checked.published {
+        resolutions.publish(definition.clone());
+    }
     stage("check", &stage_start);
     session.report_all(checked.diagnostics.clone());
     if !checked.is_ok() {
@@ -1165,8 +1214,15 @@ pub(super) fn register_imported_types(
     // did.
     let mut known: Vec<fallc_sema::NominalType> = types
         .iter()
-        .map(|(name, ty, _module)| fallc_sema::NominalType {
+        .map(|(name, ty, module)| fallc_sema::NominalType {
             name: name.clone(),
+            // The type's home module: a member function is looked for there,
+            // and not among the names this file happened to import.
+            declared_in: if module.is_empty() {
+                None
+            } else {
+                Some(module.clone())
+            },
             fields: Vec::new(),
             mutable_fields: Vec::new(),
             field_alignments: Vec::new(),

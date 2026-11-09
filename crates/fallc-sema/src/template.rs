@@ -65,7 +65,12 @@ impl TemplateArgument {
     #[must_use]
     pub fn spelling(&self) -> String {
         match self {
-            TemplateArgument::Type(ty) => ty.spelling(),
+            // A type argument of a family member is written the way the
+            // declaring module writes it: `Array<String>`, not
+            // `Array<std.string.String>`. The member's name is what makes two
+            // mentions one type, and a spelling that depended on where the
+            // mention was written would make them two.
+            TemplateArgument::Type(ty) => bare_spelling(ty),
             TemplateArgument::Int(value) => value.to_string(),
             TemplateArgument::Text(bytes) => {
                 let text = String::from_utf8_lossy(bytes);
@@ -450,5 +455,33 @@ mod tests {
         let left = Arguments(vec![TemplateArgument::Type(Type::INT)]);
         let right = Arguments(vec![TemplateArgument::Type(Type::INT)]);
         assert_eq!(left.key(), right.key());
+    }
+}
+
+/// The spelling of a type without the module a reference may qualify it
+/// with.
+///
+/// `std.String` and `String` are one type, so a name built for comparison
+/// or for a symbol uses the declared name. Diagnostics keep the written
+/// one, because that is what the reader wrote.
+fn bare_spelling(ty: &Type) -> String {
+    match ty {
+        Type::Nominal(nominal) => nominal
+            .name
+            .rsplit_once('.')
+            .map_or(nominal.name.clone(), |(_, last)| last.to_owned()),
+        Type::Pointer { .. } | Type::Reference { .. } | Type::Volatile(_) | Type::Const(_) => {
+            // The qualifiers are printed as written, and the inner type is
+            // the one that may carry a module.
+            let written = ty.spelling();
+            let inner = match ty {
+                Type::Volatile(inner) | Type::Const(inner) => inner,
+                Type::Pointer { pointee, .. } => pointee,
+                Type::Reference { referent, .. } => referent,
+                _ => return written,
+            };
+            written.replace(&inner.spelling(), &bare_spelling(inner))
+        }
+        _ => ty.spelling(),
     }
 }

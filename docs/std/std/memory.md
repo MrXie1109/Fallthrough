@@ -40,7 +40,7 @@ export traits Allocator(it A) {
 
 The allocator every container uses unless it says otherwise.
 
-It is the C heap, which is what `util.allocate` and `util.free` are.
+It is the C heap, which is what `allocate` and `free` are.
 
 ```
 export type DefaultAllocator {
@@ -52,11 +52,11 @@ export type DefaultAllocator {
 Takes `size` bytes from the C heap.
 
 The bytes are uninitialised: constructing a value in them is the caller's job,
-exactly as `util.allocate` says.
+exactly as `allocate` says.
 
 ```
 export fn alloc(this &DefaultAllocator, size usize) *byte {
-    return util.allocate(size);
+    return allocate(size);
 }
 ```
 
@@ -66,7 +66,7 @@ Gives a block back to the C heap.
 
 ```
 export fn free(this &DefaultAllocator, block *byte) void {
-    util.free(block);
+    free(block);
 }
 ```
 
